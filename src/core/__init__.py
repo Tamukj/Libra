@@ -1,1 +1,1 @@
-"""GaitAI Core Module (Data Loader, Biomechanics, Norms)"""
+"""Libra Core Module (Data Loader, Biomechanics, Norms)"""

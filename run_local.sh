@@ -2,13 +2,13 @@
 set -e
 
 echo "=========================================================="
-echo "  GaitAI: Clinical Biomechanics & CDSS Platform"
+echo "  Libra: Clinical Biomechanics & CDSS Platform"
 echo "  AI-Sana Shakarim Solveathon: AI & Medicine-2026"
 echo "=========================================================="
 
 cleanup() {
     echo ""
-    echo "Shutting down GaitAI local services..."
+    echo "Shutting down Libra local services..."
     kill $(jobs -p) 2>/dev/null || true
     exit 0
 }
@@ -38,9 +38,9 @@ cd ..
 
 echo ""
 echo "=========================================================="
-echo "  GaitAI IS LIVE!"
-echo "  Web UI (Earwright-Hub Design): http://127.0.0.1:3000"
-echo "  FastAPI REST Docs (Swagger):   http://127.0.0.1:8000/docs"
+echo "  Libra IS LIVE!"
+echo "  Web UI:                      http://127.0.0.1:3000"
+echo "  FastAPI REST Docs (Swagger): http://127.0.0.1:8000/docs"
 echo "=========================================================="
 echo "Press Ctrl+C to terminate both servers."
 echo ""

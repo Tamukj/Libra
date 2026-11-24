@@ -94,3 +94,28 @@ def test_compare_modalities():
     assert res["best_method"] == "Verbal"
     assert "Вербальные команды" in res["verdict_ru"]
 
+def test_compute_sagittal_gdi():
+    from src.core.biomechanics import compute_sagittal_gdi
+    # Norm TD (5.2 deg) -> 100.0 GDI
+    assert compute_sagittal_gdi(5.2) == 100.0
+    assert compute_sagittal_gdi(4.0) == 100.0 # Better or equal to norm
+    # 1 SD deviation (6.4 deg) -> 90.0 GDI
+    assert compute_sagittal_gdi(6.4) == 90.0
+    # 2 SD deviation (7.6 deg) -> 80.0 GDI
+    assert compute_sagittal_gdi(7.6) == 80.0
+    # Severe deviation
+    assert compute_sagittal_gdi(11.2) == 50.0
+
+def test_compute_session_diff():
+    from src.core.biomechanics import compute_session_diff
+    sess_a = {"label": "Baseline", "gps": 11.4, "tje": 0.0, "pcr": 0.0}
+    sess_b = {"label": "VR Month-1", "gps": 8.8, "tje": -2.5, "pcr": 0.12}
+
+    diff = compute_session_diff(sess_a, sess_b)
+    assert diff["status"] == "improved"
+    assert diff["delta_gps"] == -2.6
+    assert diff["delta_gdi"] > 0
+    assert diff["icf_improved"] is True
+    assert "Положительная" in diff["verdict_ru"]
+
+

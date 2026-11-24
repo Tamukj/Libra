@@ -2,33 +2,31 @@
 
 import React, { useState } from "react";
 import { KinematicsResponse } from "@/lib/types";
-import { translations } from "@/lib/translations";
 
 interface KinematicsProps {
   data: KinematicsResponse;
-  lang: "ru" | "kz";
+  lang: "ru" | "kz" | "en";
 }
 
 export function KinematicsChart({ data, lang }: KinematicsProps) {
-  const t = translations[lang];
   const [activeJoint, setActiveJoint] = useState<"aSagH" | "aSagP" | "aSagK" | "aSagA">("aSagH");
 
   const jointData = data.joints[activeJoint];
   if (!jointData) return null;
 
-  const jointNames = {
-    aSagH: lang === "kz" ? "Сан (Hip) - Бүгілу/Жазылу" : "Бедро (Hip) - Сгибание/Разгибание",
-    aSagP: lang === "kz" ? "Жамбас (Pelvis) - Еңкею" : "Таз (Pelvis) - Наклон вперед/назад",
-    aSagK: lang === "kz" ? "Тізе (Knee) - Бүгілу/Жазылу" : "Колено (Knee) - Сгибание/Разгибание",
-    aSagA: lang === "kz" ? "Тобық (Ankle) - Бүгілу" : "Голеностоп (Ankle) - Сгибание",
-  };
+  const jointTabs = [
+    { key: "aSagH" as const, label: lang === "kz" ? "Сан (Hip)" : "Бедро (Hip)" },
+    { key: "aSagP" as const, label: lang === "kz" ? "Жамбас (Pelvis)" : "Таз (Pelvis)" },
+    { key: "aSagK" as const, label: lang === "kz" ? "Тізе (Knee)" : "Колено (Knee)" },
+    { key: "aSagA" as const, label: lang === "kz" ? "Тобық (Ankle)" : "Голеностоп (Ankle)" },
+  ];
 
-  const width = 800;
-  const height = 340;
-  const padLeft = 50;
+  const width = 860;
+  const height = 320;
+  const padLeft = 45;
   const padRight = 20;
-  const padTop = 30;
-  const padBottom = 40;
+  const padTop = 26;
+  const padBottom = 34;
 
   // Determine min & max values for scale
   const allValues = [
@@ -65,99 +63,110 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
     " Z";
 
   return (
-    <div className="card" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+    <div className="card" style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "18px" }}>
       
-      {/* Joint Tabs */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ display: "flex", gap: "6px" }}>
-          {(["aSagH", "aSagP", "aSagK", "aSagA"] as const).map((key) => (
+      {/* Controls Bar: Joint Tabs on Left, Legend on Right */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+        
+        {/* Joint Selector Pills */}
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {jointTabs.map((tab) => (
             <button
-              key={key}
-              onClick={() => setActiveJoint(key)}
+              key={tab.key}
+              onClick={() => setActiveJoint(tab.key)}
               className="btn"
               style={{
                 fontSize: "12px",
-                padding: "6px 12px",
-                background: activeJoint === key ? "var(--ink)" : "var(--paper)",
-                color: activeJoint === key ? "var(--white)" : "var(--ink)",
-                borderColor: activeJoint === key ? "var(--ink)" : "var(--line)"
+                padding: "5px 12px",
+                background: activeJoint === tab.key ? "var(--ink)" : "var(--paper)",
+                color: activeJoint === tab.key ? "var(--white)" : "var(--ink)",
+                borderColor: activeJoint === tab.key ? "var(--ink)" : "var(--line)",
+                fontWeight: 650
               }}
             >
-              {jointNames[key]}
+              {tab.label}
             </button>
           ))}
         </div>
 
         {/* Legend */}
-        <div style={{ display: "flex", gap: "14px", fontSize: "12px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "var(--ink)", flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <span style={{ width: "12px", height: "12px", background: "var(--norm-corridor)", borderRadius: "2px", opacity: 0.6 }} />
-            <span>{t.norm_legend}</span>
+            <span style={{ width: "12px", height: "10px", background: "var(--norm-corridor)", borderRadius: "2px", opacity: 0.65 }} />
+            <span>{lang === "kz" ? "TD нормасы (±1 SD)" : "Норма TD (±1 SD)"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <span style={{ width: "14px", height: "3px", background: "#3b82f6" }} />
-            <span>{t.baseline_legend}</span>
+            <span style={{ width: "14px", height: "2.5px", background: "#3b82f6" }} />
+            <span>{lang === "kz" ? "Қалыпты қадам (Base)" : "Обычный шаг (Base)"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <span style={{ width: "14px", height: "3px", background: "var(--teal)" }} />
-            <span>{t.vr_legend}</span>
+            <span style={{ width: "14px", height: "2.5px", background: "var(--teal)" }} />
+            <span>{lang === "kz" ? "VR аватары" : "VR аватар"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <span style={{ width: "14px", height: "3px", background: "#f59e0b" }} />
-            <span>{t.verbal_legend}</span>
+            <span style={{ width: "14px", height: "2.5px", background: "#f59e0b" }} />
+            <span>{lang === "kz" ? "Дауыс (Verbal)" : "Голос (Verbal)"}</span>
           </div>
         </div>
+
       </div>
 
-      {/* Guide Banner */}
+      {/* Clean Clinical Guide Strip (Zero AI Emoji Slop) */}
       <div style={{
         background: "var(--paper)",
         border: "1px solid var(--line)",
-        padding: "8px 12px",
+        padding: "7px 12px",
         borderRadius: "6px",
-        fontSize: "12px",
+        fontSize: "11.5px",
         color: "var(--muted)",
         display: "flex",
         justifyContent: "space-between",
-        alignItems: "center"
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: "6px"
       }}>
         <span>
           {lang === "kz"
-            ? "💡 Нұсқаулық: Сұр дәліз — дені сау балалар нормасы. Сарғыш сызықтың (VR) сұр аймақтан асып кетуі — патологиялық компенсация."
-            : "💡 Подсказка: Серый коридор — доверительный интервал нормы здоровых детей (±1 SD). Выход оранжевой линии (VR) выше серого коридора означает патологическую перегрузку."}
+            ? "Сұр аймақ — сау балалар нормасы (TD ±1 SD). Сарғыш сызықтың (VR) нормадан жоғары шығуы — патологиялық компенсация."
+            : "Серый коридор — норма здоровых детей (TD ±1 SD). Отклонение линии VR выше серого диапазона указывает на компенсаторную нагрузку."}
         </span>
-        <span style={{ fontWeight: "600", color: "var(--ink)" }}>0% - 60% Опора | 60% - 100% Перенос</span>
+        <span style={{ fontWeight: 650, color: "var(--ink)" }}>{lang === "kz" ? "0%–60% Тіреу · 60%–100% Ауысу" : "0%–60% Опора · 60%–100% Перенос"}</span>
       </div>
 
       {/* SVG Canvas */}
-      <div style={{ width: "100%", overflowX: "auto" }}>
-        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", display: "block" }}>
+      <div className="table-responsive">
+        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", display: "block", minWidth: "600px" }}>
           
-          {/* Phase 60% Divider Background */}
+          {/* Phase 60% Background Tint for Swing */}
           <rect
             x={scaleX(60)}
             y={padTop}
             width={scaleX(100) - scaleX(60)}
             height={height - padTop - padBottom}
             fill="var(--linen)"
-            opacity="0.35"
+            opacity="0.3"
           />
-          <text x={scaleX(30)} y={padTop + 14} fontSize="10" fill="var(--muted)" textAnchor="middle" fontWeight="600">
-            {lang === "kz" ? "ТІРЕУ ФАЗАСЫ (STANCE 0-60%)" : "ФАЗА ОПОРЫ (STANCE 0-60%)"}
+
+          {/* Stance / Swing Labels */}
+          <text x={scaleX(30)} y={padTop - 8} fontSize="11" fill="var(--muted)" textAnchor="middle" fontWeight="600">
+            {lang === "kz" ? "ОПОРА (0%–60%)" : "ФАЗА ОПОРЫ (0%–60%)"}
           </text>
-          <text x={scaleX(80)} y={padTop + 14} fontSize="10" fill="var(--muted)" textAnchor="middle" fontWeight="600">
-            {lang === "kz" ? "АУЫСУ ФАЗАСЫ (SWING 60-100%)" : "ФАЗА ПЕРЕНОСА (SWING 60-100%)"}
+          <text x={scaleX(80)} y={padTop - 8} fontSize="11" fill="var(--muted)" textAnchor="middle" fontWeight="600">
+            {lang === "kz" ? "ПЕРЕНОС (60%–100%)" : "ФАЗА ПЕРЕНОСА (60%–100%)"}
           </text>
+
+          {/* Stance / Swing Boundary Line */}
           <line
             x1={scaleX(60)}
             y1={padTop}
             x2={scaleX(60)}
             y2={height - padBottom}
             stroke="var(--line)"
-            strokeDasharray="4 2"
+            strokeWidth="1.5"
+            strokeDasharray="4 3"
           />
-          
-          {/* Grid lines */}
+
+          {/* Grid Lines and X axis ticks */}
           {[0, 25, 50, 75, 100].map((pct) => (
             <g key={pct}>
               <line
@@ -166,7 +175,7 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
                 x2={scaleX(pct)}
                 y2={height - padBottom}
                 stroke="var(--line)"
-                strokeDasharray="3 3"
+                strokeDasharray="2 3"
               />
               <text x={scaleX(pct)} y={height - padBottom + 16} fontSize="11" fill="var(--muted)" textAnchor="middle">
                 {pct}%
@@ -174,24 +183,7 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
             </g>
           ))}
 
-          {/* Stance / Swing Phase Boundary at 60% GC */}
-          <line
-            x1={scaleX(60)}
-            y1={padTop}
-            x2={scaleX(60)}
-            y2={height - padBottom}
-            stroke="var(--muted)"
-            strokeWidth="1.5"
-            strokeDasharray="4 4"
-          />
-          <text x={scaleX(30)} y={padTop - 8} fontSize="11" fill="var(--muted)" textAnchor="middle" fontWeight="600">
-            Опора (Stance 0–60%)
-          </text>
-          <text x={scaleX(80)} y={padTop - 8} fontSize="11" fill="var(--muted)" textAnchor="middle" fontWeight="600">
-            Перенос (Swing 60–100%)
-          </text>
-
-          {/* Y Axis Ticks */}
+          {/* Y Axis Grid and Labels */}
           {[minY, Math.round((minY + maxY) / 2), maxY].map((val) => (
             <g key={val}>
               <line
@@ -200,9 +192,9 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
                 x2={width - padRight}
                 y2={scaleY(val)}
                 stroke="var(--line)"
-                strokeDasharray="2 2"
+                strokeDasharray="2 3"
               />
-              <text x={padLeft - 8} y={scaleY(val) + 4} fontSize="11" fill="var(--muted)" textAnchor="end">
+              <text x={padLeft - 8} y={scaleY(val) + 4} fontSize="11" fill="var(--muted)" textAnchor="end" style={{ fontVariantNumeric: "tabular-nums" }}>
                 {val}°
               </text>
             </g>
@@ -215,13 +207,13 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
           <path d={makePath(jointData.norm_td.mean)} fill="none" stroke="#64748b" strokeWidth="1.5" strokeDasharray="3 3" />
 
           {/* 3. Baseline Mean Line (Blue) */}
-          <path d={makePath(jointData.baseline.mean)} fill="none" stroke="#3b82f6" strokeWidth="2.5" />
+          <path d={makePath(jointData.baseline.mean)} fill="none" stroke="#3b82f6" strokeWidth="2.2" />
 
           {/* 4. Verbal Mean Line (Amber) */}
-          <path d={makePath(jointData.verbal.mean)} fill="none" stroke="#f59e0b" strokeWidth="2" strokeDasharray="5 3" />
+          <path d={makePath(jointData.verbal.mean)} fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeDasharray="4 2" />
 
           {/* 5. VR Mean Line (Teal) */}
-          <path d={makePath(jointData.vr.mean)} fill="none" stroke="var(--teal)" strokeWidth="3" />
+          <path d={makePath(jointData.vr.mean)} fill="none" stroke="var(--teal)" strokeWidth="2.6" />
 
         </svg>
       </div>

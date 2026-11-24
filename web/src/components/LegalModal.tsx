@@ -4,11 +4,19 @@ import React from "react";
 import { ShieldCheck, Scale, FileText, CheckCircle2, X } from "lucide-react";
 
 interface Props {
-  lang: "ru" | "kz";
+  lang: "ru" | "kz" | "en";
   onClose: () => void;
 }
 
 export function LegalModal({ lang, onClose }: Props) {
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div style={{
       position: "fixed",
@@ -23,7 +31,7 @@ export function LegalModal({ lang, onClose }: Props) {
       zIndex: 1000,
       padding: "20px"
     }}>
-      <div className="card" style={{
+      <div className="card" role="dialog" aria-modal="true" style={{
         maxWidth: "680px",
         width: "100%",
         maxHeight: "90vh",
@@ -41,7 +49,7 @@ export function LegalModal({ lang, onClose }: Props) {
               {lang === "kz" ? "Құқықтық негіз, этика және стандарттар" : "Правовая база, этика и стандарты соответствия"}
             </h2>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>
+          <button onClick={onClose} aria-label="Закрыть / Жабу" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>
             <X size={20} />
           </button>
         </div>
@@ -96,8 +104,8 @@ export function LegalModal({ lang, onClose }: Props) {
             </div>
             <p style={{ margin: 0, color: "var(--muted)" }}>
               {lang === "kz"
-                ? "GaitAI жүйесі дәрігерді алмастырмайды, тек шешім қабылдауды қолдау құралы (CDSS) ретінде қызмет етеді. Барлық тактикалық ұсыныстар емдеуші дәрігердің клиникалық тексеруіне жатады."
-                : "Платформа GaitAI не заменяет врача, а выполняет роль системы поддержки принятия врачебных решений (CDSS). Окончательное клиническое решение о назначении или отмене VR-терапии принимает врач-реабилитолог."}
+                ? "Libra жүйесі дәрігерді алмастырмайды, тек шешім қабылдауды қолдау құралы (CDSS) ретінде қызмет етеді. Барлық тактикалық ұсыныстар емдеуші дәрігердің клиникалық тексеруіне жатады."
+                : "Платформа Libra не заменяет врача, а выполняет роль системы поддержки принятия врачебных решений (CDSS). Окончательное клиническое решение о назначении или отмене VR-терапии принимает врач-реабилитолог."}
             </p>
           </div>
 

@@ -1,7 +1,7 @@
 [project]
-name = "gaitai"
+name = "libra"
 version = "1.0.0"
-description = "AI-powered Gait Biomechanics & Decision Support Platform for Cerebral Palsy Rehabilitation"
+description = "Libra: Clinical Biomechanics & Decision Support Platform for Cerebral Palsy Rehabilitation"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -34,3 +34,4 @@ build-backend = "setuptools.build_meta"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+pythonpath = ["."]

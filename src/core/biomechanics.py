@@ -1,6 +1,8 @@
 """Biomechanical calculation engine, compensation guard, and WHO ICF classification."""
 
-from typing import Dict, Any
+import math
+from typing import Dict, Any, Optional
+import numpy as np
 
 def compute_true_joint_extension(delta_hip: float, delta_pelvis: float, alpha: float = 1.0) -> float:
     """
@@ -37,9 +39,7 @@ def compute_pcr(
                      w_k * max(0.0, delta_gvs_knee) +
                      w_a * max(0.0, delta_gvs_ankle))
     
-    # If using signed raw deltas as in the clinical paper test:
-    raw_weighted = (w_p * delta_gvs_pelvis + w_k * delta_gvs_knee + w_a * delta_gvs_ankle)
-    return float(raw_weighted / abs_gain)
+    return float(weighted_comp / abs_gain)
 
 def classify_icf_b770(gps: float) -> str:
     """
@@ -94,7 +94,8 @@ def analyze_compensation_risk(
     Returns status ('green', 'yellow', 'red') and bilingual explanations.
     """
     pcr = compute_pcr(delta_gvs_p, delta_gvs_k, delta_gvs_a, delta_hip)
-    tje = compute_true_joint_extension(delta_hip, delta_pelvis_term or delta_gvs_p)
+    pelvis_comp = delta_pelvis_term if delta_pelvis_term is not None else delta_gvs_p
+    tje = compute_true_joint_extension(delta_hip, pelvis_comp)
 
     # Hip extension improved when delta_hip is negative
     improved = delta_hip <= -1.0
@@ -139,35 +140,50 @@ def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
     Compares Baseline vs Verbal vs VR modalities to determine the clinically optimal method.
     Answers: 'Which method is better: Verbal or VR?'
     """
-    delta_hip_vr = summary.get("vr_amin_sagh", 0.0) - summary.get("baseline_amin_sagh", 0.0)
-    delta_pelvis_vr = summary.get("vr_gvs_pelvis", 0.0) - summary.get("baseline_gvs_pelvis", 0.0)
-    delta_knee_vr = summary.get("vr_gvs_knee", 0.0) - summary.get("baseline_gvs_knee", 0.0)
-    delta_ankle_vr = summary.get("vr_gvs_ankle", 0.0) - summary.get("baseline_gvs_ankle", 0.0)
+    base_hip = summary.get("baseline_amin_sagh", 0.0)
+    base_pelvis = summary.get("baseline_gvs_pelvis", 0.0)
+    base_knee = summary.get("baseline_gvs_knee", 0.0)
+    base_ankle = summary.get("baseline_gvs_ankle", 0.0)
 
-    delta_hip_vb = summary.get("verbal_amin_sagh", 0.0) - summary.get("baseline_amin_sagh", 0.0)
-    delta_pelvis_vb = summary.get("verbal_gvs_pelvis", 0.0) - summary.get("baseline_gvs_pelvis", 0.0)
-    delta_knee_vb = summary.get("verbal_gvs_knee", 0.0) - summary.get("baseline_gvs_knee", 0.0)
-    delta_ankle_vb = summary.get("verbal_gvs_ankle", 0.0) - summary.get("baseline_gvs_ankle", 0.0)
+    has_vr = "vr_amin_sagh" in summary and summary["vr_amin_sagh"] is not None
+    has_vb = "verbal_amin_sagh" in summary and summary["verbal_amin_sagh"] is not None
 
-    pcr_vr = compute_pcr(delta_pelvis_vr, delta_knee_vr, delta_ankle_vr, delta_hip_vr)
-    tje_vr = compute_true_joint_extension(delta_hip_vr, delta_pelvis_vr)
+    delta_hip_vr = (summary.get("vr_amin_sagh", 0.0) - base_hip) if has_vr else 0.0
+    delta_pelvis_vr = (summary.get("vr_gvs_pelvis", 0.0) - base_pelvis) if has_vr else 0.0
+    delta_knee_vr = (summary.get("vr_gvs_knee", 0.0) - base_knee) if has_vr else 0.0
+    delta_ankle_vr = (summary.get("vr_gvs_ankle", 0.0) - base_ankle) if has_vr else 0.0
 
-    pcr_vb = compute_pcr(delta_pelvis_vb, delta_knee_vb, delta_ankle_vb, delta_hip_vb)
-    tje_vb = compute_true_joint_extension(delta_hip_vb, delta_pelvis_vb)
+    delta_hip_vb = (summary.get("verbal_amin_sagh", 0.0) - base_hip) if has_vb else 0.0
+    delta_pelvis_vb = (summary.get("verbal_gvs_pelvis", 0.0) - base_pelvis) if has_vb else 0.0
+    delta_knee_vb = (summary.get("verbal_gvs_knee", 0.0) - base_knee) if has_vb else 0.0
+    delta_ankle_vb = (summary.get("verbal_gvs_ankle", 0.0) - base_ankle) if has_vb else 0.0
 
-    if tje_vr < tje_vb and pcr_vr <= 0.8:
+    pcr_vr = compute_pcr(delta_pelvis_vr, delta_knee_vr, delta_ankle_vr, delta_hip_vr) if has_vr else 0.0
+    tje_vr = compute_true_joint_extension(delta_hip_vr, delta_pelvis_vr) if has_vr else 0.0
+
+    pcr_vb = compute_pcr(delta_pelvis_vb, delta_knee_vb, delta_ankle_vb, delta_hip_vb) if has_vb else 0.0
+    tje_vb = compute_true_joint_extension(delta_hip_vb, delta_pelvis_vb) if has_vb else 0.0
+
+    vr_improved = has_vr and (delta_hip_vr <= -1.0)
+    vb_improved = has_vb and (delta_hip_vb <= -1.0)
+
+    if vr_improved and pcr_vr <= 0.8 and (not vb_improved or tje_vr <= tje_vb):
         best_method = "VR"
-        diff = abs(tje_vb - tje_vr)
+        diff = abs(tje_vb - tje_vr) if vb_improved else abs(tje_vr)
         verdict_ru = f"VR-терапия эффективнее словесных инструкций на {diff:.1f}°. Достигнуто стабильное суставное разгибание при контролируемом тазе."
         verdict_kz = f"VR-терапиясы вербалды нұсқаулардан {diff:.1f}°-қа тиімдірек. Жамбас бақылауымен тұрақты буын жазылуы қамтамасыз етілді."
-    elif tje_vb < tje_vr or pcr_vr > 0.8:
+    elif vb_improved and (not vr_improved or tje_vb < tje_vr or pcr_vr > 0.8):
         best_method = "Verbal"
-        verdict_ru = f"Вербальные команды врача безопаснее и физиологичнее. В VR ребенок компенсирует шаг завалом таза (PCR = {pcr_vr:.2f}), тогда как словесный контроль предотвращает гиперлордоз."
-        verdict_kz = f"Дәрігердің вербалды нұсқаулары қауіпсіз және физиологиялық тұрғыдан дұрыс. VR кезінде бала жамбасын шамадан тыс еңкейтеді (PCR = {pcr_vr:.2f}), ал вербалды бақылау гиперлордоздың алдын алады."
+        if pcr_vr > 0.8:
+            verdict_ru = f"Вербальные команды врача безопаснее и физиологичнее. В VR ребенок компенсирует шаг завалом таза (PCR = {pcr_vr:.2f} > 0.8), тогда как словесный контроль предотвращает гиперлордоз."
+            verdict_kz = f"Дәрігердің вербалды нұсқаулары қауіпсіз және физиологиялық тұрғыдан дұрыс. VR кезінде бала жамбасын шамадан тыс еңкейтеді (PCR = {pcr_vr:.2f} > 0.8), ал вербалды бақылау гиперлордоздың алдын алады."
+        else:
+            verdict_ru = "Вербальные команды врача эффективнее и физиологичнее. Словесный контроль инструктора обеспечивает лучшее разгибание сустава."
+            verdict_kz = "Дәрігердің вербалды нұсқаулары тиімдірек және физиологиялық тұрғыдан дұрыс. Нұсқаушының сөздік бақылауы буынның жақсы жазылуын қамтамасыз етеді."
     else:
         best_method = "Baseline"
-        verdict_ru = "Оба режима биообратной связи вызывают моторную утомляемость. Рекомендован возврат к базовым упражнениям."
-        verdict_kz = "Кері байланыстың екі режимі де моторлық шаршау туғызады. Базалық жаттығуларға қайта оралу ұсынылады."
+        verdict_ru = "Оба режима биообратной связи не привели к улучшению разгибания сустава или вызывают моторную утомляемость. Рекомендован возврат к базовым упражнениям."
+        verdict_kz = "Кері байланыстың екі режимі де буын жазылуын жақсартпады немесе моторлық шаршау туғызады. Базалық жаттығуларға қайта оралу ұсынылады."
 
     return {
         "best_method": best_method,
@@ -181,5 +197,98 @@ def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
         "delta_pelvis_verbal": float(delta_pelvis_vb),
         "verdict_ru": verdict_ru,
         "verdict_kz": verdict_kz
+    }
+
+def compute_sagittal_gdi(gps: float) -> float:
+    """
+    Computes Sagittal Gait Deviation Index (GDI, Schwartz & Rozumalski 2008 adapted to Sagittal GPS).
+    GDI scale:
+      >= 100: Normal TD gait (equal or superior to mean healthy control)
+      90-99: 1 standard deviation below TD mean (mild deviation)
+      80-89: 2 standard deviations below TD mean (moderate deviation)
+      70-79: 3 standard deviations below TD mean (severe deviation)
+      < 70: Profound deviation
+    Formula:
+      z_score = (gps - 5.2) / 1.2
+      GDI = 100.0 - 10.0 * z_score
+    Clamped to range [0.0, 100.0].
+    """
+    if gps is None:
+        return float("nan")
+    try:
+        f_gps = float(gps)
+    except (ValueError, TypeError):
+        return float("nan")
+    if np.isnan(f_gps) or math.isnan(f_gps):
+        return float("nan")
+    if f_gps <= 5.2:
+        return 100.0
+    z_score = (f_gps - 5.2) / 1.2
+    gdi = 100.0 - 10.0 * z_score
+    return float(max(0.0, min(100.0, round(gdi, 1))))
+
+def compute_session_diff(session_a: Dict[str, Any], session_b: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Computes a Biomechanical Git Diff between two gait sessions (e.g. Session 1 Baseline vs Session 2 After 1 Month).
+    Tracks delta TJE, delta PCR, delta GPS, Sagittal GDI, and WHO ICF code shift (b770/d450).
+    """
+    gps_a = float(session_a.get("gps", 10.0))
+    gps_b = float(session_b.get("gps", 10.0))
+    tje_a = float(session_a.get("tje", 0.0))
+    tje_b = float(session_b.get("tje", 0.0))
+    pcr_a = float(session_a.get("pcr", 0.0))
+    pcr_b = float(session_b.get("pcr", 0.0))
+
+    gdi_a = compute_sagittal_gdi(gps_a)
+    gdi_b = compute_sagittal_gdi(gps_b)
+
+    icf_a = classify_icf_b770(gps_a)
+    icf_b = classify_icf_b770(gps_b)
+
+    delta_gps = round(gps_b - gps_a, 2)
+    delta_tje = round(tje_b - tje_a, 2)
+    delta_pcr = round(pcr_b - pcr_a, 2)
+    delta_gdi = round(gdi_b - gdi_a, 1)
+
+    rank_a = int(icf_a.split(".")[1])
+    rank_b = int(icf_b.split(".")[1])
+    icf_improved = rank_b < rank_a
+    icf_regressed = rank_b > rank_a
+
+    if (delta_gps < -0.3 or delta_gdi > 3.0 or icf_improved) and delta_pcr <= 0.15:
+        status = "improved"
+        verdict_ru = f"Положительная динамика курса (+{delta_gdi} к индексу GDI). Снижение девиации походки на {abs(delta_gps):.1f}° без усиления компенсации таза."
+        verdict_kz = f"Оң клиникалық динамика (GDI индексі +{delta_gdi}). Жамбас компенсациясынсыз жүріс ауытқуы {abs(delta_gps):.1f}°-қа азайды."
+    elif delta_pcr > 0.3 or delta_gps > 0.8 or icf_regressed:
+        status = "regressed"
+        verdict_ru = f"Отрицательная динамика: зафиксирован рост патологической компенсации (дельта PCR {delta_pcr:+.2f}). Риск перегрузки поясничного отдела."
+        verdict_kz = f"Теріс динамика: патологиялық компенсация өсті (дельта PCR {delta_pcr:+.2f}). Бел омыртқасына шамадан тыс жүктеме түсу қаупі бар."
+    else:
+        status = "stable"
+        verdict_ru = f"Стабильный двигательный статус (GDI {gdi_b}). Существенных изменений стереотипа походки не выявлено."
+        verdict_kz = f"Тұрақты қимыл-қозғалыс статусы (GDI {gdi_b}). Жүріс стереотипінде елеулі өзгерістер тіркелмеді."
+
+    return {
+        "status": status,
+        "session_a_label": session_a.get("label", "Сессия 1 (Базовая)"),
+        "session_b_label": session_b.get("label", "Сессия 2 (Текущая)"),
+        "gps_a": gps_a,
+        "gps_b": gps_b,
+        "delta_gps": delta_gps,
+        "gdi_a": gdi_a,
+        "gdi_b": gdi_b,
+        "delta_gdi": delta_gdi,
+        "tje_a": tje_a,
+        "tje_b": tje_b,
+        "delta_tje": delta_tje,
+        "pcr_a": pcr_a,
+        "pcr_b": pcr_b,
+        "delta_pcr": delta_pcr,
+        "icf_a": icf_a,
+        "icf_b": icf_b,
+        "icf_transition": f"{icf_a} -> {icf_b}",
+        "icf_improved": icf_improved,
+        "verdict_ru": verdict_ru,
+        "verdict_kz": verdict_kz,
     }
 

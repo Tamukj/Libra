@@ -1,4 +1,4 @@
-name: gaitai
+name: libra
 
 x-logging: &logging
   driver: json-file
@@ -38,7 +38,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql://gaitai:${DB_PASSWORD:-gaitai_secret_pass}@db:5432/gaitai
+      DATABASE_URL: postgresql://libra:${DB_PASSWORD:-libra_secret_pass}@db:5432/libra
       PYTHONUNBUFFERED: "1"
     volumes:
       - api-data:/app/data
@@ -72,15 +72,15 @@ services:
     <<: *hardening
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: gaitai
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-gaitai_secret_pass}
-      POSTGRES_DB: gaitai
+      POSTGRES_USER: libra
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-libra_secret_pass}
+      POSTGRES_DB: libra
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gaitai -d gaitai"]
+      test: ["CMD-SHELL", "pg_isready -U libra -d libra"]
       interval: 5s
       timeout: 3s
       retries: 5

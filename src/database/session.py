@@ -2,17 +2,28 @@
 
 import os
 from pathlib import Path
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
 from src.database.models import Base, Clinic, Patient, GaitSession
 from src.core.data_loader import load_discrete_dataset, DATA_DIR
 
-DB_URL = os.getenv("DATABASE_URL", "sqlite:///./gaitai.db")
+DB_URL = os.getenv("DATABASE_URL", "sqlite:///./libra.db")
 
 # SQLite requires check_same_thread=False
 connect_args = {"check_same_thread": False} if DB_URL.startswith("sqlite") else {}
 
 engine = create_engine(DB_URL, connect_args=connect_args, echo=False)
+
+@event.listens_for(engine, "connect")
+def configure_sqlite(dbapi_connection, connection_record):
+    """Enforces SQLite relational invariants and WAL high-performance concurrency."""
+    if DB_URL.startswith("sqlite"):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON;")
+        cursor.execute("PRAGMA journal_mode = WAL;")
+        cursor.execute("PRAGMA synchronous = NORMAL;")
+        cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
@@ -24,22 +35,23 @@ def get_db():
         db.close()
 
 def init_db(seed_cohort: bool = True):
-    """Initializes tables and seeds initial clinic and patients if empty."""
+    """Initializes tables and seeds initial clinic and patients atomically if empty."""
     Base.metadata.create_all(bind=engine)
 
     if not seed_cohort:
         return
 
     with SessionLocal() as db:
-        if db.query(Clinic).count() == 0:
-            clinic = Clinic(
-                name="Облыстық балаларды оңалту орталығы / Центр реабилитации детей области Абай",
-                city="Семей",
-                region="Абай облысы"
-            )
-            db.add(clinic)
-            db.commit()
-            db.refresh(clinic)
+        if db.query(Patient).count() == 0:
+            clinic = db.query(Clinic).first()
+            if not clinic:
+                clinic = Clinic(
+                    name="Облыстық балаларды оңалту орталығы / Центр реабилитации детей области Абай",
+                    city="Семей",
+                    region="Абай облысы"
+                )
+                db.add(clinic)
+                db.flush()
 
             # Load discrete baseline to seed the 29 subjects
             baseline_file = DATA_DIR / "Discrete_Parameters_Baseline.csv"
@@ -63,8 +75,7 @@ def init_db(seed_cohort: bool = True):
                         clinic_id=clinic.id
                     )
                     db.add(p)
-                    db.commit()
-                    db.refresh(p)
+                    db.flush()
 
                     # Add baseline session
                     db.add(GaitSession(

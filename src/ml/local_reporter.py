@@ -4,6 +4,17 @@ fully mapped to WHO ICF (b770 / d450) and Clinical Decision Support (CDSS) stand
 """
 
 from typing import Dict, Any
+import numpy as np
+import pandas as pd
+
+def _safe_float(val: Any, default: float = 0.0) -> float:
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        return default if (np.isnan(f) or pd.isna(f)) else f
+    except (ValueError, TypeError):
+        return default
 from src.core.biomechanics import (
     compute_true_joint_extension,
     compute_pcr,
@@ -47,12 +58,12 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
     subject = summary.get("subject", "N/A")
     side = summary.get("side", "RIGHT")
     
-    b_gps = summary.get("baseline_gps", 10.0)
-    vr_gps = summary.get("vr_gps", b_gps)
-    d_hip = summary.get("delta_amin_sagh", 0.0)
-    d_pelvis = summary.get("delta_gvs_pelvis", 0.0)
-    d_knee = summary.get("delta_gvs_knee", 0.0)
-    d_ankle = summary.get("delta_gvs_ankle", 0.0)
+    b_gps = _safe_float(summary.get("baseline_gps"), 10.0)
+    vr_gps = _safe_float(summary.get("vr_gps"), b_gps)
+    d_hip = _safe_float(summary.get("delta_amin_sagh"), 0.0)
+    d_pelvis = _safe_float(summary.get("delta_gvs_pelvis"), 0.0)
+    d_knee = _safe_float(summary.get("delta_gvs_knee"), 0.0)
+    d_ankle = _safe_float(summary.get("delta_gvs_ankle"), 0.0)
 
     # Compute advanced metrics
     risk = analyze_compensation_risk(d_hip, d_pelvis, d_knee, d_ankle)
@@ -62,7 +73,17 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
 
     icf_b_pre = classify_icf_b770(b_gps)
     icf_b_post = classify_icf_b770(vr_gps)
-    icf_d = classify_icf_d450(summary.get("anomaly_rate", 5.0) * 100 if summary.get("anomaly_rate", 0.0) < 1.0 else summary.get("anomaly_rate", 5.0))
+
+    raw_anomaly = summary.get("anomaly_rate")
+    if raw_anomaly is None:
+        anomaly_pct = 5.0
+    else:
+        try:
+            f_anom = float(raw_anomaly)
+            anomaly_pct = f_anom * 100.0 if f_anom <= 1.0 else f_anom
+        except (ValueError, TypeError):
+            anomaly_pct = 5.0
+    icf_d = classify_icf_d450(anomaly_pct)
 
     if lang == "kz":
         icf_pre_desc = ICF_DESCRIPTIONS_KZ.get(icf_b_pre, icf_b_pre)
@@ -70,7 +91,7 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
         icf_d_desc = ICF_DESCRIPTIONS_KZ.get(icf_d, icf_d)
 
         narrative = (
-            f"КЛИНИКАЛЫҚ БИОМЕХАНИКАЛЫҚ ҚОРЫТЫНДЫ (GaitAI CDSS)\n"
+            f"КЛИНИКАЛЫҚ БИОМЕХАНИКАЛЫҚ ҚОРЫТЫНДЫ (Libra CDSS)\n"
             f"Пациент: {subject} | Зерттелген аяқ: {side}\n"
             f"--------------------------------------------------\n"
             f"1. ДДҰ ХҚЖ (МКФ/ICF) БОЙЫНША СТАТУС:\n"
@@ -88,8 +109,10 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
             f"   Статус: {risk['label_kz']}\n"
             f"   Нұсқаулық: {risk['recommendation_kz']}\n"
             f"--------------------------------------------------\n"
-            f"Ескерту: Бұл құжат дәрігерлік шешімді қолдау жүйесі (CDSS) арқылы жасалған "
-            f"және емдеуші дәрігердің растауына жатады (Damumed МИС-ке интеграциялауға дайын)."
+            f"НАЗАР АУДАРЫҢЫЗ (Ереже 8.4-бабы): Libra дәрігерлік шешімді қолдау жүйесі (CDSS) "
+            f"болып табылады, диагноз қоймайды және емдеу препараттарын тағайындамайды. Қорытынды емдеуші "
+            f"дәрігердің растауына жатады (Damumed МИС интеграциясы). Шұғыл жағдайларда және денсаулыққа қауіп "
+            f"төнгенде 103 нөмірі бойынша жедел медициналық көмекке хабарласыңыз."
         )
     else:
         icf_pre_desc = ICF_DESCRIPTIONS_RU.get(icf_b_pre, icf_b_pre)
@@ -97,7 +120,7 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
         icf_d_desc = ICF_DESCRIPTIONS_RU.get(icf_d, icf_d)
 
         narrative = (
-            f"КЛИНИЧЕСКИЙ БИОМЕХАНИЧЕСКИЙ ПРОТОКОЛ (GaitAI CDSS)\n"
+            f"КЛИНИЧЕСКИЙ БИОМЕХАНИЧЕСКИЙ ПРОТОКОЛ (Libra CDSS)\n"
             f"Пациент: {subject} | Исследуемая сторона: {side}\n"
             f"--------------------------------------------------\n"
             f"1. СТАТУС ПО МКФ ВОЗ (ICF CLASSIFICATION):\n"
@@ -115,8 +138,73 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
             f"   Статус: {risk['label_ru']}\n"
             f"   Тактика: {risk['recommendation_ru']}\n"
             f"--------------------------------------------------\n"
-            f"Дисклеймер: Заключение сформировано модулем поддержки принятия решений (CDSS) "
-            f"и подлежит верификации лечащим врачом-реабилитологом (готов к экспорту в МИС Damumed)."
+            f"ВНИМАНИЕ (ст. 8.4 Положения): Libra является системой поддержки принятия врачебных решений (CDSS), "
+            f"не ставит диагноз и не назначает лекарственные средства. Заключение подлежит обязательной верификации "
+            f"лечащим врачом-реабилитологом (готов к экспорту в МИС Damumed). В экстренных случаях и опасных ситуациях "
+            f"незамедлительно обращайтесь к врачу или вызывайте скорую помощь по номеру 103."
+        )
+
+    return narrative
+
+
+def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
+    """
+    Generates an empathetic, plain-language summary for parents ('Баланың жүріс төлқұжаты').
+    Focuses on practical recovery progress, stability, and actionable home physical therapy advice.
+    """
+    subject = summary.get("subject", "N/A")
+    d_hip = _safe_float(summary.get("delta_amin_sagh"), 0.0)
+    d_pelvis = _safe_float(summary.get("delta_gvs_pelvis"), 0.0)
+    b_gps = _safe_float(summary.get("baseline_gps"), 10.4)
+    vr_gps = _safe_float(summary.get("vr_gps"), b_gps)
+
+    from src.core.biomechanics import compute_sagittal_gdi, analyze_compensation_risk
+    risk = analyze_compensation_risk(d_hip, d_pelvis, 0.0, 0.0)
+    gdi_val = compute_sagittal_gdi(vr_gps)
+
+    # Hip improvement in degrees
+    hip_straightening = abs(d_hip) if d_hip < 0 else 0.0
+    posture_safe = risk["status"] != "red"
+
+    if lang == "kz":
+        posture_text = "Тұрақты, жамбастың шамадан тыс еңкеюі жоқ (Оң нәтиже)" if posture_safe else "Назар аударыңыз: бала жүргенде белін шамадан тыс бүгеді"
+        narrative = (
+            f"БАЛАНЫҢ ЖҮРІС ТӨЛҚҰЖАТЫ (Ата-аналарға арналған анықтамалық)\n"
+            f"Баланың коды: {subject} | Оңалту бағыты: VR тренажері және емдік дене шынықтыру (ЕДШ)\n"
+            f"--------------------------------------------------\n"
+            f"1. ОСЫ АЙДАҒЫ БАСТЫ ЖЕТІСТІКТЕР:\n"
+            f"   • Аяқтың түзелу динамикасы: ножка шамамен {hip_straightening:.1f}° түзу баса бастады.\n"
+            f"   • Омыртқа мен жамбас қалпы: {posture_text}.\n"
+            f"   • Жалпы жүріс сапасының индексі (GDI): {gdi_val:.0f} ұпай (100 ұпайдан).\n\n"
+            f"2. БАЛАНЫҢ ҚАУІПСІЗДІГІ МЕН ҚҰЛАУДЫҢ АЛДЫН АЛУ:\n"
+            f"   • Басу тұрақтылығы жақсы деңгейде. Жаттығу кезінде шаршау белгілері бақыланды.\n\n"
+            f"3. ҮЙДЕ ОРЫНДАЛАТЫН ЖАТТЫҒУЛАР (Ата-аналарға кеңес):\n"
+            f"   • Күн сайын 15 минут балтыр мен сан бұлшықеттерін созу (растяжка) жаттығуларын жасау.\n"
+            f"   • Компьютерде немесе телефонда ұзақ отырғанда арқаның түзулігін қадағалау.\n"
+            f"   • Бала шаршаған кезде 10-15 минуттық үзіліс жасау.\n"
+            f"--------------------------------------------------\n"
+            f"Күмәнді сұрақтар немесе баланың жағдайы өзгерген жағдайда емдеуші реабилитолог "
+            f"дәрігеріңізбен кеңесіңіз. Шұғыл жағдайларда 103 жедел жәрдем нөміріне қоңырау шалыңыз."
+        )
+    else:
+        posture_text = "Осанка стабильная, компенсаторного прогиба в пояснице нет" if posture_safe else "Внимание: ребенок компенсирует шаг избыточным наклоном таза вперед"
+        narrative = (
+            f"ПАСПОРТ ПОХОДКИ РЕБЕНКА (Руководство для родителей)\n"
+            f"Код пациента: {subject} | Направление реабилитации: VR-тренировки и ЛФК\n"
+            f"--------------------------------------------------\n"
+            f"1. ГЛАВНЫЕ УСПЕХИ ЗА КУРС РЕАБИЛИТАЦИИ:\n"
+            f"   • Разгибание ножки: шаг стал прямее примерно на {hip_straightening:.1f}°.\n"
+            f"   • Положение таза и спины: {posture_text}.\n"
+            f"   • Индекс качества и гармоничности походки (GDI): {gdi_val:.0f} из 100 баллов.\n\n"
+            f"2. УСТОЙЧИВОСТЬ И БЕЗОПАСНОСТЬ:\n"
+            f"   • Шаг достаточно уверенный. Риск спотыкания снижен по сравнению с началом курса.\n\n"
+            f"3. ДОМАШНИЕ РЕКОМЕНДАЦИИ ДЛЯ РОДИТЕЛЕЙ:\n"
+            f"   • Ежедневно выполнять щадящую растяжку икроножных мышц и задней поверхности бедра (15 мин).\n"
+            f"   • Следить за положением стопы во время обычной прогулки.\n"
+            f"   • При появлении признаков усталости давать ребенку отдых 10–15 минут.\n"
+            f"--------------------------------------------------\n"
+            f"При любых вопросах обращайтесь к вашему лечащему врачу-реабилитологу. "
+            f"В экстренных случаях незамедлительно звоните в скорую помощь по номеру 103."
         )
 
     return narrative

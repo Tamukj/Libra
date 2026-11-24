@@ -1,4 +1,4 @@
-"""FastAPI Main Application Entrypoint for GaitAI Platform."""
+"""FastAPI Main Application Entrypoint for Libra Platform."""
 
 import os
 from contextlib import asynccontextmanager
@@ -18,16 +18,23 @@ async def lifespan(app: FastAPI):
     engine.dispose()
 
 app = FastAPI(
-    title="GaitAI: Clinical Biomechanics & AI Decision Support API",
-    description="Backend service for pediatric cerebral palsy gait analysis, compensation risk detection, and WHO ICF reporting.",
+    title="Libra: Clinical Biomechanics & AI Decision Support API",
+    description="Backend service for pediatric cerebral palsy CSV gait analysis, compensation risk detection, and WHO ICF reporting.",
     version="1.0.0",
     lifespan=lifespan
 )
 
 # CORS configuration for Next.js web client
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,7 +54,7 @@ def healthcheck():
 
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
-        "service": "GaitAI Clinical Engine",
+        "service": "Libra Clinical Engine",
         "version": "1.0.0",
         "database": db_status
     }

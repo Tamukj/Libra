@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 from src.core.data_loader import load_discrete_dataset, load_kinematics_dataset, DATA_DIR
-from src.ml.vr_predictor import GaitConditionClassifier
+from src.ml.vr_predictor import GaitConditionClassifier, VRResponderPredictor
 from src.ml.anomaly_detector import KinematicPCAAnomalyDetector
 from src.ml.local_reporter import generate_clinical_narrative
 
@@ -90,3 +90,25 @@ def test_local_clinical_reporter():
     
     assert "БЦП" in narrative_kz or "ДЦП" in narrative_kz or "МКФ" in narrative_kz or "b770" in narrative_kz
     assert "жамбас" in narrative_kz.lower()
+
+
+def test_vr_responder_predictor(discrete_data):
+    df_base, df_vr = discrete_data
+    predictor = VRResponderPredictor()
+    metrics = predictor.fit_evaluate_subjects(df_base, df_vr)
+
+    assert "balanced_accuracy" in metrics
+    assert "roc_auc" in metrics
+    assert metrics["n_subjects"] == 29
+
+    # Test single patient response prediction
+    sample_sub = df_base[df_base["subject"] == "s61520_1"]
+    res = predictor.predict_subject_response(sample_sub)
+
+    assert "responder_probability" in res
+    assert 0.0 <= res["responder_probability"] <= 1.0
+    assert "is_predicted_responder" in res
+    assert "clinical_status_ru" in res
+    assert "clinical_status_kz" in res
+    assert "recommendation_ru" in res
+    assert "recommendation_kz" in res

@@ -1,4 +1,4 @@
-# Multi-stage hardened Dockerfile for GaitAI Python Backend
+# Multi-stage hardened Dockerfile for Libra Python Backend
 FROM python:3.12-slim AS builder
 
 WORKDIR /build
@@ -17,7 +17,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Non-root user for security
-RUN groupadd -r gaitai && useradd -r -g gaitai gaitai
+RUN groupadd -r libra && useradd -r -g libra libra
 
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
@@ -27,12 +27,12 @@ COPY gait-cp-dataset /app/gait-cp-dataset
 COPY locales /app/locales
 
 # Create writable tmpfs and db directory
-RUN mkdir -p /app/data && chown -R gaitai:gaitai /app
+RUN mkdir -p /app/data && chown -R libra:libra /app
 
-USER gaitai
+USER libra
 
 ENV PYTHONUNBUFFERED=1 \
-    DATABASE_URL="sqlite:////app/data/gaitai.db"
+    DATABASE_URL="sqlite:////app/data/libra.db"
 
 EXPOSE 8000
 

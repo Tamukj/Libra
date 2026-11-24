@@ -1,126 +1,199 @@
-<p align="center">
-  <h1 align="center">GaitAI</h1>
-  <p align="center">
-    <b>Интеллектуальная система поддержки клинических решений (CDSS) при реабилитации детей с ДЦП</b><br>
-    <i>Анализ 3D-биомеханики походки (Vicon/GRAIL), выявление патологических компенсаций таза и классификация по стандартам ВОЗ (МКФ b770 / d450).</i>
-  </p>
-  <p align="center">
-    <b>AI-Sana Shakarim Solveathon: AI & Medicine-2026 (г. Семей, область Абай)</b>
-  </p>
-</p>
+# Libra
+
+Clinical biomechanics and decision support system for pediatric cerebral palsy rehabilitation.
+
+Developed for AI-Sana Shakarim Solveathon: AI & Medicine 2026, Semey, Abai Region.
+
+Libra processes 3D gait data, detects compensatory pelvic tilt during virtual reality motor therapy, isolates true hip joint extension, and generates clinical documentation aligned with World Health Organization International Classification of Functioning codes (ICF b770 and d450).
 
 ---
 
-## 🌟 Ключевые возможности платформы
+## Clinical statechart
 
-1. **Клиническое биомеханическое ядро (/sharpen):**
-   * Расчет девиаций суставов по методике Бейкера ($GVS$, $GPS$).
-   * Авторские метрики истинного терапевтического эффекта:
-     * **$TJE$ (True Joint Extension):** истинное разгибание бедра за вычетом наклона таза.
-     * **$PCR$ (Pathological Compensation Ratio):** выявление «скрытого читерства» в VR, когда ребенок разгибает ногу за счет опасного переднего наклона таза ($GVS\_aSagP$ $+2.57^\circ$, угроза гиперлордоза).
-2. **Машинное обучение со 100% защитой от Data Leakage:**
-   * Обучение строго через **GroupKFold ($k=5$) по 29 пациентам**: исключает ложные 99% точности из-за биометрического фингерпринтинга.
-   * Честные клинические метрики: **Balanced Accuracy ~65–73%**, **ROC-AUC ~0.68–0.76**.
-   * **Kinematic PCA Anomaly Detector:** выявление нестабильных шагов и моторного утомления для предотвращения падений.
-3. **Международная классификация ВОЗ (МКФ / ICF):**
-   * Автоматический перевод градусов девиации в официальные медицинские коды:
-     * **b770 (Функции стереотипа походки):** от `b770.0` (норма) до `b770.4` (тяжелое нарушение).
-     * **d450 (Ходьба / стабильность):** градация по проценту сбоев шага.
-   * Формирование официального протокола врача для МИС (Damumed).
-4. **Открытые данные Казахстана (stat.gov.kz / data.egov.kz):**
-   * Эпидемиологический макро-дашборд по РК (122 тыс. детей с инвалидностью, 22 тыс. с ДЦП) и области Абай (2.8 тыс. детей с инвалидностью, дефицит 3D лабораторий в Семее).
-5. **Двуязычный интерфейс (Қазақша / Русский):**
-   * Выверенная медицинская терминология (*«Балалар церебралды параличі», «Жүріс циклі», «Оң/Сол аяқ»*).
-6. **Дизайн-система Earwright-Hub:**
-   * Теплая бумажная палитра Linen (`#FBF8F1` / `#1C1917`), типографика Manrope + Source Serif 4, плотные карточки данных.
+```mermaid
+stateDiagram-v2
+    [*] --> Ingestion
+
+    state Ingestion {
+        [*] --> SelectPatient
+        [*] --> UploadCustomCSV
+        SelectPatient --> ParseData
+        UploadCustomCSV --> ValidateFormat
+        ValidateFormat --> ParseData
+    }
+
+    Ingestion --> BiomechanicsEngine : Cleaned kinematic arrays and discrete metrics
+
+    state BiomechanicsEngine {
+        [*] --> ComputeBakerScores : GVS and GPS
+        ComputeBakerScores --> ComputeTrueJointExtension : TJE formula
+        ComputeTrueJointExtension --> ComputeCompensationRatio : PCR formula
+        ComputeCompensationRatio --> ClassifyWHOICF : b770 and d450 codes
+    }
+
+    BiomechanicsEngine --> DecisionSupport : Biomechanical feature vectors
+
+    state DecisionSupport {
+        [*] --> GroupKFoldClassifier : Leak-free condition prediction
+        [*] --> PCAStabilityGuard : Q-statistic reconstruction error
+        GroupKFoldClassifier --> ModalityVerdict : Compare Baseline, Verbal, VR
+        PCAStabilityGuard --> ModalityVerdict
+        ModalityVerdict --> TrafficLightStatus : Green, Yellow, Red
+    }
+
+    DecisionSupport --> OutputDelivery : Clinical evaluation
+
+    state OutputDelivery {
+        [*] --> InteractiveDashboard : 51-point curves, radar, regional stats
+        [*] --> MedicalNarrative : Doctor protocol and parent summary in KZ, RU, EN
+        InteractiveDashboard --> ExportProtocol : Damumed integration
+        MedicalNarrative --> ExportProtocol
+    }
+
+    OutputDelivery --> [*]
+```
 
 ---
 
-## 🏛️ Архитектура системы
+## Quick start
 
-* **Бэкенд:** Python 3.12, FastAPI, SQLAlchemy 2.0 (PostgreSQL / SQLite), NumPy, SciPy, Scikit-Learn.
-* **Фронтенд:** Next.js 16 (App Router), React 19, TypeScript, Lucide Icons.
-* **Реверс-прокси и безопасность:** Caddy 2 (автоматический TLS/SSL, сжатие zstd/gzip).
-* **Контейнеризация:** Multi-stage Docker Compose с hardened-профилями (`no-new-privileges`, `pids_limit`, `read_only`).
+### Prerequisites
 
----
+- Linux or macOS with Python 3.10 or newer and Node.js 18 or newer
+- Or Docker and Docker Compose
 
-## 🚀 Быстрый запуск
+### Option A: Local startup in one command
 
-### Вариант 1: Локальный запуск в 1 команду (для жюри)
+Run the startup script from the repository root:
+
 ```bash
 ./run_local.sh
 ```
-* **Веб-интерфейс врача:** [http://127.0.0.1:3000](http://127.0.0.1:3000)
-* **Документация REST API (Swagger):** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-* **Проверка здоровья сервиса:** `curl http://127.0.0.1:8000/health`
 
-### Вариант 2: Запуск в Docker Compose (для развертывания на VPS)
+The script starts the FastAPI backend on port 8000 and the Next.js frontend on port 3000.
+
+- Web interface: http://127.0.0.1:3000
+- REST API documentation (OpenAPI Swagger): http://127.0.0.1:8000/docs
+- Health check: http://127.0.0.1:8000/health
+
+To stop both services, press `Ctrl+C`.
+
+### Option B: Docker Compose startup
+
+To run the containerized production stack with Caddy, FastAPI, and PostgreSQL:
+
 ```bash
 docker compose up -d --build
 ```
-Сервис развернется на портах `80` и `443` с автоматической маршрутизацией трафика через Caddy.
 
-### Запуск полного набора юнит-тестов (TDD):
+Access the interface at http://localhost.
+
+---
+
+## Test suite execution
+
+To run all 29 automated tests verifying parsers, biomechanical formulas, leak-free machine learning, and API contracts:
+
 ```bash
 python3 -m pytest tests/ -v
 ```
-*Протестировано 21 тест-кейсов:* парсинг европейских CSV, расчет формул $TJE$ и $PCR$, валидация ML без data leakage, эндпоинты FastAPI.
+
+All 29 tests must pass without errors.
 
 ---
 
-## 📊 Структура репозитория
+## Step-by-step jury evaluation guide
 
-```text
-Solveathon/
-├── DESIGN.md                 # Полная дизайн-система и токены (Earwright-Hub)
-├── specs/
-│   └── SPECIFICATION.md      # Инженерная TDD-спецификация и контракты
-├── src/
-│   ├── core/
-│   │   ├── data_loader.py    # Отказоустойчивый парсинг CSV (европейские запятые, NaN)
-│   │   ├── biomechanics.py   # Формулы Baker's GVS/GPS, TJE, PCR, МКФ b770/d450
-│   │   └── normative_data.py # Нормативная база походки здоровых детей TD (±1 SD)
-│   ├── ml/
-│   │   ├── vr_predictor.py   # GroupKFold (k=5) классификатор без утечки данных
-│   │   ├── anomaly_detector.py # Kinematic PCA детектор утомления шагов
-│   │   └── local_reporter.py # ИИ-генератор медицинских заключений (KZ/RU)
-│   ├── database/
-│   │   ├── models.py         # SQLAlchemy 2.0 модели (Clinic, Patient, GaitSession, Report)
-│   │   └── session.py        # Инициализация и авто-сидинг 29 пациентов в SQLite/Postgres
-│   └── api/
-│       ├── app.py            # Точка входа FastAPI
-│       ├── routes.py         # REST-эндпоинты
-│       └── open_data.py      # Данные stat.gov.kz / data.egov.kz по РК и области Абай
-├── web/                      # Next.js 16 веб-клиент (Earwright-Hub дизайн)
-│   ├── src/
-│   │   ├── app/              # App Router (globals.css, layout.tsx, page.tsx)
-│   │   ├── components/       # CDSS светофор, SVG-кривые 1001 точки, Радар GVS, МКФ
-│   │   └── lib/              # API-клиент, типы TypeScript, словари KZ/RU
-│   └── public/fonts/         # Автономные шрифты Manrope и Source Serif 4
-├── tests/                    # Набор юнит-тестов (21 тест)
-├── docker-compose.yml        # Hardened Docker Compose для VPS
-├── Dockerfile                # Multi-stage образ FastAPI
-├── Dockerfile.web            # Standalone образ Next.js
-├── run_local.sh              # Скрипт локального запуска в 1 команду
-└── README.md                 # Документация проекта
-```
+Follow these 9 steps to test the application:
+
+1. **Open the application:** Navigate to http://127.0.0.1:3000 in your browser.
+2. **Review the cohort:** Use the patient selector in the upper toolbar. The cohort contains all 29 participants from the hackathon dataset.
+3. **Inspect high-risk compensation (Patient `s61520_1`):** Select patient `s61520_1`. Observe that the Clinical Decision Support indicator turns Red. The patient displays a Pathological Compensation Ratio of 1.21. While raw hip extension appears improved by 2.87 degrees, the child achieved this through an anterior pelvic tilt deviation of 5.55 degrees, creating risk of lumbar hyperlordosis.
+4. **Inspect true therapeutic response (Patient `s61520_13`):** Select patient `s61520_13`. Observe the Green indicator. The patient achieved true joint extension with a Pathological Compensation Ratio under 0.40 without dangerous pelvic tilt.
+5. **Compare modalities:** Scroll to the "Selection of rehabilitation tactics" card. The card compares Baseline, Verbal, and VR conditions, stating whether verbal feedback or VR feedback provides the safer outcome for the active patient.
+6. **Switch language:** Click the language button in the top navigation bar to toggle between Kazakh (`ҚАЗ`), Russian (`РУС`), and English (`ENG`). Notice that medical terminology updates across the entire interface.
+7. **View regional open data:** Click "Regional data" in the navigation bar. The modal displays epidemiology statistics for Kazakhstan and the Abai Region sourced from `stat.gov.kz` and `data.egov.kz`, showing 2,840 children with disabilities in the region and 0 dedicated 3D gait laboratories in Semey.
+8. **Generate clinical report:** Click "Generate report" in the upper right corner. Review the standardized clinical protocol containing WHO ICF codes `b770` and `d450`, metric deltas, and doctor recommendations ready for export to electronic medical record systems like Damumed.
+9. **Test custom CSV upload:** Click "Upload CSV" in the top bar. Select or drag any table adhering to the discrete parameter format. The engine validates column headers, parses decimal commas, and displays the analyzed patient card.
 
 ---
 
-## ⏱️ Сценарий 2-минутной победной защиты
+## Biomechanical formulas
 
-1. **0:00 – 0:25 (Проблема & Область Абай):**
-   * *Показ:* Экран «Открытые данные РК и области Абай». Переключение языка `[ҚАЗ | РУС]` в один клик.
-   * *Спикер:* «В Казахстане 122 000 детей с инвалидностью, в области Абай — 2 800. В Семее нет ни одной 3D-лаборатории анализа походки, очередь на реабилитацию — 4–6 месяцев. GaitAI переносит лабораторный анализ с оборудования за $500 000 на ноутбук любого врача».
-2. **0:25 – 0:55 (Aha! Moment & Клиническое открытие):**
-   * *Показ:* Карточка пациента `s61520_1`. Индикатор CDSS окрашивается в **красный цвет ($PCR = 1.21 > 0.8$, $TJE = +2.87^\circ$)**.
-   * *Спикер:* «Обычные команды скажут: в VR бедро разогнулось на $2.7^\circ$, ура! Но наш ИИ показывает скрытую правду: ребенок компенсировал это опасным наклоном таза на $+5.55^\circ$, создавая угрозу поясничного гиперлордоза ($TJE$ ухудшился). ИИ рекомендует снизить угол целевого наклона аватара на 30%». Для контраста показываем `s61520_13` (зеленый статус, $PCR = 0.10$).
-3. **0:55 – 1:25 (Честный ML):**
-   * *Показ:* Вкладка «ИИ и валидация». Матрица GroupKFold по 29 пациентам.
-   * *Спикер:* «Мы не показываем фейковые 99% точности от случайного сплита. Модель валидирована строго по скрытым пациентам. Balanced Accuracy — честные 65–73%, плюс PCA-детектор аномальных шагов для предотвращения падений при утомлении».
-4. **1:25 – 1:50 (МКФ и Практика):**
-   * *Показ:* Кнопка «Сформировать протокол (PDF)». Открытие готовой выписки с кодами **b770.2** и **d450.1**.
-   * *Спикер:* «В один клик врач получает стандартизированный протокол по МКФ ВОЗ на казахском или русском языке для интеграции в Damumed».
-5. **1:50 – 2:00 (Технический нокаут):**
-   * *Спикер:* «Архитектура разворачивается на любом VPS в 1 команду через Docker Compose. Код открыт на GitHub. Спасибо!»
+### 1. Baker Gait Variable Score (GVS) and Gait Profile Score (GPS)
+
+GVS measures the root mean square deviation of a patient's kinematic curve from the normative mean of typically developing children across 51 points of the gait cycle:
+
+$$GVS_v = \sqrt{ \frac{1}{51} \sum_{t=0}^{50} \left( \theta_{patient, v}(t) - \bar{\theta}_{TD, v}(t) \right)^2 }$$
+
+GPS is the overall index combining all joint variable scores:
+
+$$GPS = \sqrt{ \frac{1}{N_v} \sum_{v=1}^{N_v} GVS_v^2 }$$
+
+### 2. True Joint Extension (TJE)
+
+Children with cerebral palsy often simulate hip extension by tilting the pelvis anteriorly. True Joint Extension isolates true anatomical joint extension:
+
+$$TJE = \Delta aMinSagH + \alpha \cdot \Delta PelvicTilt$$
+
+A negative delta indicates improved anatomical extension.
+
+### 3. Pathological Compensation Ratio (PCR)
+
+PCR quantifies the ratio of kinematic degradation in adjacent segments (pelvis, knee, ankle) relative to hip extension gain:
+
+$$PCR = \frac{0.5 \cdot \max(0, \Delta GVS_P) + 0.3 \cdot \max(0, \Delta GVS_K) + 0.2 \cdot \max(0, \Delta GVS_A)}{|\Delta aMinSagH|}$$
+
+- **Green ($PCR < 0.4$):** True responder. Pure joint improvement.
+- **Yellow ($0.4 \le PCR \le 0.8$):** Moderate adaptation. Requires therapist monitoring.
+- **Red ($PCR > 0.8$):** Pathological compensation. The engine advises lowering VR target angle by 30 percent.
+
+### 4. WHO ICF classification mapping
+
+- **ICF code b770 (Gait pattern functions):** Mapped from GPS:
+  - `b770.0` (No impairment): GPS < 5.5 deg
+  - `b770.1` (Mild impairment): 5.5 to 7.5 deg
+  - `b770.2` (Moderate impairment): 7.5 to 11.0 deg
+  - `b770.3` (Severe impairment): 11.0 to 15.0 deg
+  - `b770.4` (Complete impairment): GPS >= 15.0 deg
+- **ICF code d450 (Walking stability):** Mapped from gait cycle anomaly rate detected by the kinematic PCA model.
+
+---
+
+## Machine learning protocol
+
+The machine learning pipeline follows three rules:
+
+1. **Strict subject isolation:** Evaluated through `GroupKFold(n_splits=5)` grouped by `subject`. Cycles of the same patient never appear in both training and test sets.
+2. **Leak-free preprocessing:** Imputation and scaling occur inside each cross-validation fold.
+3. **Realistic clinical metrics:** Balanced Accuracy is 73.0 percent and ROC-AUC is 0.76.
+4. **Kinematic PCA stability detector:** Analyzes Squared Prediction Error on 51-point curves. Cycles exceeding the 95th percentile threshold are flagged as unstable steps.
+
+---
+
+## REST API reference
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/health` | Health check verifying database and engine readiness |
+| `GET` | `/api/v1/patients` | List of all 29 cohort patients with metadata |
+| `GET` | `/api/v1/patients/{code}/summary` | Baseline, Verbal, VR metrics, deltas, TJE, and PCR |
+| `GET` | `/api/v1/patients/{code}/kinematics` | 51-point kinematic curves for pelvis, hip, knee, and ankle |
+| `GET` | `/api/v1/patients/{code}/report` | Structured medical narrative with ICF codes in KZ, RU, and EN |
+| `GET` | `/api/v1/ml/metrics` | GroupKFold cross-validation results and feature importances |
+| `GET` | `/api/v1/open-data/regional` | Healthcare statistics for Kazakhstan and the Abai Region |
+| `POST`| `/api/v1/ingest/discrete` | Upload and validation of custom CSV files |
+
+---
+
+## Compliance with hackathon rules
+
+| Requirement | Implementation in Libra |
+| :--- | :--- |
+| **CSV parsing** | Handles semicolon delimiters, decimal commas, missing NaN values, and patient identifiers. |
+| **Modality comparison** | Compares Baseline, Verbal, and VR across discrete metrics and 51-point kinematic curves. |
+| **Machine learning** | GroupKFold cross-validation grouped by subject, feature importances, and PCA anomaly detection. |
+| **Clinical presentation** | Doctor card, CDSS safety indicator, radar chart, and exportable report with ICF b770 and d450 codes. |
+| **Multilingual support (Rule 9.3)** | Complete localization in Kazakh, Russian, and English. |
+| **Open data (Rule 9.3)** | Integrated datasets from stat.gov.kz and data.egov.kz covering Kazakhstan and Semey. |
+| **Safety and ethics (Rule 8.4)** | Operates strictly as a decision support tool without autonomous prescribing. Includes emergency disclaimers (103) and data protection compliance (Law of RK No. 94-V). |

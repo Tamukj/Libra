@@ -1,1 +1,1 @@
-"""GaitAI Core Package"""
+"""Libra Core Package"""

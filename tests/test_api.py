@@ -100,7 +100,8 @@ def test_create_clinical_report(client):
     assert "жамбас" in data_kz["narrative"].lower()
 
 def test_upload_patient_csv(client):
-    csv_content = b"subject,weight,height,leg_length,aMinSagH,GVS_aSagP\ns99999_test,45.0,1.40,0.72,12.5,14.2\n"
+    # Test European CSV format with ; separator and , decimal
+    csv_content = "subject;side;weight;height;leg_length;GPS_a;aMinSagH;GVS_aSagP\ns99999_test;LEFT;46,5;1,42;0,73;11,2;-4,5;3,8\n".encode("utf-8")
     response = client.post(
         "/api/v1/patients/upload",
         files={"file": ("test_patient.csv", csv_content, "text/csv")}
@@ -110,4 +111,55 @@ def test_upload_patient_csv(client):
     assert data["status"] == "success"
     assert data["code"] == "s99999_test"
     assert "s99999_test" in data["message_ru"]
+
+    # Verify that the newly uploaded patient can be analyzed without 500 error
+    res_analysis = client.get("/api/v1/patients/s99999_test/analysis")
+    assert res_analysis.status_code == 200
+    an_data = res_analysis.json()
+    assert an_data["summary"]["subject"] == "s99999_test"
+    assert "responder_prediction" in an_data["ml"]
+
+def test_patient_biomechanical_diff(client):
+    response = client.get("/api/v1/patients/s61520_1/diff?session_a=Baseline&session_b=VR")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["patient"] == "s61520_1"
+    assert "delta_gps" in data
+    assert "delta_gdi" in data
+    assert "delta_tje" in data
+    assert "delta_pcr" in data
+    assert "status" in data
+    assert data["status"] in ["improved", "stable", "regressed"]
+    assert "verdict_ru" in data
+    assert "verdict_kz" in data
+
+def test_create_parent_report(client):
+    response_ru = client.post("/api/v1/patients/s61520_1/report?lang=ru&audience=parent")
+    assert response_ru.status_code == 200
+    data_ru = response_ru.json()
+    assert data_ru["audience"] == "parent"
+    assert "ПАСПОРТ ПОХОДКИ" in data_ru["narrative"] or "РЕКОМЕНДАЦИИ" in data_ru["narrative"]
+
+    response_kz = client.post("/api/v1/patients/s61520_1/report?lang=kz&audience=parent")
+    assert response_kz.status_code == 200
+    data_kz = response_kz.json()
+    assert "ЖҮРІС ТӨЛҚҰЖАТЫ" in data_kz["narrative"] or "КЕҢЕС" in data_kz["narrative"]
+
+def test_xai_feature_attributions(client):
+    res = client.get("/api/v1/patients/s61520_1/analysis")
+    assert res.status_code == 200
+    ml_data = res.json()["ml"]["responder_prediction"]
+    assert "feature_attributions" in ml_data
+    attrs = ml_data["feature_attributions"]
+    assert len(attrs) > 0
+    assert "feature" in attrs[0]
+    assert "attribution" in attrs[0]
+    assert "direction" in attrs[0]
+
+    assert "pca_stability" in res.json()["ml"]
+
+    # Verify that kinematics curves render without error
+    res_kin = client.get("/api/v1/patients/s99999_test/kinematics")
+    assert res_kin.status_code == 200
+    assert "joints" in res_kin.json()
 
