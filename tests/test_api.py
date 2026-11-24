@@ -1,15 +1,57 @@
+import os
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
 
-from src.api.app import app
-from src.database.session import init_db
 
 @pytest.fixture(scope="module")
-def client():
-    # Initialize SQLite database and seed cohort
-    init_db(seed_cohort=True)
-    with TestClient(app) as test_client:
-        yield test_client
+def client(tmp_path_factory):
+    db_file = tmp_path_factory.mktemp("libra_test_db") / "test_libra.db"
+    db_url = f"sqlite:///{db_file}"
+
+    prev_env = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = db_url
+
+    import src.database.session as db_session
+    import src.api.app as api_app
+
+    orig_db_url = db_session.DB_URL
+    orig_engine = db_session.engine
+    orig_session_local = db_session.SessionLocal
+    orig_app_engine = api_app.engine
+
+    test_engine = create_engine(db_url, connect_args={"check_same_thread": False, "timeout": 30}, echo=False)
+
+    @event.listens_for(test_engine, "connect")
+    def _configure_sqlite(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON;")
+        cursor.execute("PRAGMA journal_mode = WAL;")
+        cursor.execute("PRAGMA synchronous = NORMAL;")
+        cursor.close()
+
+    test_session_local = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+    db_session.DB_URL = db_url
+    db_session.engine = test_engine
+    db_session.SessionLocal = test_session_local
+    api_app.engine = test_engine
+
+    try:
+        db_session.init_db(seed_cohort=True)
+        with TestClient(api_app.app) as test_client:
+            yield test_client
+    finally:
+        test_engine.dispose()
+        db_session.DB_URL = orig_db_url
+        db_session.engine = orig_engine
+        db_session.SessionLocal = orig_session_local
+        api_app.engine = orig_app_engine
+        if prev_env is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = prev_env
 
 def test_healthcheck(client):
     response = client.get("/health")
@@ -22,8 +64,17 @@ def test_list_patients(client):
     response = client.get("/api/v1/patients")
     assert response.status_code == 200
     patients = response.json()
-    assert len(patients) >= 29
+    assert len(patients) == 29
     assert any(p["code"] == "s61520_22" for p in patients)
+
+    sample = next(p for p in patients if p["code"] == "s61520_22")
+    for field in ("id", "code", "side", "weight", "height", "leg_length", "clinic_name",
+                  "pcr", "tje", "status", "baseline_gps", "vr_gps", "delta_amin_sagh",
+                  "has_vr", "has_verbal"):
+        assert field in sample
+    assert sample["status"] in ["green", "yellow", "red"]
+    assert sample["has_vr"] is True
+    assert sample["has_verbal"] is True
 
 def test_patient_analysis(client):
     response = client.get("/api/v1/patients/s61520_22/analysis")
@@ -48,6 +99,20 @@ def test_patient_analysis(client):
     assert "pcr" in cdss
     assert "tje" in cdss
     assert cdss["status"] in ["green", "yellow", "red"]
+    assert cdss["tje"] == pytest.approx(mod["tje_vr"], abs=1e-6)
+
+    # Check pctmZeroStSagH exposure (None when NaN in dataset, finite float when present)
+    summary = data["summary"]
+    for key in ("baseline_pctm_zero", "vr_pctm_zero", "verbal_pctm_zero", "delta_pctm_zero"):
+        assert key in summary
+    assert summary["baseline_pctm_zero"] is None
+
+    # Check model_reliable flag on responder_prediction
+    resp_pred = data["ml"]["responder_prediction"]
+    assert "loo_balanced_accuracy" in resp_pred
+    assert "loo_roc_auc" in resp_pred
+    assert "model_reliable" in resp_pred
+    assert isinstance(resp_pred["model_reliable"], bool)
 
 def test_patient_kinematics(client):
     response = client.get("/api/v1/patients/s61520_22/kinematics")
@@ -86,6 +151,10 @@ def test_ml_metrics(client):
     assert "roc_auc" in data
     assert "feature_importances" in data
     assert data["n_subjects"] == 29
+    assert "three_class" in data
+    assert "balanced_accuracy" in data["three_class"]
+    assert "f1_macro" in data["three_class"]
+    assert data["three_class"]["classes"] == ["Baseline", "Verbal", "VR"]
 
 def test_create_clinical_report(client):
     response_ru = client.post("/api/v1/patients/s61520_22/report?lang=ru")
@@ -207,5 +276,86 @@ def test_report_audience_persistence(client):
         rep = db.query(ClinicalReport).filter(ClinicalReport.id == report_id).first()
         assert rep is not None
         assert rep.audience == "parent"
+
+
+def test_multicondition_imu_csv_upload_upsert(client):
+    base_csv = (
+        "subject;side;gps;pelvis_gvs;hip_gvs;knee_gvs;ankle_gvs;hip_min_ext\n"
+        "s_imu_multi;LEFT;11,0;14,0;15,0;12,0;5,0;12,0\n"
+    ).encode("utf-8")
+    res_base = client.post(
+        "/api/v1/patients/upload",
+        files={"file": ("imu_base.csv", base_csv, "text/csv")},
+        data={"condition": "baseline"},
+    )
+    assert res_base.status_code == 200
+    b_data = res_base.json()
+    assert b_data["code"] == "s_imu_multi"
+    assert b_data["condition"] == "Baseline"
+    assert b_data["anthropometry_estimated"] is True
+
+    vr_csv = (
+        "pelvis_gvs;hip_gvs;knee_gvs;ankle_gvs;hip_min_ext;gps;weight_kg;height_m;leg_length_m\n"
+        "14,2;13,0;12,1;5,1;8,0;9,6;41,0;1,37;0,70\n"
+    ).encode("utf-8")
+    res_vr = client.post(
+        "/api/v1/patients/upload",
+        files={"file": ("imu_vr.csv", vr_csv, "text/csv")},
+        data={"condition": "vr", "subject_code": "s_imu_multi"},
+    )
+    assert res_vr.status_code == 200
+    v_data = res_vr.json()
+    assert v_data["code"] == "s_imu_multi"
+    assert v_data["condition"] == "VR"
+    assert v_data["anthropometry_estimated"] is False
+
+    res_an = client.get("/api/v1/patients/s_imu_multi/analysis")
+    assert res_an.status_code == 200
+    an = res_an.json()
+    assert an["summary"]["has_vr"] is True
+    assert an["summary"]["delta_amin_sagh"] == pytest.approx(-4.0, abs=1e-4)
+    assert an["cdss_risk"]["tje"] == pytest.approx(an["modalities"]["tje_vr"], abs=1e-6)
+
+
+def test_ingest_template_endpoints(client):
+    res_vicon = client.get("/api/v1/ingest/template?format=vicon")
+    assert res_vicon.status_code == 200
+    assert "text/csv" in res_vicon.headers["content-type"]
+    assert "attachment" in res_vicon.headers["content-disposition"]
+    assert "GPS_a;GVS_aSagP" in res_vicon.text
+
+    res_imu = client.get("/api/v1/ingest/template?format=imu")
+    assert res_imu.status_code == 200
+    assert "text/csv" in res_imu.headers["content-type"]
+    assert "pelvis_gvs;hip_gvs" in res_imu.text
+
+
+def test_export_patient_fhir_bundle(client):
+    res = client.get("/api/v1/patients/s61520_22/fhir")
+    assert res.status_code == 200
+    bundle = res.json()
+    assert bundle["resourceType"] == "Bundle"
+    assert bundle["type"] == "collection"
+    resources = [e["resource"] for e in bundle["entry"]]
+    types = [r["resourceType"] for r in resources]
+    assert "Patient" in types
+    assert "DiagnosticReport" in types
+    assert types.count("Observation") == 6
+
+    patient_res = next(r for r in resources if r["resourceType"] == "Patient")
+    assert "name" not in patient_res
+    assert patient_res["identifier"][0]["value"] == "s61520_22"
+
+    obs_codes = [
+        r["code"]["coding"][0]["code"]
+        for r in resources
+        if r["resourceType"] == "Observation"
+    ]
+    for expected in ("GPS_a", "TJE", "PCR", "aMinSagH", "b770", "d450"):
+        assert expected in obs_codes
+
+    report_res = next(r for r in resources if r["resourceType"] == "DiagnosticReport")
+    assert "Rule 8.4" in report_res["conclusion"]
+    assert "presentedForm" in report_res and len(report_res["presentedForm"]) == 2
 
 

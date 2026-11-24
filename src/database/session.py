@@ -1,8 +1,10 @@
 """Database session factory, connection management, and cohort seeding."""
 
+import math
 import os
 from pathlib import Path
-from sqlalchemy import create_engine, event
+from typing import Optional
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from src.database.models import Base, Clinic, Patient, GaitSession
 from src.core.data_loader import load_discrete_dataset, DATA_DIR
@@ -38,6 +40,16 @@ import fcntl
 import threading
 _init_lock = threading.Lock()
 
+def _optional_mean(df, col: str) -> Optional[float]:
+    if col not in df.columns:
+        return None
+    clean = df[col].dropna()
+    if clean.empty:
+        return None
+    val = float(clean.mean())
+    return None if (math.isnan(val) or not math.isfinite(val)) else val
+
+
 def init_db(seed_cohort: bool = True):
     """Initializes tables and seeds initial clinic and patients atomically if empty."""
     lock_file_path = Path("/tmp/libra_db_init.lock")
@@ -46,6 +58,11 @@ def init_db(seed_cohort: bool = True):
         try:
             with _init_lock:
                 Base.metadata.create_all(bind=engine, checkfirst=True)
+                if engine.dialect.name == "sqlite":
+                    with engine.begin() as conn:
+                        cols = [row[1] for row in conn.execute(text("PRAGMA table_info(gait_sessions)")).fetchall()]
+                        if "avg_pctm_zero" not in cols:
+                            conn.execute(text("ALTER TABLE gait_sessions ADD COLUMN avg_pctm_zero FLOAT"))
 
                 if not seed_cohort:
                     return
@@ -96,7 +113,8 @@ def init_db(seed_cohort: bool = True):
                                     avg_gvs_pelvis=float(sub_b["GVS_aSagP"].mean()),
                                     avg_gvs_hip=float(sub_b["GVS_aSagH"].mean()),
                                     avg_gvs_knee=float(sub_b["GVS_aSagK"].mean()),
-                                    avg_gvs_ankle=float(sub_b["GVS_aSagA"].mean())
+                                    avg_gvs_ankle=float(sub_b["GVS_aSagA"].mean()),
+                                    avg_pctm_zero=_optional_mean(sub_b, "pctmZeroStSagH"),
                                 ))
 
                                 # Add VR session if available
@@ -112,7 +130,8 @@ def init_db(seed_cohort: bool = True):
                                             avg_gvs_pelvis=float(sub_v["GVS_aSagP"].mean()),
                                             avg_gvs_hip=float(sub_v["GVS_aSagH"].mean()),
                                             avg_gvs_knee=float(sub_v["GVS_aSagK"].mean()),
-                                            avg_gvs_ankle=float(sub_v["GVS_aSagA"].mean())
+                                            avg_gvs_ankle=float(sub_v["GVS_aSagA"].mean()),
+                                            avg_pctm_zero=_optional_mean(sub_v, "pctmZeroStSagH"),
                                         ))
 
                                 # Add Verbal session if available
@@ -128,7 +147,8 @@ def init_db(seed_cohort: bool = True):
                                             avg_gvs_pelvis=float(sub_vb["GVS_aSagP"].mean()),
                                             avg_gvs_hip=float(sub_vb["GVS_aSagH"].mean()),
                                             avg_gvs_knee=float(sub_vb["GVS_aSagK"].mean()),
-                                            avg_gvs_ankle=float(sub_vb["GVS_aSagA"].mean())
+                                            avg_gvs_ankle=float(sub_vb["GVS_aSagA"].mean()),
+                                            avg_pctm_zero=_optional_mean(sub_vb, "pctmZeroStSagH"),
                                         ))
 
                             db.commit()

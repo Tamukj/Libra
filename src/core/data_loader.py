@@ -106,6 +106,15 @@ def get_patient_discrete_summary(
     height = _mean_col(sub_base, "height", 0.0)
     leg_length = _mean_col(sub_base, "LegLength", 0.0)
 
+    def _opt_mean_col(df: pd.DataFrame, col: str) -> Optional[float]:
+        if col not in df.columns:
+            return None
+        clean = df[col].dropna()
+        if clean.empty:
+            return None
+        val = float(clean.mean())
+        return None if (np.isnan(val) or not np.isfinite(val)) else val
+
     # Baseline averages
     b_gps = _mean_col(sub_base, "GPS_a", 10.0)
     b_amin_sagh = _mean_col(sub_base, "aMinSagH", 0.0)
@@ -113,7 +122,7 @@ def get_patient_discrete_summary(
     b_gvs_h = _mean_col(sub_base, "GVS_aSagH", 0.0)
     b_gvs_k = _mean_col(sub_base, "GVS_aSagK", 0.0)
     b_gvs_a = _mean_col(sub_base, "GVS_aSagA", 0.0)
-    b_pctm = _mean_col(sub_base, "pctmZeroStSagH", 0.0)
+    b_pctm = _opt_mean_col(sub_base, "pctmZeroStSagH")
 
     def _mean_or(series: pd.Series, fallback: float) -> float:
         clean = series.dropna()
@@ -129,7 +138,8 @@ def get_patient_discrete_summary(
     vr_gvs_h = _mean_or(sub_vr["GVS_aSagH"], b_gvs_h) if not sub_vr.empty else b_gvs_h
     vr_gvs_k = _mean_or(sub_vr["GVS_aSagK"], b_gvs_k) if not sub_vr.empty else b_gvs_k
     vr_gvs_a = _mean_or(sub_vr["GVS_aSagA"], b_gvs_a) if not sub_vr.empty else b_gvs_a
-    vr_pctm = _mean_or(sub_vr["pctmZeroStSagH"], b_pctm) if (not sub_vr.empty and "pctmZeroStSagH" in sub_vr.columns) else b_pctm
+    vr_pctm = _opt_mean_col(sub_vr, "pctmZeroStSagH") if not sub_vr.empty else None
+    delta_pctm = (vr_pctm - b_pctm) if (vr_pctm is not None and b_pctm is not None) else None
 
     res = {
         "subject": subject_id,
@@ -159,6 +169,7 @@ def get_patient_discrete_summary(
         "vr_gvs_knee": vr_gvs_k,
         "vr_gvs_ankle": vr_gvs_a,
         "vr_pctm_zero": vr_pctm,
+        "verbal_pctm_zero": None,
         # Deltas (VR - Baseline)
         "delta_gps": vr_gps - b_gps,
         "delta_amin_sagh": vr_amin_sagh - b_amin_sagh,
@@ -166,7 +177,7 @@ def get_patient_discrete_summary(
         "delta_gvs_hip": vr_gvs_h - b_gvs_h,
         "delta_gvs_knee": vr_gvs_k - b_gvs_k,
         "delta_gvs_ankle": vr_gvs_a - b_gvs_a,
-        "delta_pctm_zero": vr_pctm - b_pctm,
+        "delta_pctm_zero": delta_pctm,
         "has_vr": not sub_vr.empty,
         "has_verbal": False,
     }
@@ -183,5 +194,6 @@ def get_patient_discrete_summary(
             res["verbal_gvs_hip"] = _mean_col(sub_vb, "GVS_aSagH", b_gvs_h)
             res["verbal_gvs_knee"] = _mean_col(sub_vb, "GVS_aSagK", b_gvs_k)
             res["verbal_gvs_ankle"] = _mean_col(sub_vb, "GVS_aSagA", b_gvs_a)
+            res["verbal_pctm_zero"] = _opt_mean_col(sub_vb, "pctmZeroStSagH")
 
     return res

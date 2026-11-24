@@ -17,12 +17,14 @@ def compute_true_joint_extension(delta_hip: float, delta_pelvis: float, alpha: f
     """
     Computes True Joint Extension (TJE) by isolating anatomical hip joint extension
     from compensatory anterior pelvic tilt.
-    
-    When delta_hip < 0 (hip extension improved) and delta_pelvis > 0 (pelvis tilted anteriorly):
-        TJE = delta_hip + alpha * delta_pelvis
+
+    Formula:
+        TJE = delta_hip + alpha * max(0, delta_pelvis)
+    Penalizes anterior pelvic tilt worsening (delta_pelvis > 0) without inflating
+    hip extension when pelvic tilt decreases (delta_pelvis < 0).
     Example: delta_hip = -4.2, delta_pelvis = +2.4 -> TJE = -1.8 (only 1.8 deg true gain).
     """
-    return float(delta_hip + (alpha * delta_pelvis))
+    return float(delta_hip + (alpha * max(0.0, delta_pelvis)))
 
 def compute_pcr(
     delta_gvs_pelvis: float,
@@ -213,11 +215,14 @@ def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
     delta_knee_vb = (_safe_float(summary.get("verbal_gvs_knee"), base_knee) - base_knee) if has_vb else 0.0
     delta_ankle_vb = (_safe_float(summary.get("verbal_gvs_ankle"), base_ankle) - base_ankle) if has_vb else 0.0
 
+    pelvis_for_tje_vr = _safe_float(summary.get("delta_pelvis_tilt"), delta_pelvis_vr)
+    pelvis_for_tje_vb = _safe_float(summary.get("verbal_delta_pelvis_tilt"), delta_pelvis_vb)
+
     pcr_vr = compute_pcr(delta_pelvis_vr, delta_knee_vr, delta_ankle_vr, delta_hip_vr) if has_vr else 0.0
-    tje_vr = compute_true_joint_extension(delta_hip_vr, delta_pelvis_vr) if has_vr else 0.0
+    tje_vr = compute_true_joint_extension(delta_hip_vr, pelvis_for_tje_vr) if has_vr else 0.0
 
     pcr_vb = compute_pcr(delta_pelvis_vb, delta_knee_vb, delta_ankle_vb, delta_hip_vb) if has_vb else 0.0
-    tje_vb = compute_true_joint_extension(delta_hip_vb, delta_pelvis_vb) if has_vb else 0.0
+    tje_vb = compute_true_joint_extension(delta_hip_vb, pelvis_for_tje_vb) if has_vb else 0.0
 
     vr_improved = has_vr and (delta_hip_vr <= -1.0)
     vb_improved = has_vb and (delta_hip_vb <= -1.0)

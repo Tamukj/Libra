@@ -8,6 +8,7 @@ Features:
 """
 
 from typing import Dict, Any, List, Optional, Tuple, Union
+import warnings
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -22,6 +23,88 @@ BIOMECH_FEATURES = [
     "GPS_a", "GVS_aSagP", "GVS_aSagH", "GVS_aSagK", "GVS_aSagA",
     "aMinSagH"
 ]
+
+KINEMATIC_JOINTS = ["aSagP", "aSagH", "aSagK", "aSagA", "mSagH"]
+
+
+def _extract_waveform_features(df_disc: pd.DataFrame, df_kin: pd.DataFrame) -> pd.DataFrame:
+    """
+    Extracts discrete gait parameters plus per-cycle kinematic waveform summary features
+    (mean, std, min, max, rom, terminal stance 15:26 mean) aligned with df_disc rows.
+    """
+    feats = pd.DataFrame(index=df_disc.index)
+    for col in BIOMECH_FEATURES:
+        feats[col] = pd.to_numeric(df_disc[col], errors="coerce") if col in df_disc.columns else np.nan
+    feats["pctmZeroStSagH"] = (
+        pd.to_numeric(df_disc["pctmZeroStSagH"], errors="coerce")
+        if "pctmZeroStSagH" in df_disc.columns
+        else np.nan
+    )
+
+    # Align kinematics rows to discrete rows either positionally or by (subject, cycle_idx)
+    kin_aligned = df_kin
+    if len(df_kin) != len(df_disc) or not (
+        "subject" in df_disc.columns
+        and "subject" in df_kin.columns
+        and np.array_equal(df_disc["subject"].astype(str).values, df_kin["subject"].astype(str).values)
+    ):
+        disc_key = df_disc.assign(_sub=df_disc["subject"].astype(str), _occ=df_disc.groupby("subject").cumcount())
+        kin_key = df_kin.assign(_sub=df_kin["subject"].astype(str), _occ=df_kin.groupby("subject").cumcount())
+        kin_aligned = disc_key[["_sub", "_occ"]].merge(kin_key, on=["_sub", "_occ"], how="left")
+        kin_aligned.index = df_disc.index
+
+    for joint in KINEMATIC_JOINTS:
+        cols = sorted(
+            [c for c in kin_aligned.columns if c.startswith(f"{joint}_pct_GC_")],
+            key=lambda x: int(x.split("_pct_GC_")[1]),
+        )
+        if not cols:
+            for suffix in ("mean", "std", "min", "max", "rom", "term15_26_mean"):
+                feats[f"{joint}_{suffix}"] = np.nan
+            continue
+
+        arr = kin_aligned[cols].to_numpy(dtype=float)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            j_mean = np.nanmean(arr, axis=1)
+            j_std = np.nanstd(arr, axis=1)
+            j_min = np.nanmin(arr, axis=1)
+            j_max = np.nanmax(arr, axis=1)
+            j_rom = j_max - j_min
+            term_slice = arr[:, 15:26] if arr.shape[1] >= 26 else arr
+            j_term = np.nanmean(term_slice, axis=1)
+
+        feats[f"{joint}_mean"] = j_mean
+        feats[f"{joint}_std"] = j_std
+        feats[f"{joint}_min"] = j_min
+        feats[f"{joint}_max"] = j_max
+        feats[f"{joint}_rom"] = j_rom
+        feats[f"{joint}_term15_26_mean"] = j_term
+
+    return feats
+
+
+def _aggregate_coef_importances(feature_cols: List[str], abs_coefs: np.ndarray) -> Dict[str, float]:
+    """Aggregates absolute linear model weights into clinical feature importances summing to 1.0."""
+    total = float(np.sum(abs_coefs))
+    if total <= 0.0 or not np.isfinite(total):
+        uniform = 1.0 / (len(BIOMECH_FEATURES) + 2)
+        out = {f: uniform for f in BIOMECH_FEATURES}
+        out["pctmZeroStSagH"] = uniform
+        out["kinematic_waveforms"] = uniform
+        return out
+
+    normed = abs_coefs / total
+    grouped: Dict[str, float] = {f: 0.0 for f in BIOMECH_FEATURES}
+    grouped["pctmZeroStSagH"] = 0.0
+    grouped["kinematic_waveforms"] = 0.0
+    for col, weight in zip(feature_cols, normed):
+        if col in grouped:
+            grouped[col] += float(weight)
+        else:
+            grouped["kinematic_waveforms"] += float(weight)
+    return grouped
+
 
 class GaitConditionClassifier:
     """
@@ -41,26 +124,57 @@ class GaitConditionClassifier:
         )
         self.scaler = StandardScaler()
         self.imputer = SimpleImputer(strategy="median")
+        self.kin_clf = LogisticRegression(
+            C=0.2,
+            class_weight="balanced",
+            max_iter=1000,
+            random_state=42
+        )
+        self.kin_scaler = StandardScaler()
+        self.kin_imputer = SimpleImputer(strategy="median")
+        self.kin_feature_names: Optional[List[str]] = None
+        self.kin_fitted = False
         self.feature_importances_: Optional[Dict[str, float]] = None
 
-    def evaluate_group_kfold(self, df_base: pd.DataFrame, df_vr: pd.DataFrame) -> Dict[str, Any]:
+    def evaluate_group_kfold(
+        self,
+        df_base: pd.DataFrame,
+        df_vr: pd.DataFrame,
+        df_kin_base: Optional[pd.DataFrame] = None,
+        df_kin_vr: Optional[pd.DataFrame] = None,
+    ) -> Dict[str, Any]:
         """
         Runs GroupKFold cross validation and returns leak-free generalization metrics.
         Imputation and scaling are performed strictly inside each training fold.
+        Uses LogisticRegression + kinematic waveform summaries when df_kin_base/df_kin_vr are provided,
+        or discrete-only RandomForest when omitted.
         """
-        base = df_base.copy()
-        base["condition"] = 0
-        vr = df_vr.copy()
-        vr["condition"] = 1
-
-        df = pd.concat([base, vr], ignore_index=True)
-        X = df[self.feature_names]
-        y = df["condition"].values
-        groups = df["subject"].values
+        use_kin = df_kin_base is not None and df_kin_vr is not None
+        if use_kin:
+            X_base = _extract_waveform_features(df_base, df_kin_base)
+            X_vr = _extract_waveform_features(df_vr, df_kin_vr)
+            X = pd.concat([X_base, X_vr], ignore_index=True)
+            y = np.concatenate([
+                np.zeros(len(df_base), dtype=int),
+                np.ones(len(df_vr), dtype=int),
+            ])
+            groups = np.concatenate([
+                df_base["subject"].values,
+                df_vr["subject"].values,
+            ])
+        else:
+            base = df_base.copy()
+            base["condition"] = 0
+            vr = df_vr.copy()
+            vr["condition"] = 1
+            df = pd.concat([base, vr], ignore_index=True)
+            X = df[self.feature_names]
+            y = df["condition"].values
+            groups = df["subject"].values
 
         n_groups = len(np.unique(groups))
         if n_groups < 2:
-            self.fit_full(df_base, df_vr)
+            self.fit_full(df_base, df_vr, df_kin_base=df_kin_base, df_kin_vr=df_kin_vr)
             return {
                 "balanced_accuracy": 0.5,
                 "roc_auc": 0.5,
@@ -83,19 +197,30 @@ class GaitConditionClassifier:
             X_train = fold_scaler.fit_transform(fold_imputer.fit_transform(X.iloc[train_idx]))
             X_test = fold_scaler.transform(fold_imputer.transform(X.iloc[test_idx]))
 
-            model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=4,
-                min_samples_leaf=5,
-                class_weight="balanced",
-                random_state=42
-            )
+            if use_kin:
+                model = LogisticRegression(
+                    C=0.2,
+                    class_weight="balanced",
+                    max_iter=1000,
+                    random_state=42
+                )
+            else:
+                model = RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=4,
+                    min_samples_leaf=5,
+                    class_weight="balanced",
+                    random_state=42
+                )
             model.fit(X_train, y[train_idx])
 
             probs = model.predict_proba(X_test)[:, 1]
             y_trues.extend(y[test_idx])
             y_probs.extend(probs)
-            importances.append(model.feature_importances_)
+            if use_kin:
+                importances.append(np.abs(model.coef_[0]))
+            else:
+                importances.append(model.feature_importances_)
 
         y_pred = (np.array(y_probs) >= 0.5).astype(int)
 
@@ -105,14 +230,17 @@ class GaitConditionClassifier:
         spec = float(recall_score(y_trues, y_pred, pos_label=0))
         f1_m = float(f1_score(y_trues, y_pred, average="macro"))
 
-        # Mean feature importances
-        avg_imp = np.mean(importances, axis=0)
-        self.feature_importances_ = {
-            name: float(imp) for name, imp in zip(self.feature_names, avg_imp)
-        }
-
         # Fit full model so instance clf/scaler/imputer are ready for prediction
-        self.fit_full(df_base, df_vr)
+        self.fit_full(df_base, df_vr, df_kin_base=df_kin_base, df_kin_vr=df_kin_vr)
+
+        # Mean feature importances across folds
+        avg_imp = np.mean(importances, axis=0)
+        if use_kin:
+            self.feature_importances_ = _aggregate_coef_importances(list(X.columns), avg_imp)
+        else:
+            self.feature_importances_ = {
+                name: float(imp) for name, imp in zip(self.feature_names, avg_imp)
+            }
 
         return {
             "balanced_accuracy": b_acc,
@@ -120,14 +248,108 @@ class GaitConditionClassifier:
             "sensitivity": sens,
             "specificity": spec,
             "f1_macro": f1_m,
-            "n_splits": self.n_splits,
+            "n_splits": effective_splits,
             "n_cycles": len(y),
-            "n_subjects": len(np.unique(groups)),
+            "n_subjects": n_groups,
             "feature_importances": self.feature_importances_,
         }
 
-    def fit_full(self, df_base: pd.DataFrame, df_vr: pd.DataFrame):
-        """Fits on all data to extract final production model."""
+    def evaluate_three_class_group_kfold(
+        self,
+        df_base: pd.DataFrame,
+        df_verbal: pd.DataFrame,
+        df_vr: pd.DataFrame,
+        df_kin_base: Optional[pd.DataFrame] = None,
+        df_kin_verbal: Optional[pd.DataFrame] = None,
+        df_kin_vr: Optional[pd.DataFrame] = None,
+    ) -> Dict[str, Any]:
+        """
+        Runs 3-class GroupKFold cross validation (Baseline=0, Verbal=1, VR=2) grouped by subject.
+        Imputation and scaling are performed strictly inside each fold.
+        """
+        use_kin = df_kin_base is not None and df_kin_verbal is not None and df_kin_vr is not None
+        if use_kin:
+            X = pd.concat([
+                _extract_waveform_features(df_base, df_kin_base),
+                _extract_waveform_features(df_verbal, df_kin_verbal),
+                _extract_waveform_features(df_vr, df_kin_vr),
+            ], ignore_index=True)
+        else:
+            X = pd.concat([
+                df_base[self.feature_names],
+                df_verbal[self.feature_names],
+                df_vr[self.feature_names],
+            ], ignore_index=True)
+
+        y = np.concatenate([
+            np.zeros(len(df_base), dtype=int),
+            np.ones(len(df_verbal), dtype=int),
+            np.full(len(df_vr), 2, dtype=int),
+        ])
+        groups = np.concatenate([
+            df_base["subject"].values,
+            df_verbal["subject"].values,
+            df_vr["subject"].values,
+        ])
+
+        n_groups = len(np.unique(groups))
+        if n_groups < 2:
+            return {
+                "balanced_accuracy": 1.0 / 3.0,
+                "f1_macro": 0.0,
+                "n_splits": 0,
+                "n_cycles": len(y),
+                "n_subjects": n_groups,
+                "classes": ["Baseline", "Verbal", "VR"],
+            }
+
+        effective_splits = min(self.n_splits, n_groups)
+        gkf = GroupKFold(n_splits=effective_splits)
+        y_trues: List[int] = []
+        y_preds: List[int] = []
+
+        for train_idx, test_idx in gkf.split(X, y, groups):
+            fold_imputer = SimpleImputer(strategy="median")
+            fold_scaler = StandardScaler()
+            X_train = fold_scaler.fit_transform(fold_imputer.fit_transform(X.iloc[train_idx]))
+            X_test = fold_scaler.transform(fold_imputer.transform(X.iloc[test_idx]))
+
+            if use_kin:
+                model = LogisticRegression(
+                    C=0.2,
+                    class_weight="balanced",
+                    max_iter=1000,
+                    random_state=42
+                )
+            else:
+                model = RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=4,
+                    min_samples_leaf=5,
+                    class_weight="balanced",
+                    random_state=42
+                )
+            model.fit(X_train, y[train_idx])
+            y_trues.extend(y[test_idx])
+            y_preds.extend(model.predict(X_test))
+
+        return {
+            "balanced_accuracy": float(balanced_accuracy_score(y_trues, y_preds)),
+            "f1_macro": float(f1_score(y_trues, y_preds, average="macro")),
+            "n_splits": effective_splits,
+            "n_cycles": len(y),
+            "n_subjects": n_groups,
+            "classes": ["Baseline", "Verbal", "VR"],
+        }
+
+    def fit_full(
+        self,
+        df_base: pd.DataFrame,
+        df_vr: pd.DataFrame,
+        df_kin_base: Optional[pd.DataFrame] = None,
+        df_kin_vr: Optional[pd.DataFrame] = None,
+    ):
+        """Fits on all data to extract final production model (plus discrete-only fallback)."""
         base = df_base.copy()
         base["condition"] = 0
         vr = df_vr.copy()
@@ -144,8 +366,37 @@ class GaitConditionClassifier:
             name: float(imp) for name, imp in zip(self.feature_names, self.clf.feature_importances_)
         }
 
-    def predict_cycle_condition(self, features_df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+        if df_kin_base is not None and df_kin_vr is not None:
+            X_kin_df = pd.concat([
+                _extract_waveform_features(df_base, df_kin_base),
+                _extract_waveform_features(df_vr, df_kin_vr),
+            ], ignore_index=True)
+            self.kin_feature_names = list(X_kin_df.columns)
+            X_kin_imp = self.kin_imputer.fit_transform(X_kin_df)
+            X_kin_sc = self.kin_scaler.fit_transform(X_kin_imp)
+            self.kin_clf.fit(X_kin_sc, y)
+            self.kin_fitted = True
+            self.feature_importances_ = _aggregate_coef_importances(
+                self.kin_feature_names,
+                np.abs(self.kin_clf.coef_[0]),
+            )
+        else:
+            self.kin_fitted = False
+
+    def predict_cycle_condition(
+        self,
+        features_df: pd.DataFrame,
+        df_kin: Optional[pd.DataFrame] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Predicts condition (0=Baseline, 1=VR) and probability for input cycles."""
+        if df_kin is not None and self.kin_fitted and self.kin_feature_names is not None:
+            X_kin_df = _extract_waveform_features(features_df, df_kin)[self.kin_feature_names]
+            X_imputed = self.kin_imputer.transform(X_kin_df)
+            X_scaled = self.kin_scaler.transform(X_imputed)
+            preds = self.kin_clf.predict(X_scaled)
+            probs = self.kin_clf.predict_proba(X_scaled)[:, 1]
+            return preds, probs
+
         X = features_df[self.feature_names]
         X_imputed = self.imputer.transform(X)
         X_scaled = self.scaler.transform(X_imputed)
@@ -333,9 +584,19 @@ class VRResponderPredictor:
             })
         attributions.sort(key=lambda item: abs(item["attribution"]), reverse=True)
 
+        raw_bacc = self.metrics_.get("balanced_accuracy", 0.0)
+        raw_auc = self.metrics_.get("roc_auc", float("nan"))
+        bacc_val = 0.0 if (raw_bacc is None or np.isnan(raw_bacc) or not np.isfinite(raw_bacc)) else float(raw_bacc)
+        auc_valid = raw_auc is not None and not np.isnan(raw_auc) and np.isfinite(raw_auc)
+        auc_val = float(raw_auc) if auc_valid else 0.5
+        model_reliable = bool(auc_valid and auc_val >= 0.60)
+
         return {
             "responder_probability": prob,
             "is_predicted_responder": is_resp,
+            "loo_balanced_accuracy": bacc_val,
+            "loo_roc_auc": auc_val,
+            "model_reliable": model_reliable,
             "feature_attributions": attributions,
             "clinical_status_ru": "Благоприятный отклик (True Responder)" if is_resp else "Высокий риск компенсации таза (High Compensation Risk)",
             "clinical_status_kz": "Оң клиникалық жауап (True Responder)" if is_resp else "Жамбастың компенсациялық қаупі жоғары (High Compensation Risk)",
