@@ -330,6 +330,57 @@ select:focus, input:focus, textarea:focus {
   font-variant-numeric: tabular-nums;
 }
 
+/* Keyboard Focus Visibility */
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* Accessibility / Patient & Elderly Mode */
+html.a11y-large {
+  font-size: 18px;
+  --ink: #0f0e0d;
+  --muted: #3d3832;
+  --line: #9a9082;
+  --amber: #8a3c09;
+  --teal: #0b6e65;
+  --red: #991b1b;
+}
+
+html.a11y-large body {
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+html.a11y-large .btn,
+html.a11y-large input,
+html.a11y-large select,
+html.a11y-large textarea {
+  min-height: 44px;
+  font-size: 15px !important;
+}
+
+html.a11y-large .btn {
+  padding: 10px 16px !important;
+}
+
+html.a11y-large .badge {
+  font-size: 13px !important;
+  padding: 5px 10px;
+}
+
+html.a11y-large td,
+html.a11y-large th,
+html.a11y-large label,
+html.a11y-large p {
+  font-size: 15px;
+}
+
+html.a11y-large :focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
 /* Print Layout for Clinical Report */
 @media print {
   body {

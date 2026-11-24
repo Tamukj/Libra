@@ -6,6 +6,14 @@ export interface Patient {
   height: number;
   leg_length: number;
   clinic_name: string | null;
+  pcr?: number;
+  tje?: number;
+  status?: "green" | "yellow" | "red";
+  baseline_gps?: number;
+  vr_gps?: number;
+  delta_amin_sagh?: number;
+  has_vr?: boolean;
+  has_verbal?: boolean;
 }
 
 export interface DiscreteSummary {
@@ -30,27 +38,28 @@ export interface DiscreteSummary {
   baseline_gvs_hip: number;
   baseline_gvs_knee: number;
   baseline_gvs_ankle: number;
-  baseline_pctm_zero: number;
+  baseline_pctm_zero?: number | null;
   vr_gps: number;
   vr_amin_sagh: number;
   vr_gvs_pelvis: number;
   vr_gvs_hip: number;
   vr_gvs_knee: number;
   vr_gvs_ankle: number;
-  vr_pctm_zero: number;
+  vr_pctm_zero?: number | null;
   verbal_gps?: number;
   verbal_amin_sagh?: number;
   verbal_gvs_pelvis?: number;
   verbal_gvs_hip?: number;
   verbal_gvs_knee?: number;
   verbal_gvs_ankle?: number;
+  verbal_pctm_zero?: number | null;
   delta_gps: number;
   delta_amin_sagh: number;
   delta_gvs_pelvis: number;
   delta_gvs_hip: number;
   delta_gvs_knee: number;
   delta_gvs_ankle: number;
-  delta_pctm_zero: number;
+  delta_pctm_zero?: number | null;
   baseline_gdi?: number;
   vr_gdi?: number;
   verbal_gdi?: number;
@@ -97,6 +106,9 @@ export interface PatientAnalysis {
     responder_prediction?: {
       responder_probability: number;
       is_predicted_responder: boolean;
+      loo_balanced_accuracy?: number;
+      loo_roc_auc?: number;
+      model_reliable?: boolean;
       feature_attributions?: FeatureAttribution[];
       clinical_status_ru: string;
       clinical_status_kz: string;
@@ -130,6 +142,8 @@ export interface JointKinematics {
 
 export interface KinematicsResponse {
   subject: string;
+  is_surrogate?: boolean;
+  is_fallback?: boolean;
   joints: {
     aSagP: JointKinematics;
     aSagH: JointKinematics;
@@ -204,6 +218,15 @@ export interface GaitDiffResponse {
   verdict_kz: string;
 }
 
+export interface ThreeClassMLMetrics {
+  balanced_accuracy: number;
+  roc_auc?: number;
+  f1_macro: number;
+  n_splits: number;
+  n_cycles: number;
+  n_subjects: number;
+}
+
 export interface MLMetrics {
   balanced_accuracy: number;
   roc_auc: number;
@@ -214,4 +237,15 @@ export interface MLMetrics {
   n_cycles: number;
   n_subjects: number;
   feature_importances: Record<string, number>;
+  three_class?: ThreeClassMLMetrics;
+}
+
+export interface CsvUploadResponse {
+  status: string;
+  code: string;
+  condition?: "Baseline" | "Verbal" | "VR";
+  rows?: number;
+  columns?: number;
+  message_ru?: string;
+  message_kz?: string;
 }

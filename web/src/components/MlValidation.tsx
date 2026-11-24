@@ -31,9 +31,22 @@ export function MlValidation({ metrics, lang }: Props) {
           </h2>
         </div>
         <p style={{ fontSize: "13px", color: "var(--ink)", lineHeight: "1.6" }}>
-          В биомедицине случайный сплит строк (`train_test_split`) дает <strong>ложные 95-99% точности</strong> из-за запоминания антропометрии ребенка.
-          Наша модель валидирована по стандарту <strong>GroupKFold (k={metrics.n_splits}) строго по {metrics.n_subjects} пациентам</strong>:
-          шаги одного ребенка никогда не попадают одновременно в обучающую и проверочную выборки.
+          {lang === "kz" ? (
+            <>
+              Биомедицинада жолдарды кездейсоқ бөлу (<code>train_test_split</code>) баланың антропометриясын жаттап алу салдарынан{" "}
+              <strong>жалған 95–99% дәлдік</strong> береді. Біздің модель{" "}
+              <strong>GroupKFold (k={metrics.n_splits}) стандарты бойынша {metrics.n_subjects} пациенттен ({metrics.n_cycles} цикл)</strong>{" "}
+              қатаң тексерілген: бір баланың қадамдары оқыту және тексеру іріктемелеріне ешқашан бір уақытта түспейді.
+            </>
+          ) : (
+            <>
+              В биомедицине случайный сплит строк (<code>train_test_split</code>) дает{" "}
+              <strong>ложные 95–99% точности</strong> из-за запоминания антропометрии ребенка.
+              Наша модель валидирована по стандарту{" "}
+              <strong>GroupKFold (k={metrics.n_splits}) строго по {metrics.n_subjects} пациентам ({metrics.n_cycles} циклов)</strong>:
+              шаги одного ребенка никогда не попадают одновременно в обучающую и проверочную выборки.
+            </>
+          )}
         </p>
       </div>
 
@@ -89,6 +102,46 @@ export function MlValidation({ metrics, lang }: Props) {
         </div>
 
       </div>
+
+      {/* Optional 3-Class Classification Metrics (Baseline / Verbal / VR) */}
+      {metrics.three_class && (
+        <div className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "12px" }}>
+            <h3 style={{ fontSize: "15px", margin: 0 }}>
+              {lang === "kz"
+                ? "Үш класты жіктеу (Baseline / Verbal / VR, GroupKFold)"
+                : "Трёхклассовая классификация (Baseline / Verbal / VR, GroupKFold)"}
+            </h3>
+            <span className="badge badge-neutral">
+              {lang === "kz"
+                ? `${metrics.three_class.n_cycles} цикл · ${metrics.three_class.n_subjects} пациент · k=${metrics.three_class.n_splits}`
+                : `${metrics.three_class.n_cycles} циклов · ${metrics.three_class.n_subjects} пациентов · k=${metrics.three_class.n_splits}`}
+            </span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
+            <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "12px" }}>
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>Balanced accuracy (3-class)</div>
+              <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: "var(--teal)", marginTop: "4px" }}>
+                {(metrics.three_class.balanced_accuracy * 100).toFixed(1)}%
+              </div>
+            </div>
+            {typeof metrics.three_class.roc_auc === "number" && Number.isFinite(metrics.three_class.roc_auc) && (
+              <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "12px" }}>
+                <div style={{ fontSize: "12px", color: "var(--muted)" }}>ROC-AUC (OvR)</div>
+                <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: "var(--teal)", marginTop: "4px" }}>
+                  {metrics.three_class.roc_auc.toFixed(3)}
+                </div>
+              </div>
+            )}
+            <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "12px" }}>
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>F1 Macro</div>
+              <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: "var(--ink)", marginTop: "4px" }}>
+                {(metrics.three_class.f1_macro * 100).toFixed(1)}%
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Feature Importances Bar Chart */}
       <div className="card">
