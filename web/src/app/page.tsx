@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Header } from "@/components/Header";
 import { CdssTrafficLight } from "@/components/CdssTrafficLight";
 import { KinematicsChart } from "@/components/KinematicsChart";
@@ -13,7 +13,8 @@ import {
   getPatientAnalysis,
   getPatientKinematics,
   getRegionalStats,
-  getMLMetrics
+  getMLMetrics,
+  uploadPatientCSV
 } from "@/lib/api";
 import { Patient, PatientAnalysis, KinematicsResponse, RegionalStats as RegionalStatsType, MLMetrics } from "@/lib/types";
 import { translations } from "@/lib/translations";
@@ -24,7 +25,7 @@ export default function MainPage() {
   const [activeTab, setActiveTab] = useState<string>("patient");
   
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [selectedCode, setSelectedCode] = useState<string>("s61520_22");
+  const [selectedCode, setSelectedCode] = useState<string>("s61520_1");
   
   const [analysis, setAnalysis] = useState<PatientAnalysis | null>(null);
   const [kinematics, setKinematics] = useState<KinematicsResponse | null>(null);
@@ -33,6 +34,27 @@ export default function MainPage() {
 
   const [loading, setLoading] = useState<boolean>(true);
   const [reportModalOpen, setReportModalOpen] = useState<boolean>(false);
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadNotice(lang === "kz" ? "Файл импортталуда..." : "Импорт файла...");
+      const res = await uploadPatientCSV(file);
+      setUploadNotice(lang === "kz" ? res.message_kz : res.message_ru);
+      const updatedPts = await getPatients();
+      setPatients(updatedPts);
+      if (res.code) {
+        setSelectedCode(res.code);
+      }
+      setTimeout(() => setUploadNotice(null), 5000);
+    } catch (err) {
+      setUploadNotice(lang === "kz" ? "Жүктеу қатесі: CSV форматын тексеріңіз" : "Ошибка загрузки: проверьте формат CSV");
+      setTimeout(() => setUploadNotice(null), 5000);
+    }
+  };
 
   const t = translations[lang];
 
@@ -50,7 +72,7 @@ export default function MainPage() {
         setMlMetrics(ml);
 
         if (pts.length > 0) {
-          const defaultCode = pts.some(p => p.code === "s61520_22") ? "s61520_22" : pts[0].code;
+          const defaultCode = pts.some(p => p.code === "s61520_1") ? "s61520_1" : pts[0].code;
           setSelectedCode(defaultCode);
         }
       } catch (err) {
@@ -136,8 +158,15 @@ export default function MainPage() {
               <FileText size={15} />
               {t.btn_report}
             </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".csv"
+              style={{ display: "none" }}
+              onChange={handleFileUpload}
+            />
             <button
-              onClick={() => alert("Drag-and-drop CSV загрузчик готов: поддерживаются файлы Vicon Nexus и GRAIL.")}
+              onClick={() => fileInputRef.current?.click()}
               className="btn"
             >
               <Upload size={15} />
@@ -146,6 +175,21 @@ export default function MainPage() {
           </div>
 
         </div>
+
+        {/* Upload Notification Banner */}
+        {uploadNotice && (
+          <div style={{
+            background: "var(--teal-bg)",
+            border: "1px solid var(--teal-border)",
+            color: "var(--teal)",
+            padding: "10px 16px",
+            borderRadius: "6px",
+            fontSize: "13px",
+            fontWeight: "600"
+          }}>
+            {uploadNotice}
+          </div>
+        )}
 
         {/* Dynamic View based on Active Tab */}
         {loading ? (

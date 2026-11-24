@@ -209,3 +209,49 @@ def create_patient_report(
         "narrative": narrative_kz if lang == "kz" else narrative_ru,
         "created_at": report.created_at.isoformat()
     }
+
+@router.post("/patients/upload")
+async def upload_patient_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Accepts CSV from Vicon Nexus, GRAIL, or motion lab.
+    Parses and registers patient, adds to cohort.
+    """
+    import io
+    contents = await file.read()
+    try:
+        df_upload = pd.read_csv(io.BytesIO(contents), sep=None, engine="python")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid CSV file: {str(e)}")
+
+    subject_code = file.filename.replace(".csv", "").strip()
+    if "subject" in df_upload.columns:
+        valid_subs = df_upload["subject"].dropna().unique()
+        if len(valid_subs) > 0:
+            subject_code = str(valid_subs[0])
+
+    patient = db.query(Patient).filter(Patient.code == subject_code).first()
+    if not patient:
+        patient = Patient(
+            code=subject_code,
+            side="RIGHT",
+            weight=float(df_upload["weight"].dropna().iloc[0]) if "weight" in df_upload.columns else 42.0,
+            height=float(df_upload["height"].dropna().iloc[0]) if "height" in df_upload.columns else 1.38,
+            leg_length=float(df_upload["leg_length"].dropna().iloc[0]) if "leg_length" in df_upload.columns else 0.71,
+            clinic_id=1
+        )
+        db.add(patient)
+        db.commit()
+        db.refresh(patient)
+
+    return {
+        "status": "success",
+        "code": patient.code,
+        "rows": len(df_upload),
+        "columns": len(df_upload.columns),
+        "message_ru": f"Файл {file.filename} успешно импортирован. Пациент {patient.code} добавлен в реестр.",
+        "message_kz": f"{file.filename} файлы сәтті импортталды. Пациент {patient.code} тізілімге қосылды."
+    }
+

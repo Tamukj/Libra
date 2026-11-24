@@ -91,3 +91,16 @@ def test_create_clinical_report(client):
     assert response_kz.status_code == 200
     data_kz = response_kz.json()
     assert "жамбас" in data_kz["narrative"].lower()
+
+def test_upload_patient_csv(client):
+    csv_content = b"subject,weight,height,leg_length,aMinSagH,GVS_aSagP\ns99999_test,45.0,1.40,0.72,12.5,14.2\n"
+    response = client.post(
+        "/api/v1/patients/upload",
+        files={"file": ("test_patient.csv", csv_content, "text/csv")}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["code"] == "s99999_test"
+    assert "s99999_test" in data["message_ru"]
+
