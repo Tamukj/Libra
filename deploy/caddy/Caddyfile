@@ -1,0 +1,28 @@
+{
+    admin off
+}
+
+:80 {
+    encode zstd gzip
+
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+
+    # API and Healthcheck routing to FastAPI Backend
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    handle /health {
+        reverse_proxy api:8000
+    }
+
+    # All web frontend routing to Next.js
+    handle /* {
+        reverse_proxy web:3000
+    }
+}

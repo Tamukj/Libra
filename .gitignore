@@ -37,3 +37,23 @@ Thumbs.db
 
 # Archives (raw zip is redundant with unpacked folder)
 gait-cp-dataset.zip
+
+# Testing & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Node / Next.js
+web/node_modules/
+web/.next/
+web/out/
+web/.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
