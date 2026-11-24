@@ -93,7 +93,7 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
         <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "var(--ink)", flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
             <span style={{ width: "12px", height: "10px", background: "var(--norm-corridor)", borderRadius: "2px", opacity: 0.65 }} />
-            <span>{lang === "kz" ? "TD нормасы (±1 SD)" : "Норма TD (±1 SD)"}</span>
+            <span>{lang === "kz" ? "TD нормасы (±1 SD, Schwartz 2008)" : "Схематическая норма TD (±1 SD, Schwartz 2008)"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
             <span style={{ width: "14px", height: "2.5px", background: "#3b82f6" }} />
@@ -127,8 +127,8 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
       }}>
         <span>
           {lang === "kz"
-            ? "Сұр аймақ — сау балалар нормасы (TD ±1 SD). Сарғыш сызықтың (VR) нормадан жоғары шығуы — патологиялық компенсация."
-            : "Серый коридор — норма здоровых детей (TD ±1 SD). Отклонение линии VR выше серого диапазона указывает на компенсаторную нагрузку."}
+            ? "Сұр аймақ — әдебиеттік нормативтік дәліз (Schwartz 2008 ±1 SD). Сарғыш сызықтың (VR) нормадан жоғары шығуы — биомеханикалық компенсация."
+            : "Серый коридор — литературный нормативный диапазон здоровых детей (Schwartz 2008 ±1 SD). Отклонение линии VR выше серого диапазона указывает на компенсаторную нагрузку."}
         </span>
         <span style={{ fontWeight: 650, color: "var(--ink)" }}>{lang === "kz" ? "0%–60% Тіреу · 60%–100% Ауысу" : "0%–60% Опора · 60%–100% Перенос"}</span>
       </div>

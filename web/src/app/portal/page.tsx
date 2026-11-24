@@ -235,7 +235,7 @@ export default function PortalDashboard() {
                           </div>
                           <div>
                             <strong style={{ fontSize: "14px" }}>{p.code}</strong>
-                            <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "БЦП GMFCS I–II" : "ДЦП GMFCS I–II"}</div>
+                            <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "БЦП когортасы (KU Leuven)" : "Когорта ДЦП (KU Leuven)"}</div>
                           </div>
                         </div>
                       </td>

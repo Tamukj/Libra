@@ -67,8 +67,24 @@ export default function PatientDossierPage() {
               )}
             </div>
             {patient && (
-              <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>
-                {t.weight}: <strong>{patient.weight.toFixed(1)} кг</strong>, {t.height}: <strong>{patient.height.toFixed(2)} м</strong>, {t.leg_length}: <strong>{patient.leg_length.toFixed(3)} м</strong>, шкала GMFCS I–II
+              <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px", display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
+                <span>{t.weight}: <strong>{patient.weight.toFixed(1)} кг</strong></span>
+                <span>{t.height}: <strong>{patient.height.toFixed(2)} м</strong></span>
+                <span>{t.leg_length}: <strong>{patient.leg_length.toFixed(3)} м</strong></span>
+                <span>{lang === "kz" ? "Зерттелген аяқ" : "Исследуемая сторона"}: <strong>{patient.side === "LEFT" ? (lang === "kz" ? "Сол аяқ" : "Левая нога") : (lang === "kz" ? "Оң аяқ" : "Правая нога")}</strong></span>
+              </div>
+            )}
+            {analysis?.summary && (
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "6px" }}>
+                <span className="badge" style={{ background: "var(--linen)", borderColor: "var(--line)", color: "var(--ink)", fontSize: "11px", padding: "3px 8px" }}>
+                  <strong>{lang === "kz" ? "Baseline" : "Baseline"}:</strong>&nbsp;{analysis.summary.cycles_baseline || analysis.summary.baseline_cycles || 0}&nbsp;{lang === "kz" ? "цикл" : "циклов"}
+                </span>
+                <span className="badge" style={{ background: "var(--amber-light)", borderColor: "var(--amber-border)", color: "#b45309", fontSize: "11px", padding: "3px 8px" }}>
+                  <strong>{lang === "kz" ? "Verbal" : "Verbal"}:</strong>&nbsp;{analysis.summary.cycles_verbal || analysis.summary.verbal_cycles || 0}&nbsp;{lang === "kz" ? "цикл" : "циклов"}
+                </span>
+                <span className="badge" style={{ background: "var(--teal-bg)", borderColor: "var(--teal-border)", color: "var(--teal)", fontSize: "11px", padding: "3px 8px" }}>
+                  <strong>{lang === "kz" ? "VR" : "VR"}:</strong>&nbsp;{analysis.summary.cycles_vr || analysis.summary.vr_cycles || 0}&nbsp;{lang === "kz" ? "цикл" : "циклов"}
+                </span>
               </div>
             )}
           </div>
@@ -265,6 +281,42 @@ export default function PatientDossierPage() {
                       <td style={{ padding: "10px 12px" }}>{analysis.summary.verbal_gvs_ankle?.toFixed(1) || "-"}°</td>
                       <td style={{ padding: "10px 12px" }}>{analysis.summary.vr_gvs_ankle.toFixed(1)}°</td>
                       <td style={{ padding: "10px 12px" }}>{analysis.summary.delta_gvs_ankle.toFixed(1)}°</td>
+                    </tr>
+                    <tr style={{ borderTop: "2px solid var(--line)", background: "var(--linen)" }}>
+                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Сан разгибаниесі (aMinSagH)" : "Разгибание бедра (aMinSagH)"}</th>
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{analysis.summary.baseline_amin_sagh.toFixed(1)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{analysis.summary.verbal_amin_sagh?.toFixed(1) || "-"}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "var(--teal)" }}>{analysis.summary.vr_amin_sagh.toFixed(1)}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: analysis.summary.delta_amin_sagh < 0 ? "var(--teal)" : "var(--ink)" }}>
+                        {analysis.summary.delta_amin_sagh.toFixed(1)}°
+                      </td>
+                    </tr>
+                    <tr style={{ background: "var(--linen)" }}>
+                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Бейкер индексі (GPS_a)" : "Индекс походки Бейкера (GPS_a)"}</th>
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{analysis.summary.baseline_gps.toFixed(1)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{analysis.summary.verbal_gps?.toFixed(1) || "-"}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{analysis.summary.vr_gps.toFixed(1)}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{analysis.summary.delta_gps.toFixed(1)}°</td>
+                    </tr>
+                    <tr style={{ background: "var(--paper)" }}>
+                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 700, color: "var(--ink)" }}>{lang === "kz" ? "Шынайы буын жазылуы (TJE)" : "Истинное суставное разгибание (TJE)"}</th>
+                      <td style={{ padding: "10px 12px" }}>0.0° (Base)</td>
+                      <td style={{ padding: "10px 12px" }}>{analysis.modalities?.tje_verbal?.toFixed(1) || "-"}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "var(--teal)" }}>{(analysis.cdss_risk || analysis.cdss)?.tje?.toFixed(1) || "-"}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: ((analysis.cdss_risk || analysis.cdss)?.tje || 0) < 0 ? "var(--teal)" : "var(--red)" }}>
+                        {(analysis.cdss_risk || analysis.cdss)?.tje?.toFixed(1) || "-"}°
+                      </td>
+                    </tr>
+                    <tr style={{ background: "var(--paper)" }}>
+                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 700, color: "var(--ink)" }}>{lang === "kz" ? "Компенсация индексі (PCR)" : "Индекс компенсации таза (PCR)"}</th>
+                      <td style={{ padding: "10px 12px" }}>0.00</td>
+                      <td style={{ padding: "10px 12px" }}>{analysis.modalities?.pcr_verbal?.toFixed(2) || "0.00"}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: ((analysis.cdss_risk || analysis.cdss)?.pcr || 0) > 0.8 ? "var(--red)" : "var(--teal)" }}>
+                        {(analysis.cdss_risk || analysis.cdss)?.pcr?.toFixed(2) || "0.00"}
+                      </td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: ((analysis.cdss_risk || analysis.cdss)?.pcr || 0) > 0.8 ? "var(--red)" : "var(--teal)" }}>
+                        {((analysis.cdss_risk || analysis.cdss)?.pcr || 0) > 0.8 ? (lang === "kz" ? "Қауіпті" : "Опасно") : (lang === "kz" ? "Қалыпты" : "В норме")}
+                      </td>
                     </tr>
                   </tbody>
                 </table>

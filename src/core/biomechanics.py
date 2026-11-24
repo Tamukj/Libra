@@ -87,10 +87,15 @@ def analyze_compensation_risk(
     delta_gvs_p: float,
     delta_gvs_k: float,
     delta_gvs_a: float,
-    delta_pelvis_term: float = 0.0
+    delta_pelvis_term: Optional[float] = None
 ) -> Dict[str, Any]:
     """
     Clinical Decision Support analysis of VR therapeutic efficacy vs compensatory risk.
+    Note: PCR thresholds (0.4 / 0.8) and weights (0.5 pelvis, 0.3 knee, 0.2 ankle) are
+    evidence-grounded clinical heuristics calibrated for cerebral palsy gait assessment.
+    
+    If delta_pelvis_term is provided (e.g. true sagittal pelvic tilt angle delta),
+    it is used for True Joint Extension (TJE); otherwise delta_gvs_p serves as deviation surrogate.
     Returns status ('green', 'yellow', 'red') and bilingual explanations.
     """
     pcr = compute_pcr(delta_gvs_p, delta_gvs_k, delta_gvs_a, delta_hip)
