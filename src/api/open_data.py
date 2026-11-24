@@ -12,6 +12,9 @@ KAZAKHSTAN_OPEN_DATA: Dict[str, Any] = {
     "country": {
         "name_ru": "Республика Казахстан",
         "name_kz": "Қазақстан Республикасы",
+        "is_reference_snapshot": True,
+        "snapshot_note_ru": "Справочный снимок агрегатов (без прямого онлайн-подключения к API stat.gov.kz / data.egov.kz).",
+        "snapshot_note_kz": "Агрегаттардың анықтамалық көшірмесі (stat.gov.kz / data.egov.kz API-не тікелей онлайн қосылусыз).",
         "total_children_disability": 122400,
         "children_with_cp": 22150,
         "primary_disability_annual": 14200,
@@ -42,6 +45,9 @@ KAZAKHSTAN_OPEN_DATA: Dict[str, Any] = {
         "average_waiting_months": 4.5,
         "labs_3d_grail_count": 0, # Zero GRAIL labs in Abai region! Only available in Astana
         "economic_impact": {
+            "is_model_estimate": True,
+            "methodology_ru": "Оценка эффекта пилотного внедрения (сравнение времени ручного протоколирования 40 мин и автоматического расчёта СППР)",
+            "methodology_kz": "Пилоттық енгізу әсерінің бағалауы (қолмен 40 мин хаттама толтыру мен СППР есептеу уақытын салыстыру)",
             "time_saved_per_patient_minutes": 38.0,
             "cost_reduction_pct": 24.5,
             "annual_queue_reduction_estimate_pct": 30.0

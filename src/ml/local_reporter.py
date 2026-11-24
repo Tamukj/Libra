@@ -1,6 +1,6 @@
-"""Local AI Clinical Reporter.
-Generates structured, bilingual (KZ / RU) medical summaries for clinicians,
-fully mapped to WHO ICF (b770 / d450) and Clinical Decision Support (CDSS) standards.
+"""Deterministic Rule-Based Clinical Protocol Synthesizer.
+Generates structured, bilingual (KZ / RU) medical summaries for clinicians without generative
+hallucinations, mapped to WHO ICF (b770 / d450) and Clinical Decision Support (CDSS) standards.
 """
 
 from typing import Dict, Any

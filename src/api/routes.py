@@ -1,6 +1,7 @@
 """FastAPI Route Handlers for Libra."""
 
 import os
+import json
 import math
 import base64
 import datetime
@@ -24,6 +25,8 @@ from src.core.biomechanics import (
     compute_session_diff,
     compute_pcr,
     compute_true_joint_extension,
+    compute_curve_gvs_gps,
+    compute_kinematic_summary_metrics,
 )
 from src.core.normative_data import NORMATIVE_PROFILES
 from src.ml.vr_predictor import GaitConditionClassifier, VRResponderPredictor
@@ -53,13 +56,18 @@ _ML_THREE_CLASS_METRICS = _ML_CLASSIFIER.evaluate_three_class_group_kfold(
 )
 
 _VR_RESPONDER = VRResponderPredictor()
-_VR_RESPONDER_METRICS = _VR_RESPONDER.fit_evaluate_subjects(_DF_BASE, _DF_VR)
+_VR_RESPONDER_METRICS = _VR_RESPONDER.fit_evaluate_subjects(_DF_BASE, _DF_VR, df_kin_base=_DF_KIN)
 
-# Train PCA anomaly detector on sagittal hip curves of Baseline
+# Train PCA anomaly detector on sagittal hip curves of Baseline + GroupKFold validation
 _HIP_COLS = [c for c in _DF_KIN.columns if "aSagH_pct_GC_" in c]
 _PCA_DETECTOR = KinematicPCAAnomalyDetector(n_components=6)
+_PCA_VALIDATION: Dict[str, Any] = {"oof_baseline_anomaly_rate": 0.0, "vr_anomaly_rate": 0.0, "fold_rates": [], "n_splits": 0, "n_subjects": 0, "n_cycles": 0}
 if len(_HIP_COLS) > 0:
+    _PCA_VALIDATION = _PCA_DETECTOR.evaluate_group_kfold(_DF_KIN[_HIP_COLS].values, _DF_KIN["subject"].values, n_splits=5)
     _PCA_DETECTOR.fit(_DF_KIN[_HIP_COLS].values)
+    _vr_pca_res = _PCA_DETECTOR.detect(_DF_KIN_VR[_HIP_COLS].values)
+    _PCA_VALIDATION["vr_anomaly_rate"] = float(_vr_pca_res["anomaly_rate"])
+    _PCA_VALIDATION["vr_n_cycles"] = int(_vr_pca_res["n_total"])
 
 # Security and clinician authentication
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -100,6 +108,23 @@ def _compute_mean_pelvic_tilt(df_kin: pd.DataFrame, subject: str) -> Optional[fl
         return None
     return float(np.nanmean(vals))
 
+def _compute_mean_hip_rom(df_kin: pd.DataFrame, subject: str) -> Optional[float]:
+    """Computes sagittal hip range of motion (max - min) across gait cycles."""
+    if df_kin is None or df_kin.empty:
+        return None
+    sub = df_kin[df_kin["subject"] == subject]
+    if sub.empty:
+        return None
+    h_cols = [c for c in df_kin.columns if c.startswith("aSagH_pct_GC_")]
+    if not h_cols:
+        return None
+    vals = sub[h_cols].values
+    if vals.size == 0 or np.isnan(vals).all():
+        return None
+    roms = np.nanmax(vals, axis=1) - np.nanmin(vals, axis=1)
+    valid = roms[np.isfinite(roms)]
+    return float(np.mean(valid)) if valid.size > 0 else None
+
 def _opt_float(val: Any) -> Optional[float]:
     if val is None:
         return None
@@ -110,15 +135,61 @@ def _opt_float(val: Any) -> Optional[float]:
         return None
 
 
-def _compute_patient_anomaly_rate(code: str, summary: Dict[str, Any]) -> Tuple[float, int, int]:
-    """Computes PCA kinematic anomaly rate for a patient's VR (or Baseline) cycles."""
-    sub_kin_vr = _DF_KIN_VR[_DF_KIN_VR["subject"] == code]
-    target_kin = sub_kin_vr if not sub_kin_vr.empty else _DF_KIN[_DF_KIN["subject"] == code]
-    if not target_kin.empty and len(_HIP_COLS) > 0:
-        pca_res = _PCA_DETECTOR.detect(target_kin[_HIP_COLS].values)
-        return float(pca_res["anomaly_rate"]), int(pca_res["n_anomalies"]), int(pca_res["n_total"])
+def _parse_session_kinematics(sess: Optional[GaitSession]) -> Optional[Dict[str, Any]]:
+    if sess is None or not getattr(sess, "kinematics_json", None):
+        return None
+    try:
+        return json.loads(sess.kinematics_json)
+    except Exception:
+        return None
+
+
+def _compute_patient_cycle_stability(
+    code: str,
+    summary: Dict[str, Any],
+    sessions: Optional[List[GaitSession]] = None,
+) -> Tuple[float, int, int, List[Dict[str, Any]]]:
+    """Computes PCA kinematic anomaly rate and per-cycle SPE diagnostics."""
+    target_curves: Optional[np.ndarray] = None
+    if sessions:
+        vr_sess = next((s for s in sessions if s.condition == "VR"), None)
+        base_sess = next((s for s in sessions if s.condition == "Baseline"), None)
+        vb_sess = next((s for s in sessions if s.condition == "Verbal"), None)
+        for cand in (vr_sess, base_sess, vb_sess):
+            parsed = _parse_session_kinematics(cand)
+            if parsed and parsed.get("hip_cycles"):
+                target_curves = np.asarray(parsed["hip_cycles"], dtype=float)
+                break
+
+    if target_curves is None:
+        sub_kin_vr = _DF_KIN_VR[_DF_KIN_VR["subject"] == code]
+        target_kin = sub_kin_vr if not sub_kin_vr.empty else _DF_KIN[_DF_KIN["subject"] == code]
+        if not target_kin.empty and len(_HIP_COLS) > 0:
+            target_curves = target_kin[_HIP_COLS].values
+
+    if target_curves is not None and target_curves.size > 0 and _PCA_DETECTOR.threshold is not None:
+        pca_res = _PCA_DETECTOR.detect(target_curves)
+        spe_arr = pca_res["reconstruction_error"]
+        anom_arr = pca_res["is_anomaly"]
+        thresh = float(pca_res["threshold"])
+        cycles_list = [
+            {
+                "cycle_index": idx + 1,
+                "spe": round(float(spe_arr[idx]), 2),
+                "threshold": round(thresh, 2),
+                "is_anomaly": bool(anom_arr[idx]),
+            }
+            for idx in range(len(spe_arr))
+        ]
+        return float(pca_res["anomaly_rate"]), int(pca_res["n_anomalies"]), int(pca_res["n_total"]), cycles_list
+
     n_cycles = summary.get("vr_cycles", 0) or summary.get("baseline_cycles", 20)
-    return 0.05, 1, int(n_cycles)
+    return 0.05, 1, int(n_cycles), []
+
+
+def _compute_patient_anomaly_rate(code: str, summary: Dict[str, Any], sessions: Optional[List[GaitSession]] = None) -> Tuple[float, int, int]:
+    rate, n_anom, n_tot, _ = _compute_patient_cycle_stability(code, summary, sessions=sessions)
+    return rate, n_anom, n_tot
 
 
 def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[str, Any]:
@@ -237,6 +308,13 @@ def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[s
     summary["verbal_pelvis_tilt"] = round(tilt_vb, 2) if tilt_vb is not None else None
     summary["delta_pelvis_tilt"] = round(tilt_vr - tilt_b, 2) if (tilt_vr is not None and tilt_b is not None) else None
     summary["verbal_delta_pelvis_tilt"] = round(tilt_vb - tilt_b, 2) if (tilt_vb is not None and tilt_b is not None) else None
+    hip_rom_b = _compute_mean_hip_rom(_DF_KIN, code)
+    if hip_rom_b is None and sessions:
+        base_s = next((s for s in sessions if s.condition == "Baseline"), None)
+        parsed_b = _parse_session_kinematics(base_s)
+        if parsed_b and parsed_b.get("hip_rom") is not None:
+            hip_rom_b = float(parsed_b["hip_rom"])
+    summary["baseline_hip_rom"] = round(hip_rom_b, 2) if hip_rom_b is not None else None
     return summary
 
 @router.get("/patients")
@@ -310,7 +388,10 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
 
     # Dynamic PCA Anomaly Detection on patient's VR kinematic curves
     # Evaluates step stability, tripping risk and motor fatigue during VR therapy
-    anomaly_rate, n_anomalies, n_cycles = _compute_patient_anomaly_rate(code, summary)
+    sessions = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).all()
+    anomaly_rate, n_anomalies, n_cycles, cycle_stability = _compute_patient_cycle_stability(
+        code, summary, sessions=sessions
+    )
 
     icf_b770_base = classify_icf_b770(summary["baseline_gps"])
     icf_b770_vr = classify_icf_b770(summary["vr_gps"])
@@ -334,12 +415,22 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
         )
         response_prob = float(np.mean(probs))
     else:
-        response_prob = 0.55
+        cond_prefix = "vr" if summary.get("has_vr") else "baseline"
+        df_uploaded_row = pd.DataFrame([{
+            "GPS_a": summary.get(f"{cond_prefix}_gps"),
+            "GVS_aSagP": summary.get(f"{cond_prefix}_gvs_pelvis"),
+            "GVS_aSagH": summary.get(f"{cond_prefix}_gvs_hip"),
+            "GVS_aSagK": summary.get(f"{cond_prefix}_gvs_knee"),
+            "GVS_aSagA": summary.get(f"{cond_prefix}_gvs_ankle"),
+            "aMinSagH": summary.get(f"{cond_prefix}_amin_sagh"),
+        }])
+        _, probs = _ML_CLASSIFIER.predict_cycle_condition(df_uploaded_row)
+        response_prob = float(probs[0])
 
     responder_prediction = _VR_RESPONDER.predict_subject_response(summary)
     modalities = compare_modalities(summary)
 
-    # Compute Sagittal GDI (0-100 scale)
+    # Compute Sagittal GDI Proxy (0-100 scale)
     summary["baseline_gdi"] = compute_sagittal_gdi(summary["baseline_gps"])
     summary["vr_gdi"] = compute_sagittal_gdi(summary["vr_gps"])
     vb_gps_val = summary.get("verbal_gps")
@@ -357,13 +448,15 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
         },
         "ml": {
             "vr_gait_signature_confidence": response_prob,
+            "binary_roc_auc": round(float(_ML_METRICS.get("roc_auc", 0.0)), 3),
             "is_vr_discriminative": bool(response_prob > 0.5),
             "responder_prediction": responder_prediction,
             "pca_stability": {
                 "anomaly_rate": anomaly_rate,
                 "n_anomalies": n_anomalies,
                 "n_cycles": n_cycles,
-                "is_stable": bool(anomaly_rate < 0.15)
+                "is_stable": bool(anomaly_rate < 0.15),
+                "cycles": cycle_stability,
             }
         }
     }
@@ -382,9 +475,18 @@ def get_patient_kinematics(code: str, db: Session = Depends(get_db)):
     sub_vr = _DF_KIN_VR[_DF_KIN_VR["subject"] == code]
     sub_vb = _DF_KIN_VB[_DF_KIN_VB["subject"] == code]
 
+    # Check if uploaded 51-point curves exist in DB GaitSessions
+    db_sessions = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).all() if patient else []
+    db_kin_by_cond: Dict[str, Dict[str, Any]] = {}
+    for sess in db_sessions:
+        parsed = _parse_session_kinematics(sess)
+        if parsed and parsed.get("joints"):
+            db_kin_by_cond[sess.condition] = parsed["joints"]
+
+    has_db_curves = len(db_kin_by_cond) > 0
     is_surrogate = False
-    if sub_base.empty:
-        # Fallback to reference cohort patient s61520_1 so user-uploaded patients display curves smoothly
+    if sub_base.empty and not has_db_curves:
+        # Fallback to reference cohort patient s61520_1 so discrete-only uploaded patients display curves smoothly
         sub_base = _DF_KIN[_DF_KIN["subject"] == "s61520_1"]
         sub_vr = _DF_KIN_VR[_DF_KIN_VR["subject"] == "s61520_1"]
         sub_vb = _DF_KIN_VB[_DF_KIN_VB["subject"] == "s61520_1"]
@@ -395,16 +497,33 @@ def get_patient_kinematics(code: str, db: Session = Depends(get_db)):
         joints.append("mSagH")
 
     kinematics_data: Dict[str, Any] = {}
-
     t_percent = np.linspace(0, 100, 51).tolist()
 
     for joint in joints:
         cols = [f"{joint}_pct_GC_{i*20}" for i in range(51)]
-        
+
         # Normative profile resampled to 51 points
         td_profile = NORMATIVE_PROFILES[joint]
         norm_mean = td_profile["mean"][::20].tolist()
         norm_std = td_profile["std"][::20].tolist()
+
+        if has_db_curves:
+            ref_cond = db_kin_by_cond.get("Baseline") or db_kin_by_cond.get("VR") or db_kin_by_cond.get("Verbal") or {}
+            ref_joint = ref_cond.get(joint, {"mean": norm_mean, "std": norm_std})
+            b_series = (db_kin_by_cond.get("Baseline") or {}).get(joint, ref_joint)
+            vr_series = (db_kin_by_cond.get("VR") or {}).get(joint, b_series)
+            vb_series = (db_kin_by_cond.get("Verbal") or {}).get(joint, b_series)
+            kinematics_data[joint] = {
+                "name_ru": td_profile["name_ru"],
+                "name_kz": td_profile["name_kz"],
+                "unit": td_profile["unit"],
+                "time_percent": t_percent,
+                "baseline": {"mean": b_series["mean"], "std": b_series["std"]},
+                "vr": {"mean": vr_series["mean"], "std": vr_series["std"]},
+                "verbal": {"mean": vb_series["mean"], "std": vb_series["std"]},
+                "norm_td": {"mean": norm_mean, "std": norm_std},
+            }
+            continue
 
         # Baseline mean & std
         b_curves = sub_base[cols].values if (not sub_base.empty and cols[0] in sub_base.columns) else np.array([])
@@ -458,9 +577,10 @@ def get_ml_metrics():
     return {
         **_ML_METRICS,
         "three_class": _ML_THREE_CLASS_METRICS,
+        "pca_validation": _PCA_VALIDATION,
         "vr_responder": {
             **_VR_RESPONDER_METRICS,
-            "note": "Исследовательская модель предикции отклика (LOO валидация на когорте n=29). Требует расширения когорты перед принятием решений."
+            "note": "LOO-валидация на когорте n=29 (базовые биомеханические и кинематические признаки). Перед клиническим применением требуется расширение когорты."
         }
     }
 
@@ -622,7 +742,15 @@ def get_patient_diff(
         **diff_res
     }
 
+_PII_COLUMNS = {
+    "iin", "иин", "жсн", "fio", "фио", "fullname", "full_name",
+    "surname", "фамилия", "firstname", "name", "имя", "аты",
+    "passport", "паспорт", "address", "адрес", "мекенжай",
+    "phone", "телефон", "email", "birthdate", "birth_date", "датарождения", "дата_рождения",
+}
+
 _CONDITION_MAP = {
+
     "baseline": "Baseline",
     "verbal": "Verbal",
     "vr": "VR",
@@ -659,14 +787,24 @@ def _find_col_by_aliases(df: pd.DataFrame, canonical: str) -> Optional[str]:
 
 @router.get("/ingest/template")
 def download_ingest_template(
-    format: str = Query("vicon", pattern="^(vicon|imu)$"),
+    format: str = Query("vicon", pattern="^(vicon|imu|kinematics)$"),
 ):
-    """Returns a downloadable CSV template (; separator, , decimal) for Vicon/GRAIL or portable IMU/pose sensors."""
+    """Returns a downloadable CSV template (; separator, , decimal) for Vicon/GRAIL, IMU, or 51-point kinematics."""
     if format == "imu":
         csv_body = (
             "subject;side;weight_kg;height_m;leg_length_m;gps;pelvis_gvs;hip_gvs;knee_gvs;ankle_gvs;hip_min_ext;pelvis_tilt_mean\n"
             "s_imu_01;RIGHT;42,5;1,38;0,71;9,8;10,5;12,8;9,4;4,9;6,2;16,4\n"
         )
+    elif format == "kinematics":
+        headers = ["subject", "side", "weight", "height", "LegLength"]
+        row_vals = ["s_kin_01", "RIGHT", "42,5", "1,38", "0,71"]
+        for joint in ("aSagP", "aSagH", "aSagK", "aSagA"):
+            td_mean = NORMATIVE_PROFILES[joint]["mean"][::20]
+            offset = 4.0 if joint == "aSagP" else (6.0 if joint == "aSagH" else 2.0)
+            for idx in range(51):
+                headers.append(f"{joint}_pct_GC_{idx * 20}")
+                row_vals.append(f"{td_mean[idx] + offset:.2f}".replace(".", ","))
+        csv_body = ";".join(headers) + "\n" + ";".join(row_vals) + "\n"
     else:
         csv_body = (
             "subject;side;weight;height;LegLength;GPS_a;GVS_aSagP;GVS_aSagH;GVS_aSagK;GVS_aSagA;aMinSagH;pctmZeroStSagH\n"
@@ -723,6 +861,17 @@ async def upload_patient_csv(
 
     if len(df_upload) == 0:
         raise HTTPException(status_code=400, detail="Invalid CSV: File contains no gait cycle data rows.")
+
+    pii_hits = [
+        str(c) for c in df_upload.columns
+        if str(c).strip().lower().replace(" ", "_") in _PII_COLUMNS
+        or str(c).strip().lower().replace("_", "").replace(" ", "") in _PII_COLUMNS
+    ]
+    if pii_hits:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Law of RK No. 94-V violation: personal data columns are prohibited ({', '.join(pii_hits)}). Use anonymized subject codes only.",
+        )
 
     # Guard against non-finite values (inf, -inf)
     for col in df_upload.columns:
@@ -793,17 +942,64 @@ async def upload_patient_csv(
             )
         parsed_side = side_map[raw_side]
 
+    # Detect 51-point kinematic waveform columns (e.g. aSagH_pct_GC_0 .. aSagH_pct_GC_1000)
+    curves_by_joint: Dict[str, np.ndarray] = {}
+    kin_joints_payload: Dict[str, Dict[str, List[float]]] = {}
+    for joint in ("aSagP", "aSagH", "aSagK", "aSagA", "mSagH"):
+        j_cols = sorted(
+            [c for c in df_upload.columns if c.startswith(f"{joint}_pct_GC_")],
+            key=lambda x: int(x.split("_pct_GC_")[1]) if x.split("_pct_GC_")[1].isdigit() else 0,
+        )
+        if len(j_cols) == 51:
+            j_df = df_upload[j_cols].apply(
+                lambda col: pd.to_numeric(col.astype(str).str.replace(",", ".").str.strip(), errors="coerce")
+            )
+            j_df = j_df.interpolate(method="linear", axis=1, limit_direction="both")
+            arr = j_df.to_numpy(dtype=float)
+            if arr.size > 0 and not np.isnan(arr).all():
+                curves_by_joint[joint] = arr
+                kin_joints_payload[joint] = {
+                    "mean": np.nan_to_num(np.nanmean(arr, axis=0), nan=0.0).tolist(),
+                    "std": np.nan_to_num(np.nanstd(arr, axis=0), nan=0.0).tolist(),
+                }
+
+    has_kin_waveforms = len(curves_by_joint) > 0
+    derived_gvs = compute_curve_gvs_gps(curves_by_joint, NORMATIVE_PROFILES) if has_kin_waveforms else {}
+    derived_kin_summary = compute_kinematic_summary_metrics(curves_by_joint) if has_kin_waveforms else {}
+
     opt_gps = _parse_optional("GPS_a")
+    if opt_gps is None:
+        opt_gps = derived_gvs.get("GPS_a")
     opt_p = _parse_optional("GVS_aSagP")
+    if opt_p is None:
+        opt_p = derived_gvs.get("GVS_aSagP")
     opt_h = _parse_optional("GVS_aSagH")
+    if opt_h is None:
+        opt_h = derived_gvs.get("GVS_aSagH")
     opt_k = _parse_optional("GVS_aSagK")
+    if opt_k is None:
+        opt_k = derived_gvs.get("GVS_aSagK")
     opt_a = _parse_optional("GVS_aSagA")
+    if opt_a is None:
+        opt_a = derived_gvs.get("GVS_aSagA")
     opt_amin = _parse_optional("aMinSagH")
-    if all(v is None for v in (opt_gps, opt_p, opt_h, opt_k, opt_a, opt_amin)):
+    if opt_amin is None:
+        opt_amin = derived_kin_summary.get("aMinSagH")
+
+    if all(v is None for v in (opt_gps, opt_p, opt_h, opt_k, opt_a, opt_amin)) and not has_kin_waveforms:
         raise HTTPException(
             status_code=400,
-            detail="CSV must contain at least one valid numeric gait metric column (GPS_a, aMinSagH, or GVS_aSag*)."
+            detail="CSV must contain at least one valid numeric gait metric column (GPS_a, aMinSagH, GVS_aSag*, or 51-pt *_pct_GC_* curves)."
         )
+
+    kinematics_json_str: Optional[str] = None
+    if has_kin_waveforms:
+        hip_cycles = curves_by_joint["aSagH"].tolist() if "aSagH" in curves_by_joint else []
+        kinematics_json_str = json.dumps({
+            "joints": kin_joints_payload,
+            "hip_cycles": hip_cycles,
+            "hip_rom": derived_kin_summary.get("hip_rom"),
+        })
 
     patient = db.query(Patient).filter(Patient.code == resolved_code).first()
     try:
@@ -838,6 +1034,8 @@ async def upload_patient_csv(
         avg_amin_sagh = opt_amin if opt_amin is not None else 0.0
         avg_pctm_zero = _parse_optional("pctmZeroStSagH")
         avg_pelvis_tilt = _parse_optional("pelvic_tilt_mean")
+        if avg_pelvis_tilt is None:
+            avg_pelvis_tilt = derived_kin_summary.get("pelvic_tilt_mean")
 
         existing_session = (
             db.query(GaitSession)
@@ -854,6 +1052,8 @@ async def upload_patient_csv(
             existing_session.avg_gvs_ankle = calc_a
             existing_session.avg_pctm_zero = avg_pctm_zero
             existing_session.avg_pelvis_tilt = avg_pelvis_tilt
+            if kinematics_json_str is not None:
+                existing_session.kinematics_json = kinematics_json_str
         else:
             db.add(GaitSession(
                 patient_id=patient.id,
@@ -867,6 +1067,7 @@ async def upload_patient_csv(
                 avg_gvs_ankle=calc_a,
                 avg_pctm_zero=avg_pctm_zero,
                 avg_pelvis_tilt=avg_pelvis_tilt,
+                kinematics_json=kinematics_json_str,
             ))
 
         db.commit()
@@ -880,6 +1081,7 @@ async def upload_patient_csv(
         "code": patient.code,
         "condition": normalized_condition,
         "anthropometry_estimated": anthropometry_estimated,
+        "has_kinematics": has_kin_waveforms,
         "rows": len(df_upload),
         "columns": len(df_upload.columns),
         "message_ru": f"Файл {file.filename} успешно импортирован ({normalized_condition}). Пациент {patient.code} обновлен в реестре.",

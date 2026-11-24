@@ -71,6 +71,7 @@ class GaitSession(Base):
     avg_gvs_ankle: Mapped[float] = mapped_column(Float, default=0.0)
     avg_pctm_zero: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     avg_pelvis_tilt: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    kinematics_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     recorded_at: Mapped[datetime.datetime] = mapped_column(UTCDateTime, default=_utcnow)
 
     patient: Mapped[Patient] = relationship("Patient", back_populates="sessions")

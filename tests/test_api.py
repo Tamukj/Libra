@@ -155,6 +155,10 @@ def test_ml_metrics(client):
     assert "balanced_accuracy" in data["three_class"]
     assert "f1_macro" in data["three_class"]
     assert data["three_class"]["classes"] == ["Baseline", "Verbal", "VR"]
+    assert "pca_validation" in data
+    assert data["pca_validation"]["n_splits"] == 5
+    assert "vr_responder" in data
+    assert data["vr_responder"]["roc_auc"] >= 0.60
 
 def test_create_clinical_report(client):
     response_ru = client.post("/api/v1/patients/s61520_22/report?lang=ru")
@@ -399,5 +403,44 @@ def test_imu_pelvis_tilt_and_vr_before_baseline(client):
         files={"file": ("bad.csv", empty_metrics_csv, "text/csv")},
     )
     assert res_bad.status_code == 400
+
+
+def test_51pt_kinematics_template_and_upload_persistence(client):
+    res_tpl = client.get("/api/v1/ingest/template?format=kinematics")
+    assert res_tpl.status_code == 200
+    assert "aSagP_pct_GC_0" in res_tpl.text
+    assert "aSagH_pct_GC_1000" in res_tpl.text
+
+    res_up = client.post(
+        "/api/v1/patients/upload",
+        files={"file": ("kin_patient.csv", res_tpl.text.encode("utf-8"), "text/csv")},
+        data={"condition": "Baseline", "subject_code": "s_kin_uploaded"},
+    )
+    assert res_up.status_code == 200
+    up_data = res_up.json()
+    assert up_data["has_kinematics"] is True
+
+    res_kin = client.get("/api/v1/patients/s_kin_uploaded/kinematics")
+    assert res_kin.status_code == 200
+    kin_data = res_kin.json()
+    assert kin_data["is_surrogate"] is False
+    assert len(kin_data["joints"]["aSagH"]["baseline"]["mean"]) == 51
+
+    res_an = client.get("/api/v1/patients/s_kin_uploaded/analysis")
+    assert res_an.status_code == 200
+    an_data = res_an.json()
+    assert an_data["summary"]["baseline_gps"] > 0.0
+    assert len(an_data["ml"]["pca_stability"]["cycles"]) == 1
+
+
+def test_upload_rejects_pii_columns(client):
+    pii_csv = "subject;iin;fio;GPS_a;aMinSagH\ns_pii_01;010101500001;Ivanov;8,0;2,0\n".encode("utf-8")
+    res = client.post(
+        "/api/v1/patients/upload",
+        files={"file": ("pii.csv", pii_csv, "text/csv")},
+    )
+    assert res.status_code == 400
+    assert "94-V" in res.json()["detail"]
+
 
 

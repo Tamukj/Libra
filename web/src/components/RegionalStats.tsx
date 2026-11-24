@@ -69,6 +69,11 @@ export function RegionalStats({ stats, lang }: Props) {
             </>
           )}
         </div>
+        {(country.snapshot_note_ru || country.snapshot_note_kz) && (
+          <div style={{ fontSize: "11.5px", color: "var(--muted)", marginTop: "6px" }}>
+            {lang === "kz" ? country.snapshot_note_kz : country.snapshot_note_ru}
+          </div>
+        )}
       </div>
 
       {/* Grid of Regional KPIs */}
@@ -136,11 +141,18 @@ export function RegionalStats({ stats, lang }: Props) {
 
         {/* Card 3: Technological Gap & Economic Value */}
         <div className="card">
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-            <TrendingUp size={18} color="var(--teal)" />
-            <h3 style={{ fontSize: "14px", fontWeight: "700" }}>
-              {lang === "kz" ? "Libra жүйесінің клиникалық әсері" : "Клинический эффект системы Libra"}
-            </h3>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <TrendingUp size={18} color="var(--teal)" />
+              <h3 style={{ fontSize: "14px", fontWeight: "700", margin: 0 }}>
+                {lang === "kz" ? "Libra жүйесінің клиникалық әсері" : "Клинический эффект системы Libra"}
+              </h3>
+            </div>
+            {region_abai.economic_impact?.is_model_estimate && (
+              <span className="badge badge-yellow" style={{ fontSize: "10px" }}>
+                {lang === "kz" ? "Пилоттық бағалау" : "Модельная оценка"}
+              </span>
+            )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "13px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
@@ -165,10 +177,15 @@ export function RegionalStats({ stats, lang }: Props) {
                 {lang === "kz" ? "Консилиум хаттамасы:" : "Протокол консилиума:"}
               </span>
               <strong style={{ textAlign: "right" }}>
-                {lang === "kz" ? "Damumed-ке автоматты түрде" : "Автоматически в Damumed"}
+                {lang === "kz" ? "Damumed FHIR JSON экспорты" : "Экспорт HL7 FHIR (Damumed)"}
               </strong>
             </div>
           </div>
+          {(region_abai.economic_impact?.methodology_ru || region_abai.economic_impact?.methodology_kz) && (
+            <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid var(--line)", fontSize: "11px", color: "var(--muted)", lineHeight: 1.4 }}>
+              {lang === "kz" ? region_abai.economic_impact.methodology_kz : region_abai.economic_impact.methodology_ru}
+            </div>
+          )}
         </div>
 
       </div>

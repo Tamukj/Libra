@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LibraLogo } from "@/components/LibraLogo";
+import { getApiBase } from "@/lib/api";
 import { Lock, Stethoscope, ShieldCheck, ArrowLeft, Globe } from "lucide-react";
 
 function LoginContent() {
@@ -41,22 +42,30 @@ function LoginContent() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email.trim() || password.length < 6) {
+      setErrorMsg(
+        lang === "kz"
+          ? "Жарамды Email және кемінде 6 таңбадан тұратын құпиясөз енгізіңіз."
+          : "Введите корректный Email и пароль не менее 6 символов."
+      );
+      return;
+    }
     setLoading(true);
     setErrorMsg(null);
     try {
-      // Authenticate with clinical API endpoint
-      const res = await fetch("/api/v1/health", { method: "GET" });
+      const res = await fetch(`${getApiBase()}/health`, { method: "GET" });
       if (!res.ok) {
-        throw new Error("API server responded with error");
+        throw new Error(`HTTP ${res.status}`);
       }
-      // Store session token in cookie for middleware authentication
       document.cookie = "libra_session=clinician_authorized; path=/; max-age=86400; SameSite=Lax";
       router.push(targetUrl);
     } catch (err) {
       console.error("Login verification error:", err);
-      // Fallback local authorized session if offline dev
-      document.cookie = "libra_session=clinician_authorized; path=/; max-age=86400; SameSite=Lax";
-      router.push(targetUrl);
+      setErrorMsg(
+        lang === "kz"
+          ? "Libra API сервері қолжетімсіз. ./run_local.sh арқылы серверді іске қосыңыз немесе демо-кіруді пайдаланыңыз."
+          : "Сервер Libra API недоступен. Убедитесь, что backend запущен (./run_local.sh)."
+      );
     } finally {
       setLoading(false);
     }
@@ -66,16 +75,19 @@ function LoginContent() {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const res = await fetch("/api/v1/health", { method: "GET" });
+      const res = await fetch(`${getApiBase()}/health`, { method: "GET" });
       if (!res.ok) {
-        throw new Error("API server responded with error");
+        throw new Error(`HTTP ${res.status}`);
       }
       document.cookie = "libra_session=demo_jury_member; path=/; max-age=86400; SameSite=Lax";
       router.push(targetUrl);
     } catch (err) {
       console.error("Demo login error:", err);
-      document.cookie = "libra_session=demo_jury_member; path=/; max-age=86400; SameSite=Lax";
-      router.push(targetUrl);
+      setErrorMsg(
+        lang === "kz"
+          ? "Libra API серверімен байланыс жоқ (http://127.0.0.1:8000)."
+          : "Нет связи с сервером Libra API (http://127.0.0.1:8000)."
+      );
     } finally {
       setLoading(false);
     }
@@ -193,6 +205,24 @@ function LoginContent() {
             <div style={{ flex: 1, height: "1px", background: "var(--line)" }}></div>
           </div>
 
+          {/* Error Message Banner */}
+          {errorMsg && (
+            <div
+              role="alert"
+              style={{
+                background: "var(--red-bg)",
+                border: "1px solid var(--red-border)",
+                color: "var(--red)",
+                borderRadius: "6px",
+                padding: "10px 12px",
+                fontSize: "12px",
+                marginBottom: "14px",
+              }}
+            >
+              {errorMsg}
+            </div>
+          )}
+
           {/* Standard Login Form */}
           <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             
@@ -265,7 +295,7 @@ function LoginContent() {
               <Lock size={14} />
               <span>
                 {loading
-                  ? (lang === "kz" ? "Сертификат тексерілуде..." : "Проверка сертификата...")
+                  ? (lang === "kz" ? "Қосылу..." : "Подключение...")
                   : (lang === "kz" ? "Жүйеге кіру" : "Войти в систему")}
               </span>
             </button>

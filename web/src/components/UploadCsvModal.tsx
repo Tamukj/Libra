@@ -244,6 +244,19 @@ export function UploadCsvModal({ lang, onClose, onSuccess }: Props) {
                     : "IMU / Камера позы (упрощённый формат)"}
                 </span>
               </a>
+              <a
+                href={getCsvTemplateUrl("kinematics")}
+                download="libra_template_kinematics.csv"
+                className="btn"
+                style={{ fontSize: "12px", padding: "6px 10px" }}
+              >
+                <Download size={14} />
+                <span>
+                  {lang === "kz"
+                    ? "51-нүктелі кинематика (толық қисықтар)"
+                    : "51-точечная кинематика (кривые цикла)"}
+                </span>
+              </a>
             </div>
           </div>
 

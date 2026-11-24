@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "Libra: Clinical Biomechanics & Decision Support Platform for Cerebral Palsy Rehabilitation"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "MIT (code only; gait-cp-dataset is CC-BY-NC-SA-4.0)" }
 authors = [{ name = "Solveathon Team" }]
 
 dependencies = [

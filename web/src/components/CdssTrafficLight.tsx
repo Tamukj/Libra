@@ -119,7 +119,9 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
           </div>
           <div style={{ fontSize: "11px", color: "var(--muted)" }}>
             {summary.delta_amin_sagh <= -2.0
-              ? (lang === "kz" ? "Күйі: MCID қол жеткізілді" : "Статус: MCID достигнут")
+              ? (lang === "kz" ? "Күйі: MCID (≤ -2.0°) қол жеткізілді" : "Статус: MCID (≤ -2.0°) достигнут")
+              : summary.delta_amin_sagh <= -1.0
+              ? (lang === "kz" ? "Күйі: орташа жақсару (≤ -1.0°)" : "Статус: умеренный отклик (≤ -1.0°)")
               : (lang === "kz" ? "Күйі: динамикасыз" : "Статус: без динамики")}
           </div>
         </div>

@@ -11,6 +11,7 @@ export default function PortalDashboard() {
   const { lang, t } = useLanguage();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState<"all" | "danger" | "normal">("all");
   const [sideFilter, setSideFilter] = useState<"all" | "LEFT" | "RIGHT">("all");
@@ -18,10 +19,12 @@ export default function PortalDashboard() {
   useEffect(() => {
     async function loadData() {
       try {
+        setApiError(null);
         const pts = await getPatients();
         setPatients(pts);
       } catch (err) {
         console.error("Failed to load patients:", err);
+        setApiError(err instanceof Error ? err.message : String(err));
       } finally {
         setLoading(false);
       }
@@ -62,6 +65,13 @@ export default function PortalDashboard() {
       label: lang === "kz" ? "Деректер жоқ" : "Нет данных",
       badgeClass: "badge-neutral",
     };
+  };
+
+  const formatClinicName = (name?: string | null) => {
+    if (!name) return lang === "kz" ? "БЦП когортасы (KU Leuven)" : "Когорта ДЦП (KU Leuven)";
+    const parts = name.split(" / ");
+    if (parts.length === 2) return lang === "kz" ? parts[0] : parts[1];
+    return name;
   };
 
   const dangerCount = patients.filter((p) => classifyPatientRisk(p).status === "danger").length;
@@ -121,7 +131,6 @@ export default function PortalDashboard() {
           <div className="card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>{t.kpi_risk_title}</span>
-              <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: "var(--red)" }}></span>
             </div>
             <div className="tabular-nums" style={{ fontSize: "24px", fontWeight: 600, letterSpacing: "-0.02em", color: "var(--red)", margin: "4px 0 2px" }}>
               {dangerCount} ({dangerPct}%)
@@ -134,7 +143,6 @@ export default function PortalDashboard() {
           <div className="card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>{t.kpi_true_title}</span>
-              <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: "var(--teal)" }}></span>
             </div>
             <div className="tabular-nums" style={{ fontSize: "24px", fontWeight: 600, letterSpacing: "-0.02em", color: "var(--teal)", margin: "4px 0 2px" }}>
               {normalCount} ({normalPct}%)
@@ -240,6 +248,11 @@ export default function PortalDashboard() {
           <div style={{ padding: "48px", textAlign: "center", color: "var(--muted)" }}>
             {lang === "kz" ? "Пациенттер тізімі жүктелуде..." : "Загрузка списка пациентов..."}
           </div>
+        ) : apiError ? (
+          <div role="alert" style={{ padding: "32px", textAlign: "center", color: "var(--red)", fontSize: "13px" }}>
+            <strong>{lang === "kz" ? "Libra API серверімен байланыс жоқ:" : "Нет связи с сервером Libra API:"}</strong>{" "}
+            {apiError}
+          </div>
         ) : (
           <div className="table-responsive">
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left", minWidth: "640px" }}>
@@ -294,7 +307,7 @@ export default function PortalDashboard() {
                           <div>
                             <strong style={{ fontSize: "14px" }}>{p.code}</strong>
                             <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-                              {p.clinic_name || (lang === "kz" ? "БЦП когортасы (KU Leuven)" : "Когорта ДЦП (KU Leuven)")}
+                              {formatClinicName(p.clinic_name)}
                             </div>
                           </div>
                         </div>

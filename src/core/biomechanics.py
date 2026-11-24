@@ -273,7 +273,9 @@ def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
 
 def compute_sagittal_gdi(gps: float) -> float:
     """
-    Computes Sagittal Gait Deviation Index (GDI, Schwartz & Rozumalski 2008 adapted to Sagittal GPS).
+    Computes Sagittal GDI Proxy (adapted from Schwartz & Rozumalski 2008 to Sagittal GPS).
+    Note: True full-body GDI uses 15-feature SVD across 9 kinematic variables; this clinical
+    proxy maps Sagittal GPS to the 0-100 GDI scale using TD baseline (5.2 +/- 1.2 deg).
     GDI scale:
       >= 100: Normal TD gait (equal or superior to mean healthy control)
       90-99: 1 standard deviation below TD mean (mild deviation)
@@ -362,5 +364,92 @@ def compute_session_diff(session_a: Dict[str, Any], session_b: Dict[str, Any]) -
         "icf_improved": icf_improved,
         "verdict_ru": verdict_ru,
         "verdict_kz": verdict_kz,
+    }
+
+
+def compute_curve_gvs_gps(
+    curves_by_joint: Dict[str, np.ndarray],
+    normative_profiles: Dict[str, Any],
+) -> Dict[str, Optional[float]]:
+    """
+    Computes Baker Gait Variable Scores (GVS) and Gait Profile Score (GPS) directly from
+    51-point sagittal kinematic cycle arrays against the TD normative reference mean.
+    """
+    joint_to_gvs_key = {
+        "aSagP": "GVS_aSagP",
+        "aSagH": "GVS_aSagH",
+        "aSagK": "GVS_aSagK",
+        "aSagA": "GVS_aSagA",
+    }
+    gvs_results: Dict[str, Optional[float]] = {v: None for v in joint_to_gvs_key.values()}
+    per_joint_cycle_sq: list[np.ndarray] = []
+
+    for joint, gvs_key in joint_to_gvs_key.items():
+        arr = curves_by_joint.get(joint)
+        profile = normative_profiles.get(joint)
+        if arr is None or profile is None or arr.size == 0:
+            continue
+        arr_2d = np.atleast_2d(np.asarray(arr, dtype=float))
+        if arr_2d.shape[1] != 51:
+            continue
+        norm_mean = np.asarray(profile["mean"][::20], dtype=float)
+        if norm_mean.shape[0] != 51:
+            continue
+        diff_sq = (arr_2d - norm_mean[None, :]) ** 2
+        cycle_gvs = np.sqrt(np.nanmean(diff_sq, axis=1))
+        valid = cycle_gvs[np.isfinite(cycle_gvs)]
+        if valid.size > 0:
+            gvs_results[gvs_key] = float(np.mean(valid))
+            per_joint_cycle_sq.append(cycle_gvs ** 2)
+
+    gps_val: Optional[float] = None
+    if per_joint_cycle_sq:
+        stacked = np.vstack(per_joint_cycle_sq)
+        cycle_gps = np.sqrt(np.nanmean(stacked, axis=0))
+        valid_gps = cycle_gps[np.isfinite(cycle_gps)]
+        if valid_gps.size > 0:
+            gps_val = float(np.mean(valid_gps))
+
+    return {
+        **gvs_results,
+        "GPS_a": gps_val,
+    }
+
+
+def compute_kinematic_summary_metrics(
+    curves_by_joint: Dict[str, np.ndarray],
+) -> Dict[str, Optional[float]]:
+    """
+    Extracts cycle-averaged discrete biomechanical summaries (aMinSagH, pelvic_tilt_mean, hip_rom)
+    from 51-point kinematic curve arrays.
+    """
+    amin_sagh: Optional[float] = None
+    hip_rom: Optional[float] = None
+    pelvis_tilt_mean: Optional[float] = None
+
+    hip_arr = curves_by_joint.get("aSagH")
+    if hip_arr is not None and hip_arr.size > 0:
+        hip_2d = np.atleast_2d(np.asarray(hip_arr, dtype=float))
+        mins = np.nanmin(hip_2d, axis=1)
+        maxs = np.nanmax(hip_2d, axis=1)
+        valid_min = mins[np.isfinite(mins)]
+        valid_rom = (maxs - mins)[np.isfinite(maxs - mins)]
+        if valid_min.size > 0:
+            amin_sagh = float(np.mean(valid_min))
+        if valid_rom.size > 0:
+            hip_rom = float(np.mean(valid_rom))
+
+    pelvis_arr = curves_by_joint.get("aSagP")
+    if pelvis_arr is not None and pelvis_arr.size > 0:
+        pelvis_2d = np.atleast_2d(np.asarray(pelvis_arr, dtype=float))
+        means = np.nanmean(pelvis_2d, axis=1)
+        valid_p = means[np.isfinite(means)]
+        if valid_p.size > 0:
+            pelvis_tilt_mean = float(np.mean(valid_p))
+
+    return {
+        "aMinSagH": amin_sagh,
+        "hip_rom": hip_rom,
+        "pelvic_tilt_mean": pelvis_tilt_mean,
     }
 

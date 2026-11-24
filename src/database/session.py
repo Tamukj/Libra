@@ -65,6 +65,8 @@ def init_db(seed_cohort: bool = True):
                             conn.execute(text("ALTER TABLE gait_sessions ADD COLUMN avg_pctm_zero FLOAT"))
                         if "avg_pelvis_tilt" not in cols:
                             conn.execute(text("ALTER TABLE gait_sessions ADD COLUMN avg_pelvis_tilt FLOAT"))
+                        if "kinematics_json" not in cols:
+                            conn.execute(text("ALTER TABLE gait_sessions ADD COLUMN kinematics_json TEXT"))
 
                 if not seed_cohort:
                     return

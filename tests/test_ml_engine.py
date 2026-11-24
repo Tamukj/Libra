@@ -167,3 +167,33 @@ def test_vr_responder_nan_auc_guard():
     out = predictor.predict_subject_response(df_syn.iloc[[0]])
     assert out["model_reliable"] is False
     assert out["loo_roc_auc"] == 0.5
+
+
+def test_vr_responder_with_kinematics_and_pca_group_kfold(discrete_data):
+    df_base, df_vr = discrete_data
+    df_kin_base = load_kinematics_dataset(DATA_DIR / "Kinematics_Kinetics_Baseline.csv")
+
+    predictor = VRResponderPredictor()
+    metrics = predictor.fit_evaluate_subjects(df_base, df_vr, df_kin_base=df_kin_base)
+    assert metrics["feature_mode"] == "kinematics_biomech"
+    assert metrics["n_subjects"] == 29
+    assert metrics["balanced_accuracy"] >= 0.70
+    assert metrics["roc_auc"] >= 0.60
+
+    sub_summary = {
+        "baseline_gps": 7.25,
+        "baseline_gvs_pelvis": 5.5,
+        "baseline_amin_sagh": 10.0,
+        "baseline_pelvis_tilt": 14.0,
+        "baseline_hip_rom": 42.0,
+    }
+    pred = predictor.predict_subject_response(sub_summary)
+    assert pred["model_reliable"] is True
+    assert len(pred["feature_attributions"]) == 5
+
+    hip_cols = [c for c in df_kin_base.columns if "aSagH_pct_GC_" in c]
+    det = KinematicPCAAnomalyDetector(n_components=6)
+    pca_val = det.evaluate_group_kfold(df_kin_base[hip_cols].values, df_kin_base["subject"].values, n_splits=5)
+    assert pca_val["n_splits"] == 5
+    assert pca_val["n_subjects"] == 29
+    assert 0.02 <= pca_val["oof_baseline_anomaly_rate"] <= 0.15

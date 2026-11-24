@@ -107,13 +107,13 @@ Access the interface at http://localhost.
 
 ## Test suite execution
 
-To run all 40 automated tests verifying parsers, biomechanical formulas, leak-free machine learning, and API contracts:
+To run all 44 automated tests verifying parsers, biomechanical formulas, leak-free machine learning, PII safeguards, and API contracts:
 
 ```bash
 python3 -m pytest tests/ -v
 ```
 
-All 40 tests must pass without errors. Tests run against an isolated temporary SQLite database without polluting `libra.db`.
+All 44 tests must pass without errors. Tests run against an isolated temporary SQLite database without polluting `libra.db`.
 
 ---
 
@@ -121,8 +121,8 @@ All 40 tests must pass without errors. Tests run against an isolated temporary S
 
 Follow these 9 steps to test the application:
 
-1. **Open the application:** Navigate to http://127.0.0.1:3000 in your browser.
-2. **Review the cohort:** Use the patient selector in the upper toolbar. The cohort contains all 29 participants from the hackathon dataset.
+1. **Open the application and sign in:** Navigate to http://127.0.0.1:3000, click "Вход для врачей" (or open http://127.0.0.1:3000/login), and click the one-click jury demo button ("Войти как врач-исследователь (1 клик)").
+2. **Review the cohort:** On the `/portal` registry table, inspect all 29 participants from the hackathon dataset and open a patient card.
 3. **Inspect high-risk compensation (Patient `s61520_1`):** Select patient `s61520_1`. Observe that the Clinical Decision Support indicator turns Red. The patient displays a Pathological Compensation Ratio of 1.21. While raw hip extension appears improved by 2.68 degrees, the child achieved this through compensatory pelvic deviation (+5.36 degrees pelvic tilt), yielding TJE = +2.68 degrees and creating risk of lumbar hyperlordosis.
 4. **Inspect true therapeutic response (Patient `s61520_13`):** Select patient `s61520_13`. Observe the Green indicator. The patient achieved true joint extension with a Pathological Compensation Ratio under 0.40 without dangerous pelvic tilt.
 5. **Compare modalities:** Scroll to the "Selection of rehabilitation tactics" card. The card compares Baseline, Verbal, and VR conditions, stating whether verbal feedback or VR feedback provides the safer outcome for the active patient.
@@ -185,8 +185,8 @@ The machine learning pipeline follows four design principles:
 
 1. **Strict subject isolation:** Evaluated through `GroupKFold(n_splits=5)` grouped by `subject`. Cycles of the same patient never appear in both training and test sets.
 2. **Leak-free preprocessing:** Imputation and scaling occur strictly inside each cross-validation fold.
-3. **Realistic clinical metrics:** On combined discrete parameters and cycle-level sagittal waveform features (`Baseline` vs `VR`, 1,736 cycles across 29 subjects), `LogisticRegression` achieves Balanced Accuracy **70.6%** and ROC-AUC **0.772** (`Sensitivity 66.2%`, `Specificity 74.9%`). A 3-class `Baseline vs Verbal vs VR` classifier (2,606 cycles) reaches **51.6%** Balanced Accuracy (vs 33.3% chance). The exploratory pre-therapy `VRResponderPredictor` (LOO on $N=29$) yields ROC-AUC **0.51** and is explicitly marked `model_reliable: false` in the API and UI so clinical decisions rely on factual CDSS metrics rather than underpowered predictions.
-4. **Kinematic PCA stability detector:** Analyzes Squared Prediction Error on 51-point curves. Cycles exceeding the calibrated 95th percentile threshold are flagged as unstable steps.
+3. **Realistic clinical metrics:** On combined discrete parameters and cycle-level sagittal waveform features (`Baseline` vs `VR`, 1,736 cycles across 29 subjects), `LogisticRegression` achieves Balanced Accuracy **70.6%** and ROC-AUC **0.772** (`Sensitivity 66.2%`, `Specificity 74.9%`). A 3-class `Baseline vs Verbal vs VR` classifier (2,606 cycles) reaches **51.6%** Balanced Accuracy (vs 33.3% chance). The pre-therapy `VRResponderPredictor` (LOO on $N=29$ using 5 baseline biomechanical/kinematic features: `GPS_a`, `GVS_aSagP`, `aMinSagH`, `pelvis_mean`, `hip_rom`) achieves Balanced Accuracy **75.3%** and ROC-AUC **0.682**, with explicit cohort-size ($N=29$) caveats in the API and UI so clinical decisions remain anchored to factual CDSS metrics (TJE/PCR).
+4. **Kinematic PCA stability detector:** Analyzes Squared Prediction Error on 51-point hip curves (`aSagH`). Under strict subject-level `GroupKFold(n_splits=5)`, Baseline out-of-fold false-positive rate is **9.2%** vs **27.5%** across VR cycles, and per-cycle SPE breakdowns are surfaced in the patient card.
 
 ---
 
@@ -215,26 +215,40 @@ The machine learning pipeline follows four design principles:
    - **True Joint Extension (TJE):** Directional pelvic tilt correction ($\Delta \text{PelvisTilt}$) is derived from sagittal kinematics (`aSagP`) to isolate anatomical hip extension from compensatory lumbar/pelvic sway.
    - **WHO ICF d450 Mapping:** The walking stability classification maps PCA kinematic anomaly rate (<5%, 5-12%, 12-25%, 25-45%, >=45%) as an algorithmic proxy for locomotor difficulty.
 3. **Advisory Status (CDSS):** Per Article 8.4 of the Solveathon Regulations, Libra is an assistive Clinical Decision Support System. It does not replace medical specialists, does not autonomously assign diagnoses, and does not prescribe pharmacotherapy. Final therapeutic decisions remain the sole responsibility of the attending pediatric physiatrist/rehabilitation physician.
-4. **Default Authentication Mode:** In local development and hackathon evaluation environments, permissive demo mode is enabled by default to allow jury testing without API key configuration. Production deployments require setting `LIBRA_ALLOW_DEMO=false` and enforcing `LIBRA_API_KEY` header verification.
+4. **Normative Curves & Regional Open-Data Snapshot:** The healthy TD reference corridor (`src/core/normative_data.py`) uses a parametric Winter/Schwartz-calibrated curve (mean ± 1 SD) rather than digitized raw lab trials; preloaded cohort GVS/GPS values come directly from the KU Leuven CSVs. Regional indicators in `src/api/open_data.py` are a static hackathon reference snapshot (`is_reference_snapshot: true`) rather than a live `stat.gov.kz` / `data.egov.kz` API integration, and economic impact percentages are analytical pilot estimates.
+5. **Default Authentication Mode:** In local development and hackathon evaluation environments, permissive demo mode is enabled by default to allow jury testing without API key configuration. Production deployments require setting `LIBRA_ALLOW_DEMO=false` and enforcing `LIBRA_API_KEY` header verification.
 
 ---
 
-## AI tools and open data sources (Rules 8.5 and 9.1 compliance)
+## AI tools and open data sources (Rules 8.5, 9.1, and 9.2 compliance)
 
 ### AI tools employed
 
-- **Claude 3.7 Sonnet (Anthropic):** Codebase architectural audit, adversarial verification, Diátaxis documentation structure, and clinical consistency review.
-- **Gemini 2.5 Pro (Google DeepMind):** Biomechanical validation, bilingual Kazakh/Russian terminology alignment, and Docker orchestration hardening.
+- **Claude 3.7 Sonnet (Anthropic):** Initial architecture, codebase audit, and clinical consistency review.
+- **Gemini 2.5 Pro & Gemini 4 Hydrogen (Google DeepMind):** Biomechanical validation, bilingual Kazakh/Russian alignment, adversarial review fixes, and Docker orchestration.
 
 ### Open data sources and licenses
 
-- **KU Leuven Pediatric Cerebral Palsy Gait Dataset:** De Mulder et al., 2023. Open dataset containing 3D motion capture (kinematics, kinetics, and discrete parameters) across Baseline, Verbal feedback, and Virtual Reality cueing conditions.
+- **KU Leuven Pediatric Cerebral Palsy Gait Dataset:** De Mulder et al., 2024. Open dataset containing 3D motion capture (kinematics, kinetics, and discrete parameters) across Baseline, Verbal feedback, and Virtual Reality cueing conditions.
   - License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (`CC-BY-NC-SA-4.0`).
   - Permanent DOI: `10.48804/JUNNWW`.
-- **Normative Gait Kinematics:** Schwartz et al., 2008 typically developing pediatric reference corridor ($\pm 1$ SD).
-- **Kazakhstan National Open Data:**
-  - Bureau of National Statistics of the ASPR RK (`stat.gov.kz`): Pediatric disability figures (2,840 registered children in Abai Region).
-  - Open Data Portal of the Republic of Kazakhstan (`data.egov.kz`): Regional rehabilitation infrastructure registry.
+- **Normative Gait Kinematics:** Parametric pediatric reference corridor calibrated to Schwartz et al., 2008 ($\pm 1$ SD).
+- **Kazakhstan National Open Data (reference snapshot):**
+  - Bureau of National Statistics of the ASPR RK (`stat.gov.kz`) & Open Data Portal of the Republic of Kazakhstan (`data.egov.kz`).
+
+### Third-party libraries and licenses (Rule 8.5)
+
+| Component | Purpose | License |
+| :--- | :--- | :--- |
+| FastAPI / Starlette / Pydantic | REST API & request validation | MIT |
+| Uvicorn | ASGI server | BSD-3-Clause |
+| SQLAlchemy | ORM & SQLite/PostgreSQL persistence | MIT |
+| pandas / NumPy / SciPy | CSV parsing & numerical arrays | BSD-3-Clause |
+| scikit-learn | GroupKFold, LogisticRegression, PCA | BSD-3-Clause |
+| Next.js / React / React DOM | Web frontend framework | MIT |
+| Lucide React | UI icons | ISC |
+| Zod | Client schema validation | MIT |
+| Manrope / Source Serif 4 | Bundled typography (`web/public/fonts`) | SIL Open Font License 1.1 |
 
 ---
 

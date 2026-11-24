@@ -410,24 +410,57 @@ class VRResponderPredictor:
     Subject-level Clinical Decision Support (CDSS) predictor.
     Predicts BEFORE therapy whether a child with CP will achieve true therapeutic response
     (d_hip <= -1.0 deg AND PCR < 0.8: genuine hip extension) vs high-risk compensation or non-response.
+    Uses 5 domain-grounded baseline biomechanical features (GPS_a, GVS_aSagP, aMinSagH, pelvis_mean, hip_rom)
+    when kinematic curves are provided, or discrete-only fallback otherwise.
     """
+    KINEMATIC_FEATURES = ["GPS_a", "GVS_aSagP", "aMinSagH", "pelvis_mean", "hip_rom"]
+    DISCRETE_FALLBACK_FEATURES = [
+        "weight", "height", "LegLength",
+        "GPS_a", "GVS_aSagP", "GVS_aSagH", "GVS_aSagK", "GVS_aSagA",
+        "aMinSagH"
+    ]
+
     def __init__(self):
-        self.feature_names = [
-            "weight", "height", "LegLength",
-            "GPS_a", "GVS_aSagP", "GVS_aSagH", "GVS_aSagK", "GVS_aSagA",
-            "aMinSagH"
-        ]
-        self.clf = LogisticRegression(class_weight="balanced", C=1.0, random_state=42)
+        self.feature_names = list(self.DISCRETE_FALLBACK_FEATURES)
+        self.reg_c = 1.0
+        self.clf = LogisticRegression(class_weight="balanced", C=self.reg_c, random_state=42)
         self.scaler = StandardScaler()
         self.imputer = SimpleImputer(strategy="median")
         self.is_fitted = False
         self.metrics_: Dict[str, float] = {}
 
-    def fit_evaluate_subjects(self, df_base: pd.DataFrame, df_vr: pd.DataFrame) -> Dict[str, Any]:
+    @staticmethod
+    def _extract_subject_kin_stats(df_kin_sub: pd.DataFrame) -> Dict[str, float]:
+        if df_kin_sub is None or df_kin_sub.empty:
+            return {"pelvis_mean": np.nan, "hip_rom": np.nan}
+        p_cols = [c for c in df_kin_sub.columns if c.startswith("aSagP_pct_GC_")]
+        h_cols = [c for c in df_kin_sub.columns if c.startswith("aSagH_pct_GC_")]
+        p_mean = float(np.nanmean(df_kin_sub[p_cols].values)) if p_cols else np.nan
+        if h_cols:
+            h_vals = df_kin_sub[h_cols].values
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                roms = np.nanmax(h_vals, axis=1) - np.nanmin(h_vals, axis=1)
+                h_rom = float(np.nanmean(roms))
+        else:
+            h_rom = np.nan
+        return {"pelvis_mean": p_mean, "hip_rom": h_rom}
+
+    def fit_evaluate_subjects(
+        self,
+        df_base: pd.DataFrame,
+        df_vr: pd.DataFrame,
+        df_kin_base: Optional[pd.DataFrame] = None,
+    ) -> Dict[str, Any]:
         """
         Builds subject-level cohort dataset and evaluates LOO (Leave-One-Subject-Out) performance.
         Data imputation and scaling are strictly performed within training folds.
         """
+        use_kin = df_kin_base is not None and not df_kin_base.empty
+        self.feature_names = list(self.KINEMATIC_FEATURES) if use_kin else list(self.DISCRETE_FALLBACK_FEATURES)
+        self.reg_c = 0.5 if use_kin else 1.0
+        self.clf = LogisticRegression(class_weight="balanced", C=self.reg_c, random_state=42)
+
         subjects = df_base["subject"].dropna().unique()
         X_rows = []
         y_labels = []
@@ -452,9 +485,17 @@ class VRResponderPredictor:
             label = 1 if (is_gain and pcr < 0.8) else 0
 
             # Baseline predictors
+            kin_stats = (
+                self._extract_subject_kin_stats(df_kin_base[df_kin_base["subject"] == sub])
+                if use_kin
+                else {}
+            )
             row = {}
             for feat in self.feature_names:
-                row[feat] = float(sb[feat].dropna().mean()) if feat in sb.columns else np.nan
+                if feat in kin_stats:
+                    row[feat] = kin_stats[feat]
+                else:
+                    row[feat] = float(sb[feat].dropna().mean()) if feat in sb.columns else np.nan
 
             X_rows.append(row)
             y_labels.append(label)
@@ -474,7 +515,8 @@ class VRResponderPredictor:
                 "roc_auc": float("nan"),
                 "n_subjects": 0,
                 "n_responders": 0,
-                "n_compensators": 0
+                "n_compensators": 0,
+                "feature_mode": "kinematics_biomech" if use_kin else "discrete_fallback",
             }
 
         if len(np.unique(y)) < 2:
@@ -493,7 +535,7 @@ class VRResponderPredictor:
                 X_tr = fold_scaler.fit_transform(fold_imputer.fit_transform(X_df.iloc[train_idx]))
                 X_te = fold_scaler.transform(fold_imputer.transform(X_df.iloc[test_idx]))
 
-                model = LogisticRegression(class_weight="balanced", C=1.0, random_state=42)
+                model = LogisticRegression(class_weight="balanced", C=self.reg_c, random_state=42)
                 model.fit(X_tr, y[train_idx])
                 p = model.predict_proba(X_te)[0, 1]
                 y_probs.append(p)
@@ -519,6 +561,7 @@ class VRResponderPredictor:
             "n_subjects": len(y),
             "n_responders": int(np.sum(y == 1)),
             "n_compensators": int(np.sum(y == 0)),
+            "feature_mode": "kinematics_biomech" if use_kin else "discrete_fallback",
         }
         return self.metrics_
 
@@ -539,7 +582,11 @@ class VRResponderPredictor:
             "GVS_aSagK": "baseline_gvs_knee",
             "GVS_aSagA": "baseline_gvs_ankle",
             "aMinSagH": "baseline_amin_sagh",
+            "pelvis_mean": "baseline_pelvis_tilt",
+            "hip_rom": "baseline_hip_rom",
         }
+
+        kin_stats = self._extract_subject_kin_stats(patient_data) if isinstance(patient_data, pd.DataFrame) else {}
 
         row = {}
         for feat in self.feature_names:
@@ -549,6 +596,8 @@ class VRResponderPredictor:
                     val = patient_data[feat].dropna().mean()
                 elif alt_key in patient_data.columns:
                     val = patient_data[alt_key].dropna().mean()
+                elif feat in kin_stats:
+                    val = kin_stats[feat]
                 else:
                     val = np.nan
             else:

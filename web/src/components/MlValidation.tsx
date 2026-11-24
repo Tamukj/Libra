@@ -145,6 +145,78 @@ export function MlValidation({ metrics, lang }: Props) {
         </div>
       )}
 
+      {/* PCA Anomaly Validation & VR Responder LOO Cards */}
+      {(metrics.pca_validation || metrics.vr_responder) && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
+          {metrics.pca_validation && (
+            <div className="card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", gap: "8px", flexWrap: "wrap" }}>
+                <h3 style={{ fontSize: "15px", margin: 0 }}>
+                  {lang === "kz"
+                    ? "PCA тұрақтылық детекторы (GroupKFold)"
+                    : "PCA-детектор нестабильности (GroupKFold)"}
+                </h3>
+                <span className="badge badge-neutral">
+                  k={metrics.pca_validation.n_splits} · {metrics.pca_validation.n_subjects} {lang === "kz" ? "пациент" : "пациентов"}
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "10px 12px" }}>
+                  <div style={{ fontSize: "11px", color: "var(--muted)" }}>
+                    {lang === "kz" ? "Baseline OOF аномалия (95-ші %)" : "Baseline OOF ложные срабатывания"}
+                  </div>
+                  <div className="tabular-nums" style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink)", marginTop: "4px" }}>
+                    {(metrics.pca_validation.oof_baseline_anomaly_rate * 100).toFixed(1)}%
+                  </div>
+                </div>
+                <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "10px 12px" }}>
+                  <div style={{ fontSize: "11px", color: "var(--muted)" }}>
+                    {lang === "kz" ? "VR циклдеріндегі аномалиялар" : "Аномалии в VR-циклах"}
+                  </div>
+                  <div className="tabular-nums" style={{ fontSize: "20px", fontWeight: 600, color: "var(--amber)", marginTop: "4px" }}>
+                    {(metrics.pca_validation.vr_anomaly_rate * 100).toFixed(1)}%
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {metrics.vr_responder && (
+            <div className="card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", gap: "8px", flexWrap: "wrap" }}>
+                <h3 style={{ fontSize: "15px", margin: 0 }}>
+                  {lang === "kz"
+                    ? "Терапияға дейінгі болжам (LOO, N=29)"
+                    : "Дотерапевтический предиктор отклика (LOO, N=29)"}
+                </h3>
+                <span className="badge badge-neutral">
+                  {metrics.vr_responder.n_responders}+ / {metrics.vr_responder.n_compensators}-
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "10px 12px" }}>
+                  <div style={{ fontSize: "11px", color: "var(--muted)" }}>LOO Balanced accuracy</div>
+                  <div className="tabular-nums" style={{ fontSize: "20px", fontWeight: 600, color: "var(--teal)", marginTop: "4px" }}>
+                    {(metrics.vr_responder.balanced_accuracy * 100).toFixed(1)}%
+                  </div>
+                </div>
+                <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "10px 12px" }}>
+                  <div style={{ fontSize: "11px", color: "var(--muted)" }}>LOO ROC-AUC</div>
+                  <div className="tabular-nums" style={{ fontSize: "20px", fontWeight: 600, color: "var(--teal)", marginTop: "4px" }}>
+                    {Number.isFinite(metrics.vr_responder.roc_auc) ? metrics.vr_responder.roc_auc.toFixed(3) : "—"}
+                  </div>
+                </div>
+              </div>
+              {metrics.vr_responder.note && (
+                <div style={{ fontSize: "11.5px", color: "var(--muted)", marginTop: "8px", lineHeight: 1.45 }}>
+                  {metrics.vr_responder.note}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Feature Importances Bar Chart */}
       <div className="card">
         <h3 style={{ fontSize: "15px", marginBottom: "14px", display: "flex", alignItems: "center", gap: "8px" }}>

@@ -344,7 +344,7 @@ export default function LandingPage() {
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--muted)" }}>{lang === "kz" ? "Ұсыным:" : "Рекомендация:"}</span>
-                  <strong style={{ color: "var(--amber)" }}>{lang === "kz" ? "VR тоқтату (Verbal режимі)" : "Отмена VR (режим Verbal)"}</strong>
+                  <strong style={{ color: "var(--amber)" }}>{lang === "kz" ? "VR түзету / Verbal-ға көшу" : "Коррекция VR / переход на Verbal"}</strong>
                 </div>
               </div>
 

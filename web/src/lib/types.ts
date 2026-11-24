@@ -32,6 +32,7 @@ export interface DiscreteSummary {
   vr_pelvis_tilt?: number | null;
   verbal_pelvis_tilt?: number | null;
   delta_pelvis_tilt?: number | null;
+  baseline_hip_rom?: number | null;
   baseline_gps: number;
   baseline_amin_sagh: number;
   baseline_gvs_pelvis: number;
@@ -102,6 +103,7 @@ export interface PatientAnalysis {
   };
   ml: {
     vr_gait_signature_confidence: number;
+    binary_roc_auc?: number;
     is_vr_discriminative: boolean;
     responder_prediction?: {
       responder_probability: number;
@@ -120,6 +122,12 @@ export interface PatientAnalysis {
       n_anomalies: number;
       n_cycles: number;
       is_stable: boolean;
+      cycles?: Array<{
+        cycle_index: number;
+        spe: number;
+        threshold: number;
+        is_anomaly: boolean;
+      }>;
     };
   };
 }
@@ -156,6 +164,9 @@ export interface RegionalStats {
   country: {
     name_ru: string;
     name_kz: string;
+    is_reference_snapshot?: boolean;
+    snapshot_note_ru?: string;
+    snapshot_note_kz?: string;
     total_children_disability: number;
     children_with_cp: number;
     primary_disability_annual: number;
@@ -176,6 +187,9 @@ export interface RegionalStats {
     average_waiting_months: number;
     labs_3d_grail_count: number;
     economic_impact: {
+      is_model_estimate?: boolean;
+      methodology_ru?: string;
+      methodology_kz?: string;
       time_saved_per_patient_minutes: number;
       cost_reduction_pct: number;
       annual_queue_reduction_estimate_pct: number;
@@ -227,6 +241,26 @@ export interface ThreeClassMLMetrics {
   n_subjects: number;
 }
 
+export interface PcaValidationMetrics {
+  oof_baseline_anomaly_rate: number;
+  vr_anomaly_rate: number;
+  fold_rates: number[];
+  n_splits: number;
+  n_subjects: number;
+  n_cycles: number;
+  vr_n_cycles?: number;
+}
+
+export interface VrResponderMetrics {
+  balanced_accuracy: number;
+  roc_auc: number;
+  n_subjects: number;
+  n_responders: number;
+  n_compensators: number;
+  feature_mode?: string;
+  note?: string;
+}
+
 export interface MLMetrics {
   balanced_accuracy: number;
   roc_auc: number;
@@ -238,12 +272,15 @@ export interface MLMetrics {
   n_subjects: number;
   feature_importances: Record<string, number>;
   three_class?: ThreeClassMLMetrics;
+  pca_validation?: PcaValidationMetrics;
+  vr_responder?: VrResponderMetrics;
 }
 
 export interface CsvUploadResponse {
   status: string;
   code: string;
   condition?: "Baseline" | "Verbal" | "VR";
+  has_kinematics?: boolean;
   rows?: number;
   columns?: number;
   message_ru?: string;

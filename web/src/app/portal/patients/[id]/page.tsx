@@ -23,12 +23,14 @@ export default function PatientDossierPage() {
   const [kinematics, setKinematics] = useState<KinematicsResponse | null>(null);
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
     async function loadData() {
       try {
+        setApiError(null);
         const [an, kin, pts] = await Promise.all([
           getPatientAnalysis(id),
           getPatientKinematics(id),
@@ -41,6 +43,7 @@ export default function PatientDossierPage() {
         setPatient(p);
       } catch (err) {
         console.error("Failed to load patient dossier:", err);
+        if (active) setApiError(err instanceof Error ? err.message : String(err));
       } finally {
         if (active) setLoading(false);
       }
@@ -67,6 +70,11 @@ export default function PatientDossierPage() {
     const prefix = signed && v > 0 ? "+" : "";
     return `${prefix}${v.toFixed(1)}${unit}`;
   };
+
+  const fmtDiff = (cur?: number | null, base?: number | null, unit = "°") =>
+    typeof cur === "number" && isFinite(cur) && typeof base === "number" && isFinite(base)
+      ? fmtUnit(cur - base, unit, true)
+      : "—";
 
   return (
     <div className="container" style={{ paddingBlock: "24px", display: "flex", flexDirection: "column", gap: "18px" }}>
@@ -238,17 +246,17 @@ export default function PatientDossierPage() {
                     </>
                   )}
 
-                  {/* XAI: Exact Closed-Form Linear Attributions */}
+                  {/* Linear Feature Attributions & Cycle Signature Confidence */}
                   {resp?.feature_attributions && resp.feature_attributions.length > 0 && (
                     <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
                       <div style={{ fontSize: "11px", fontWeight: 500, color: "var(--muted)", marginBottom: "6px" }}>
                         {!isReliable
                           ? (lang === "kz"
-                              ? "Зерттеу факторлары (XAI Shapley, клиникалық шешімге емес):"
-                              : "Исследовательские факторы (XAI Shapley, не для клинических решений):")
+                              ? "Зерттеу факторлары (сызықтық үлес Z-score × β, клиникалық шешімге емес):"
+                              : "Исследовательские факторы (линейный вклад Z-score × β, не для клинических решений):")
                           : (lang === "kz"
-                              ? "Модель факторлары (XAI Shapley Attribution):"
-                              : "Факторы модели (XAI Shapley Attribution):")}
+                              ? "Модель факторлары (сызықтық үлес Z-score × β):"
+                              : "Факторы модели (линейный вклад Z-score × β):")}
                       </div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                         {resp.feature_attributions.slice(0, 3).map((attr) => (
@@ -267,6 +275,18 @@ export default function PatientDossierPage() {
                           </span>
                         ))}
                       </div>
+                    </div>
+                  )}
+                  {typeof analysis.ml?.vr_gait_signature_confidence === "number" && (
+                    <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px dashed var(--line)", display: "flex", justifyContent: "space-between", fontSize: "11.5px", color: "var(--muted)" }}>
+                      <span>
+                        {lang === "kz"
+                          ? `VR жүріс паттернінің айқындығы (GroupKFold AUC ${(analysis.ml.binary_roc_auc ?? 0.772).toFixed(3)}):`
+                          : `Сигнатура VR-походки по циклам (GroupKFold AUC ${(analysis.ml.binary_roc_auc ?? 0.772).toFixed(3)}):`}
+                      </span>
+                      <strong className="tabular-nums" style={{ color: "var(--ink)" }}>
+                        {(analysis.ml.vr_gait_signature_confidence * 100).toFixed(0)}%
+                      </strong>
                     </div>
                   )}
                 </div>
@@ -294,6 +314,41 @@ export default function PatientDossierPage() {
                   ? "Kinematic PCA бақылауы шаршау мен тепе-теңдікті жоғалту қаупін алдын ала анықтайды."
                   : "Мониторинг реконструкции кинематических кривых предотвращает спотыкания при утомлении."}
               </div>
+              {analysis.ml?.pca_stability?.cycles && analysis.ml.pca_stability.cycles.length > 0 && (() => {
+                const cycles = analysis.ml.pca_stability!.cycles!;
+                const maxSpe = Math.max(...cycles.map((c) => Math.max(c.spe, c.threshold)), 1);
+                const anomalousIds = cycles.filter((c) => c.is_anomaly).map((c) => `#${c.cycle_index}`);
+                return (
+                  <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--muted)", marginBottom: "6px" }}>
+                      <span>{lang === "kz" ? "Әр қадам циклі (SPE / Q-статистика):" : "Профиль по отдельным циклам (SPE / Q-статистика):"}</span>
+                      <span>
+                        {anomalousIds.length > 0
+                          ? (lang === "kz" ? `Аномалия: ${anomalousIds.join(", ")}` : `Аномалии: ${anomalousIds.join(", ")}`)
+                          : (lang === "kz" ? "Барлық қадамдар шектен төмен" : "Все шаги в пределах порога")}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: "2px", height: "30px" }}>
+                      {cycles.map((c) => {
+                        const pct = Math.max(15, Math.min(100, Math.round((c.spe / maxSpe) * 100)));
+                        return (
+                          <div
+                            key={c.cycle_index}
+                            title={`${lang === "kz" ? "Цикл" : "Цикл"} #${c.cycle_index}: SPE=${c.spe} (${lang === "kz" ? "шек" : "порог"} ${c.threshold})`}
+                            style={{
+                              flex: 1,
+                              height: `${pct}%`,
+                              borderRadius: "2px",
+                              background: c.is_anomaly ? "var(--red)" : "var(--teal)",
+                              opacity: c.is_anomaly ? 0.95 : 0.65,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -327,6 +382,7 @@ export default function PatientDossierPage() {
                       <th scope="col" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Буын" : "Сустав"}</th>
                       <th scope="col" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Қалыпты (Base)" : "Обычный (Base)"}</th>
                       <th scope="col" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Дауыс (Verbal)" : "Голос (Verbal)"}</th>
+                      <th scope="col" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Дельта (Verbal - Base)" : "Дельта (Verbal - Base)"}</th>
                       <th scope="col" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "VR аватар" : "VR аватар"}</th>
                       <th scope="col" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Дельта (VR - Base)" : "Дельта (VR - Base)"}</th>
                     </tr>
@@ -336,15 +392,19 @@ export default function PatientDossierPage() {
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 500 }}>{lang === "kz" ? "Жамбас (Pelvis SagP)" : "Таз (Pelvis SagP)"}</th>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.baseline_gvs_pelvis)}°</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_gvs_pelvis)}°</td>
-                      <td style={{ padding: "10px 12px", color: "var(--red)", fontWeight: 600 }}>{fmt(analysis.summary.vr_gvs_pelvis)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtDiff(analysis.summary.verbal_gvs_pelvis, analysis.summary.baseline_gvs_pelvis)}</td>
                       {(() => {
                         const pDelta = analysis.summary.delta_gvs_pelvis || 0;
                         const isComp = pDelta > 2.0;
+                        const pelvisColor = isComp ? "var(--red)" : pDelta < -0.3 ? "var(--teal)" : "var(--ink)";
                         return (
-                          <td style={{ padding: "10px 12px", color: isComp ? "var(--red)" : "var(--ink)", fontWeight: isComp ? 600 : 400 }}>
-                            {pDelta > 0 ? `+${fmt(pDelta)}` : fmt(pDelta)}°
-                            {isComp ? ` ${lang === "kz" ? "(Компенсация)" : "(Компенсация)"}` : ""}
-                          </td>
+                          <>
+                            <td style={{ padding: "10px 12px", color: pelvisColor, fontWeight: 600 }}>{fmt(analysis.summary.vr_gvs_pelvis)}°</td>
+                            <td style={{ padding: "10px 12px", color: pelvisColor, fontWeight: isComp ? 600 : 400 }}>
+                              {pDelta > 0 ? `+${fmt(pDelta)}` : fmt(pDelta)}°
+                              {isComp ? ` ${lang === "kz" ? "(Компенсация)" : "(Компенсация)"}` : ""}
+                            </td>
+                          </>
                         );
                       })()}
                     </tr>
@@ -352,6 +412,7 @@ export default function PatientDossierPage() {
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 500 }}>{lang === "kz" ? "Сан (Hip SagH)" : "Бедро (Hip SagH)"}</th>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.baseline_gvs_hip)}°</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_gvs_hip)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtDiff(analysis.summary.verbal_gvs_hip, analysis.summary.baseline_gvs_hip)}</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.vr_gvs_hip)}°</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.delta_gvs_hip)}°</td>
                     </tr>
@@ -359,6 +420,7 @@ export default function PatientDossierPage() {
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 500 }}>{lang === "kz" ? "Тізе (Knee SagK)" : "Колено (Knee SagK)"}</th>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.baseline_gvs_knee)}°</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_gvs_knee)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtDiff(analysis.summary.verbal_gvs_knee, analysis.summary.baseline_gvs_knee)}</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.vr_gvs_knee)}°</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.delta_gvs_knee)}°</td>
                     </tr>
@@ -366,6 +428,7 @@ export default function PatientDossierPage() {
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 500 }}>{lang === "kz" ? "Толарсақ (Ankle SagA)" : "Стопа (Ankle SagA)"}</th>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.baseline_gvs_ankle)}°</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_gvs_ankle)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtDiff(analysis.summary.verbal_gvs_ankle, analysis.summary.baseline_gvs_ankle)}</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.vr_gvs_ankle)}°</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.delta_gvs_ankle)}°</td>
                     </tr>
@@ -373,6 +436,7 @@ export default function PatientDossierPage() {
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Сан разгибаниесі (aMinSagH)" : "Разгибание бедра (aMinSagH)"}</th>
                       <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmt(analysis.summary.baseline_amin_sagh)}°</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_amin_sagh)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtDiff(analysis.summary.verbal_amin_sagh, analysis.summary.baseline_amin_sagh)}</td>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: "var(--teal)" }}>{fmt(analysis.summary.vr_amin_sagh)}°</td>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: (analysis.summary.delta_amin_sagh || 0) < 0 ? "var(--teal)" : "var(--ink)" }}>
                         {fmt(analysis.summary.delta_amin_sagh)}°
@@ -382,6 +446,7 @@ export default function PatientDossierPage() {
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Бейкер индексі (GPS_a)" : "Индекс походки Бейкера (GPS_a)"}</th>
                       <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmtUnit(analysis.summary.baseline_gps)}</td>
                       <td style={{ padding: "10px 12px" }}>{fmtUnit(analysis.summary.verbal_gps)}</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtDiff(analysis.summary.verbal_gps, analysis.summary.baseline_gps)}</td>
                       <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmtUnit(analysis.summary.vr_gps)}</td>
                       <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmtUnit(analysis.summary.delta_gps)}</td>
                     </tr>
@@ -391,6 +456,7 @@ export default function PatientDossierPage() {
                       </th>
                       <td style={{ padding: "10px 12px" }}>{fmtUnit(analysis.summary.baseline_pctm_zero, "%")}</td>
                       <td style={{ padding: "10px 12px" }}>{fmtUnit(analysis.summary.verbal_pctm_zero, "%")}</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtDiff(analysis.summary.verbal_pctm_zero, analysis.summary.baseline_pctm_zero, "%")}</td>
                       <td style={{ padding: "10px 12px" }}>{fmtUnit(analysis.summary.vr_pctm_zero, "%")}</td>
                       <td style={{ padding: "10px 12px" }}>
                         {(() => {
@@ -412,6 +478,7 @@ export default function PatientDossierPage() {
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 700, color: "var(--ink)" }}>{lang === "kz" ? "Шынайы буын жазылуы (TJE)" : "Истинное суставное разгибание (TJE)"}</th>
                       <td style={{ padding: "10px 12px" }}>0.0° (Base)</td>
                       <td style={{ padding: "10px 12px" }}>{fmt(analysis.modalities?.tje_verbal)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtUnit(analysis.modalities?.tje_verbal, "°", true)}</td>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: "var(--teal)" }}>{fmt((analysis.cdss_risk || analysis.cdss)?.tje)}°</td>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: ((analysis.cdss_risk || analysis.cdss)?.tje || 0) < 0 ? "var(--teal)" : "var(--red)" }}>
                         {(analysis.cdss_risk || analysis.cdss)?.tje?.toFixed(1) || "-"}°
@@ -421,6 +488,9 @@ export default function PatientDossierPage() {
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 700, color: "var(--ink)" }}>{lang === "kz" ? "Компенсация индексі (PCR)" : "Индекс компенсации таза (PCR)"}</th>
                       <td style={{ padding: "10px 12px" }}>0.00</td>
                       <td style={{ padding: "10px 12px" }}>{analysis.modalities?.pcr_verbal?.toFixed(2) || "0.00"}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 600, color: (analysis.modalities?.pcr_verbal ?? 0) > 0.8 ? "var(--red)" : "var(--teal)" }}>
+                        {(analysis.modalities?.pcr_verbal ?? 0) > 0.8 ? (lang === "kz" ? "Қауіпті" : "Опасно") : (lang === "kz" ? "Қалыпты" : "В норме")}
+                      </td>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: ((analysis.cdss_risk || analysis.cdss)?.pcr || 0) > 0.8 ? "var(--red)" : "var(--teal)" }}>
                         {(analysis.cdss_risk || analysis.cdss)?.pcr?.toFixed(2) || "0.00"}
                       </td>
@@ -435,6 +505,10 @@ export default function PatientDossierPage() {
 
           </div>
         </>
+      ) : apiError ? (
+        <div role="alert" className="card" style={{ padding: "32px", textAlign: "center", color: "var(--red)", fontSize: "13px" }}>
+          <strong>{lang === "kz" ? "Деректерді жүктеу қатесі:" : "Ошибка загрузки данных пациента:"}</strong> {apiError}
+        </div>
       ) : (
         <div className="card" style={{ padding: "40px", textAlign: "center" }}>
           {lang === "kz" ? "Пациент жергілікті деректер қорында табылмады." : "Пациент не найден в локальной базе данных."}

@@ -15,15 +15,19 @@ export function GaitDiffViewer({ patientCode }: Props) {
   const [diff, setDiff] = useState<GaitDiffResponse | null>(null);
   const [sessionB, setSessionB] = useState<"VR" | "Verbal">("VR");
   const [loading, setLoading] = useState(true);
+  const [diffError, setDiffError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadDiff() {
       setLoading(true);
+      setDiffError(null);
       try {
         const res = await getPatientDiff(patientCode, "Baseline", sessionB);
         setDiff(res);
       } catch (err) {
         console.error("Failed to load patient diff:", err);
+        setDiff(null);
+        setDiffError(err instanceof Error ? err.message : String(err));
       } finally {
         setLoading(false);
       }
@@ -245,6 +249,12 @@ export function GaitDiffViewer({ patientCode }: Props) {
 
           </div>
         </>
+      ) : diffError ? (
+        <div style={{ padding: "14px", background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "6px", color: "var(--muted)", fontSize: "12.5px" }}>
+          {lang === "kz"
+            ? `Салыстыру үшін ${sessionB} сессиясы тіркелмеген.`
+            : `Сессия ${sessionB} не записана для сравнения с Baseline.`}
+        </div>
       ) : null}
 
     </div>

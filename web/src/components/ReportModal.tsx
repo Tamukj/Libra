@@ -14,6 +14,7 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
   const [modalLang, setModalLang] = React.useState<"ru" | "kz" | "en">(initialLang);
   const [audience, setAudience] = useState<"doctor" | "parent">("doctor");
   const [loading, setLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
   const [fhirLoading, setFhirLoading] = useState(false);
   const [fhirError, setFhirError] = useState<string | null>(null);
   const [report, setReport] = useState<{ narrative: string; created_at: string; pcr: number; tje: number; icf_b770: string } | null>(null);
@@ -28,11 +29,13 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
 
   const handleGenerate = async (selectedLang: "ru" | "kz" | "en", selectedAudience: "doctor" | "parent") => {
     setLoading(true);
+    setReportError(null);
     try {
       const res = await createReport(patientCode, selectedLang, selectedAudience);
       setReport(res);
     } catch (e) {
-      alert("Ошибка генерации отчета: " + String(e));
+      setReportError(e instanceof Error ? e.message : String(e));
+      setReport(null);
     } finally {
       setLoading(false);
     }
@@ -157,6 +160,10 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
           {loading ? (
             <div style={{ padding: "40px", textAlign: "center", color: "var(--muted)" }}>
               {modalLang === "kz" ? "Хаттама жасалуда..." : "Формирование клинического протокола..."}
+            </div>
+          ) : reportError ? (
+            <div role="alert" style={{ padding: "24px", background: "var(--red-bg)", border: "1px solid var(--red-border)", borderRadius: "6px", color: "var(--red)", fontSize: "13px" }}>
+              <strong>{modalLang === "kz" ? "Хаттаманы жасау қатесі:" : "Ошибка формирования протокола:"}</strong> {reportError}
             </div>
           ) : report ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
