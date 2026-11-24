@@ -107,13 +107,13 @@ Access the interface at http://localhost.
 
 ## Test suite execution
 
-To run all 29 automated tests verifying parsers, biomechanical formulas, leak-free machine learning, and API contracts:
+To run all 40 automated tests verifying parsers, biomechanical formulas, leak-free machine learning, and API contracts:
 
 ```bash
 python3 -m pytest tests/ -v
 ```
 
-All 29 tests must pass without errors.
+All 40 tests must pass without errors. Tests run against an isolated temporary SQLite database without polluting `libra.db`.
 
 ---
 
@@ -123,7 +123,7 @@ Follow these 9 steps to test the application:
 
 1. **Open the application:** Navigate to http://127.0.0.1:3000 in your browser.
 2. **Review the cohort:** Use the patient selector in the upper toolbar. The cohort contains all 29 participants from the hackathon dataset.
-3. **Inspect high-risk compensation (Patient `s61520_1`):** Select patient `s61520_1`. Observe that the Clinical Decision Support indicator turns Red. The patient displays a Pathological Compensation Ratio of 1.21. While raw hip extension appears improved by 2.87 degrees, the child achieved this through compensatory pelvic deviation, creating risk of lumbar hyperlordosis.
+3. **Inspect high-risk compensation (Patient `s61520_1`):** Select patient `s61520_1`. Observe that the Clinical Decision Support indicator turns Red. The patient displays a Pathological Compensation Ratio of 1.21. While raw hip extension appears improved by 2.68 degrees, the child achieved this through compensatory pelvic deviation (+5.36 degrees pelvic tilt), yielding TJE = +2.68 degrees and creating risk of lumbar hyperlordosis.
 4. **Inspect true therapeutic response (Patient `s61520_13`):** Select patient `s61520_13`. Observe the Green indicator. The patient achieved true joint extension with a Pathological Compensation Ratio under 0.40 without dangerous pelvic tilt.
 5. **Compare modalities:** Scroll to the "Selection of rehabilitation tactics" card. The card compares Baseline, Verbal, and VR conditions, stating whether verbal feedback or VR feedback provides the safer outcome for the active patient.
 6. **Switch language:** Click the language button in the top navigation bar to toggle between Kazakh (`ҚАЗ`) and Russian (`РУС`). Notice that medical terminology and clinical narratives update across the entire interface.
@@ -185,7 +185,7 @@ The machine learning pipeline follows four design principles:
 
 1. **Strict subject isolation:** Evaluated through `GroupKFold(n_splits=5)` grouped by `subject`. Cycles of the same patient never appear in both training and test sets.
 2. **Leak-free preprocessing:** Imputation and scaling occur strictly inside each cross-validation fold.
-3. **Realistic clinical metrics:** Balanced Accuracy is 73.0 percent and ROC-AUC is 0.76.
+3. **Realistic clinical metrics:** On combined discrete parameters and cycle-level sagittal waveform features (`Baseline` vs `VR`, 1,736 cycles across 29 subjects), `LogisticRegression` achieves Balanced Accuracy **70.6%** and ROC-AUC **0.772** (`Sensitivity 66.2%`, `Specificity 74.9%`). A 3-class `Baseline vs Verbal vs VR` classifier (2,606 cycles) reaches **51.6%** Balanced Accuracy (vs 33.3% chance). The exploratory pre-therapy `VRResponderPredictor` (LOO on $N=29$) yields ROC-AUC **0.51** and is explicitly marked `model_reliable: false` in the API and UI so clinical decisions rely on factual CDSS metrics rather than underpowered predictions.
 4. **Kinematic PCA stability detector:** Analyzes Squared Prediction Error on 51-point curves. Cycles exceeding the calibrated 95th percentile threshold are flagged as unstable steps.
 
 ---
@@ -195,13 +195,15 @@ The machine learning pipeline follows four design principles:
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/health` | Health check verifying database and engine readiness |
-| `GET` | `/api/v1/patients` | List of all 29 cohort patients with metadata |
-| `GET` | `/api/v1/patients/{code}/summary` | Baseline, Verbal, VR metrics, deltas, TJE, and PCR |
+| `GET` | `/api/v1/patients` | List of all cohort patients with live PCR, TJE, status, and GPS |
+| `GET` | `/api/v1/patients/{code}/analysis` | Baseline, Verbal, VR metrics, deltas, TJE, PCR, ICF, and ML output |
 | `GET` | `/api/v1/patients/{code}/kinematics` | 51-point kinematic curves for pelvis, hip, knee, and ankle |
-| `GET` | `/api/v1/patients/{code}/report` | Structured medical narrative with ICF codes in KZ and RU |
-| `GET` | `/api/v1/ml/metrics` | GroupKFold cross-validation results and feature importances |
+| `POST` | `/api/v1/patients/{code}/report` | Structured medical narrative with ICF codes in KZ and RU |
+| `GET` | `/api/v1/patients/{code}/fhir` | HL7 FHIR R4 Bundle (`Patient`, `Observation`, `DiagnosticReport`) for Damumed |
+| `GET` | `/api/v1/ml/metrics` | GroupKFold cross-validation results (binary + 3-class) and feature importances |
 | `GET` | `/api/v1/open-data/regional` | Healthcare statistics for Kazakhstan and the Abai Region |
-| `POST`| `/api/v1/ingest/discrete` | Upload and validation of custom CSV files |
+| `GET` | `/api/v1/ingest/template` | Downloadable CSV templates (`format=vicon` or `format=imu`) |
+| `POST`| `/api/v1/patients/upload` | Multi-condition (`Baseline`/`Verbal`/`VR`) Vicon/IMU CSV ingestion |
 
 ---
 
