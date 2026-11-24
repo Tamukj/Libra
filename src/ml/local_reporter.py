@@ -10,6 +10,7 @@ from src.core.biomechanics import (
     classify_icf_b770,
     classify_icf_d450,
     analyze_compensation_risk,
+    compare_modalities,
 )
 
 ICF_DESCRIPTIONS_RU = {
@@ -57,6 +58,7 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
     risk = analyze_compensation_risk(d_hip, d_pelvis, d_knee, d_ankle)
     pcr = risk["pcr"]
     tje = risk["tje"]
+    modalities = compare_modalities(summary)
 
     icf_b_pre = classify_icf_b770(b_gps)
     icf_b_post = classify_icf_b770(vr_gps)
@@ -79,12 +81,15 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
             f"   • Шынайы буындық жазылу (TJE): {tje:+.2f}°\n"
             f"   • Патологиялық компенсация коэффициенті (PCR): {pcr:.2f}\n"
             f"   • Жамбастың еңкею девиациясы (GVS Pelvis): {d_pelvis:+.2f}°\n\n"
-            f"3. ДӘРІГЕРГЕ АРНАЛҒАН ИИ-ҰСЫНЫМЫ:\n"
+            f"3. ТЕРАПИЯЛЫҚ ӘДІСТІ ТАҢДАУ (Verbal vs VR):\n"
+            f"   • Таңдалған тиімді әдіс: {modalities['best_method']}\n"
+            f"   • Сараптама: {modalities['verdict_kz']}\n\n"
+            f"4. ДӘРІГЕРГЕ АРНАЛҒАН ИИ-ҰСЫНЫМЫ:\n"
             f"   Статус: {risk['label_kz']}\n"
             f"   Нұсқаулық: {risk['recommendation_kz']}\n"
             f"--------------------------------------------------\n"
             f"Ескерту: Бұл құжат дәрігерлік шешімді қолдау жүйесі (CDSS) арқылы жасалған "
-            f"және емдеуші дәрігердің растауына жатады."
+            f"және емдеуші дәрігердің растауына жатады (Damumed МИС-ке интеграциялауға дайын)."
         )
     else:
         icf_pre_desc = ICF_DESCRIPTIONS_RU.get(icf_b_pre, icf_b_pre)
@@ -103,12 +108,15 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
             f"   • Истинное суставное разгибание (TJE): {tje:+.2f}°\n"
             f"   • Коэффициент компенсации таза (PCR): {pcr:.2f}\n"
             f"   • Смещение наклона таза (GVS Pelvis): {d_pelvis:+.2f}°\n\n"
-            f"3. РЕКОМЕНДАЦИЯ ИИ ДЛЯ ВРАЧА-РЕАБИЛИТОЛОГА:\n"
+            f"3. ВЫБОР ОПТИМАЛЬНОЙ МЕТОДИКИ (Verbal vs VR):\n"
+            f"   • Рекомендованный метод: {modalities['best_method']}\n"
+            f"   • Обоснование: {modalities['verdict_ru']}\n\n"
+            f"4. РЕКОМЕНДАЦИЯ ИИ ДЛЯ ВРАЧА-РЕАБИЛИТОЛОГА:\n"
             f"   Статус: {risk['label_ru']}\n"
             f"   Тактика: {risk['recommendation_ru']}\n"
             f"--------------------------------------------------\n"
             f"Дисклеймер: Заключение сформировано модулем поддержки принятия решений (CDSS) "
-            f"и подлежит верификации лечащим врачом-реабилитологом."
+            f"и подлежит верификации лечащим врачом-реабилитологом (готов к экспорту в МИС Damumed)."
         )
 
     return narrative

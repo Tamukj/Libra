@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { AlertTriangle, CheckCircle2, AlertOctagon, TrendingDown, ShieldAlert, Award } from "lucide-react";
+import { AlertTriangle, CheckCircle2, AlertOctagon, TrendingDown, ShieldAlert, Award, HelpCircle } from "lucide-react";
 import { PatientAnalysis } from "@/lib/types";
 import { translations } from "@/lib/translations";
 
@@ -79,9 +79,10 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
         
         {/* Metric 1: Delta aMinSagH (Target) */}
-        <div className="card" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--muted)", marginBottom: "6px" }}>
-            {lang === "kz" ? "Санның жазылуы (aMinSagH)" : "Разгибание бедра (aMinSagH)"}
+        <div className="card" style={{ padding: "16px" }} title={t.tooltip_delta_hip || "Угол минимального сагиттального разгибания бедра."}>
+          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--muted)", marginBottom: "6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>{lang === "kz" ? "Санның жазылуы (aMinSagH)" : "Разгибание бедра (aMinSagH)"}</span>
+            <HelpCircle size={13} color="var(--muted)" style={{ cursor: "help" }} />
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
             <span style={{ fontSize: "24px", fontWeight: "700", color: summary.delta_amin_sagh <= -1.0 ? "var(--teal)" : "var(--muted)" }}>
@@ -97,9 +98,10 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
         </div>
 
         {/* Metric 2: True Joint Extension (TJE) */}
-        <div className="card" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--muted)", marginBottom: "6px" }}>
-            {t.tje_title}
+        <div className="card" style={{ padding: "16px" }} title={t.tooltip_tje}>
+          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--muted)", marginBottom: "6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>{t.tje_title}</span>
+            <HelpCircle size={13} color="var(--muted)" style={{ cursor: "help" }} />
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
             <span style={{ fontSize: "24px", fontWeight: "700", color: cdss_risk.tje <= -1.0 ? "var(--teal)" : "var(--amber)" }}>
@@ -112,9 +114,10 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
         </div>
 
         {/* Metric 3: Pathological Compensation Ratio (PCR) */}
-        <div className="card" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--muted)", marginBottom: "6px" }}>
-            {t.pcr_title}
+        <div className="card" style={{ padding: "16px" }} title={t.tooltip_pcr}>
+          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--muted)", marginBottom: "6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>{t.pcr_title}</span>
+            <HelpCircle size={13} color="var(--muted)" style={{ cursor: "help" }} />
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
             <span style={{ fontSize: "24px", fontWeight: "700", color: cdss_risk.pcr > 0.8 ? "var(--red)" : cdss_risk.pcr >= 0.4 ? "var(--amber)" : "var(--teal)" }}>
@@ -130,9 +133,10 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
         </div>
 
         {/* Metric 4: WHO ICF Status */}
-        <div className="card" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--muted)", marginBottom: "6px" }}>
-            {t.icf_title}
+        <div className="card" style={{ padding: "16px" }} title={t.tooltip_icf}>
+          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--muted)", marginBottom: "6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>{t.icf_title}</span>
+            <HelpCircle size={13} color="var(--muted)" style={{ cursor: "help" }} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>

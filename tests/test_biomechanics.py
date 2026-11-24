@@ -7,6 +7,7 @@ from src.core.biomechanics import (
     classify_icf_b770,
     classify_icf_d450,
     analyze_compensation_risk,
+    compare_modalities,
 )
 
 def test_true_joint_extension():
@@ -72,3 +73,24 @@ def test_analyze_compensation_risk():
     res_b = analyze_compensation_risk(delta_hip=-2.5, delta_gvs_p=4.0, delta_gvs_k=3.0, delta_gvs_a=2.0)
     assert res_b["status"] == "red"
     assert res_b["pcr"] > 0.8
+
+def test_compare_modalities():
+    # VR has large pelvic tilt, Verbal has clean extension
+    summary = {
+        "baseline_amin_sagh": 10.0,
+        "baseline_gvs_pelvis": 5.0,
+        "baseline_gvs_knee": 6.0,
+        "baseline_gvs_ankle": 4.0,
+        "vr_amin_sagh": 7.0, # -3.0
+        "vr_gvs_pelvis": 11.0, # +6.0 (compensation!)
+        "vr_gvs_knee": 8.0,
+        "vr_gvs_ankle": 5.0,
+        "verbal_amin_sagh": 8.0, # -2.0
+        "verbal_gvs_pelvis": 5.2, # +0.2 (no compensation!)
+        "verbal_gvs_knee": 6.0,
+        "verbal_gvs_ankle": 4.0,
+    }
+    res = compare_modalities(summary)
+    assert res["best_method"] == "Verbal"
+    assert "Вербальные команды" in res["verdict_ru"]
+

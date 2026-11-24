@@ -9,7 +9,7 @@ import numpy as np
 from src.database.session import get_db
 from src.database.models import Patient, GaitSession, ClinicalReport, Clinic
 from src.core.data_loader import load_discrete_dataset, load_kinematics_dataset, get_patient_discrete_summary, DATA_DIR
-from src.core.biomechanics import analyze_compensation_risk, classify_icf_b770, classify_icf_d450
+from src.core.biomechanics import analyze_compensation_risk, classify_icf_b770, classify_icf_d450, compare_modalities
 from src.core.normative_data import NORMATIVE_PROFILES
 from src.ml.vr_predictor import GaitConditionClassifier
 from src.ml.local_reporter import generate_clinical_narrative
@@ -78,9 +78,12 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
     _, probs = _ML_CLASSIFIER.predict_cycle_condition(patient_cycles)
     response_prob = float(np.mean(probs))
 
+    modalities = compare_modalities(summary)
+
     return {
         "summary": summary,
         "cdss_risk": risk,
+        "modalities": modalities,
         "icf": {
             "b770_baseline": icf_b770_base,
             "b770_vr": icf_b770_vr,

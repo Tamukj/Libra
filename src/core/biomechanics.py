@@ -133,3 +133,53 @@ def analyze_compensation_risk(
         "recommendation_ru": rec_ru,
         "recommendation_kz": rec_kz,
     }
+
+def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Compares Baseline vs Verbal vs VR modalities to determine the clinically optimal method.
+    Answers: 'Which method is better: Verbal or VR?'
+    """
+    delta_hip_vr = summary.get("vr_amin_sagh", 0.0) - summary.get("baseline_amin_sagh", 0.0)
+    delta_pelvis_vr = summary.get("vr_gvs_pelvis", 0.0) - summary.get("baseline_gvs_pelvis", 0.0)
+    delta_knee_vr = summary.get("vr_gvs_knee", 0.0) - summary.get("baseline_gvs_knee", 0.0)
+    delta_ankle_vr = summary.get("vr_gvs_ankle", 0.0) - summary.get("baseline_gvs_ankle", 0.0)
+
+    delta_hip_vb = summary.get("verbal_amin_sagh", 0.0) - summary.get("baseline_amin_sagh", 0.0)
+    delta_pelvis_vb = summary.get("verbal_gvs_pelvis", 0.0) - summary.get("baseline_gvs_pelvis", 0.0)
+    delta_knee_vb = summary.get("verbal_gvs_knee", 0.0) - summary.get("baseline_gvs_knee", 0.0)
+    delta_ankle_vb = summary.get("verbal_gvs_ankle", 0.0) - summary.get("baseline_gvs_ankle", 0.0)
+
+    pcr_vr = compute_pcr(delta_pelvis_vr, delta_knee_vr, delta_ankle_vr, delta_hip_vr)
+    tje_vr = compute_true_joint_extension(delta_hip_vr, delta_pelvis_vr)
+
+    pcr_vb = compute_pcr(delta_pelvis_vb, delta_knee_vb, delta_ankle_vb, delta_hip_vb)
+    tje_vb = compute_true_joint_extension(delta_hip_vb, delta_pelvis_vb)
+
+    if tje_vr < tje_vb and pcr_vr <= 0.8:
+        best_method = "VR"
+        diff = abs(tje_vb - tje_vr)
+        verdict_ru = f"VR-терапия эффективнее словесных инструкций на {diff:.1f}°. Достигнуто стабильное суставное разгибание при контролируемом тазе."
+        verdict_kz = f"VR-терапиясы вербалды нұсқаулардан {diff:.1f}°-қа тиімдірек. Жамбас бақылауымен тұрақты буын жазылуы қамтамасыз етілді."
+    elif tje_vb < tje_vr or pcr_vr > 0.8:
+        best_method = "Verbal"
+        verdict_ru = f"Вербальные команды врача безопаснее и физиологичнее. В VR ребенок компенсирует шаг завалом таза (PCR = {pcr_vr:.2f}), тогда как словесный контроль предотвращает гиперлордоз."
+        verdict_kz = f"Дәрігердің вербалды нұсқаулары қауіпсіз және физиологиялық тұрғыдан дұрыс. VR кезінде бала жамбасын шамадан тыс еңкейтеді (PCR = {pcr_vr:.2f}), ал вербалды бақылау гиперлордоздың алдын алады."
+    else:
+        best_method = "Baseline"
+        verdict_ru = "Оба режима биообратной связи вызывают моторную утомляемость. Рекомендован возврат к базовым упражнениям."
+        verdict_kz = "Кері байланыстың екі режимі де моторлық шаршау туғызады. Базалық жаттығуларға қайта оралу ұсынылады."
+
+    return {
+        "best_method": best_method,
+        "tje_vr": float(tje_vr),
+        "tje_verbal": float(tje_vb),
+        "pcr_vr": float(pcr_vr),
+        "pcr_verbal": float(pcr_vb),
+        "delta_hip_vr": float(delta_hip_vr),
+        "delta_hip_verbal": float(delta_hip_vb),
+        "delta_pelvis_vr": float(delta_pelvis_vr),
+        "delta_pelvis_verbal": float(delta_pelvis_vb),
+        "verdict_ru": verdict_ru,
+        "verdict_kz": verdict_kz
+    }
+

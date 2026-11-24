@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Activity, Languages, Building2, ShieldCheck } from "lucide-react";
+import { Activity, Languages, Building2, ShieldCheck, HelpCircle, Scale } from "lucide-react";
 import { translations } from "@/lib/translations";
 
 interface HeaderProps {
@@ -9,9 +9,11 @@ interface HeaderProps {
   setLang: (lang: "ru" | "kz") => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  onOpenGuide?: () => void;
+  onOpenLegal?: () => void;
 }
 
-export function Header({ lang, setLang, activeTab, setActiveTab }: HeaderProps) {
+export function Header({ lang, setLang, activeTab, setActiveTab, onOpenGuide, onOpenLegal }: HeaderProps) {
   const t = translations[lang];
 
   return (
@@ -68,12 +70,31 @@ export function Header({ lang, setLang, activeTab, setActiveTab }: HeaderProps) 
           ))}
         </nav>
 
-        {/* Clinic & Language Switcher */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }} className="no-print">
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--muted)" }}>
-            <Building2 size={14} />
-            <span>{t.clinic_badge}</span>
-          </div>
+        {/* Clinic & Language Switcher & Quick Actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }} className="no-print">
+          {onOpenGuide && (
+            <button
+              onClick={onOpenGuide}
+              className="btn"
+              style={{ fontSize: "11px", padding: "4px 8px", display: "flex", alignItems: "center", gap: "4px" }}
+              title={t.nav_guide}
+            >
+              <HelpCircle size={13} color="var(--teal)" />
+              <span>{lang === "kz" ? "Жаднама" : "Памятка"}</span>
+            </button>
+          )}
+
+          {onOpenLegal && (
+            <button
+              onClick={onOpenLegal}
+              className="btn"
+              style={{ fontSize: "11px", padding: "4px 8px", display: "flex", alignItems: "center", gap: "4px" }}
+              title={t.nav_legal}
+            >
+              <Scale size={13} color="var(--muted)" />
+              <span>{lang === "kz" ? "Құқық" : "Право"}</span>
+            </button>
+          )}
 
           <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: "6px", overflow: "hidden" }}>
             <button

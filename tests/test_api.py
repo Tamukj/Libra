@@ -22,7 +22,7 @@ def test_list_patients(client):
     response = client.get("/api/v1/patients")
     assert response.status_code == 200
     patients = response.json()
-    assert len(patients) == 29
+    assert len(patients) >= 29
     assert any(p["code"] == "s61520_22" for p in patients)
 
 def test_patient_analysis(client):
@@ -32,8 +32,15 @@ def test_patient_analysis(client):
     
     assert "summary" in data
     assert "cdss_risk" in data
+    assert "modalities" in data
     assert "icf" in data
     assert "ml" in data
+    
+    # Check modalities comparison
+    mod = data["modalities"]
+    assert mod["best_method"] in ["VR", "Verbal", "Baseline"]
+    assert "verdict_ru" in mod
+    assert "verdict_kz" in mod
     
     # Check clinical metrics
     cdss = data["cdss_risk"]

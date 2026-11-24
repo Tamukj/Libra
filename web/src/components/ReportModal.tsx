@@ -10,14 +10,15 @@ interface Props {
   onClose: () => void;
 }
 
-export function ReportModal({ patientCode, lang, onClose }: Props) {
+export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) {
+  const [modalLang, setModalLang] = React.useState<"ru" | "kz">(initialLang);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<{ narrative: string; created_at: string; pcr: number; tje: number; icf_b770: string } | null>(null);
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (selectedLang: "ru" | "kz") => {
     setLoading(true);
     try {
-      const res = await createReport(patientCode, lang);
+      const res = await createReport(patientCode, selectedLang);
       setReport(res);
     } catch (e) {
       alert("Ошибка генерации отчета: " + String(e));
@@ -27,8 +28,8 @@ export function ReportModal({ patientCode, lang, onClose }: Props) {
   };
 
   React.useEffect(() => {
-    handleGenerate();
-  }, [patientCode, lang]);
+    handleGenerate(modalLang);
+  }, [patientCode, modalLang]);
 
   return (
     <div style={{
@@ -54,17 +55,51 @@ export function ReportModal({ patientCode, lang, onClose }: Props) {
         boxShadow: "0 20px 40px rgba(0,0,0,0.2)"
       }}>
         
-        {/* Header */}
+        {/* Header with Language Switcher */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--line)", paddingBottom: "12px", marginBottom: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <FileText size={20} color="var(--teal)" />
             <h2 style={{ fontSize: "16px" }}>
-              {lang === "kz" ? `Дәрігерлік қорытынды: Пациент ${patientCode}` : `Клинический протокол: Пациент ${patientCode}`}
+              {modalLang === "kz" ? `Дәрігерлік қорытынды: Пациент ${patientCode}` : `Клинический протокол: Пациент ${patientCode}`}
             </h2>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>
-            <X size={20} />
-          </button>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }} className="no-print">
+            <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: "6px", overflow: "hidden" }}>
+              <button
+                onClick={() => setModalLang("kz")}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  fontWeight: "600",
+                  border: "none",
+                  background: modalLang === "kz" ? "var(--linen)" : "var(--white)",
+                  color: "var(--ink)",
+                  cursor: "pointer"
+                }}
+              >
+                ҚАЗ
+              </button>
+              <button
+                onClick={() => setModalLang("ru")}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "11px",
+                  fontWeight: "600",
+                  border: "none",
+                  borderLeft: "1px solid var(--line)",
+                  background: modalLang === "ru" ? "var(--linen)" : "var(--white)",
+                  color: "var(--ink)",
+                  cursor: "pointer"
+                }}
+              >
+                РУС
+              </button>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -77,8 +112,8 @@ export function ReportModal({ patientCode, lang, onClose }: Props) {
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               
               <div style={{ background: "var(--linen)", padding: "12px", borderRadius: "6px", fontSize: "12px", color: "var(--muted)", display: "flex", justifyContent: "space-between" }}>
-                <span>Орталық: Семей қ. Балаларды оңалту орталығы</span>
-                <span>Уақыты: {new Date(report.created_at).toLocaleString()}</span>
+                <span>{modalLang === "kz" ? "Орталық: Семей қ. Балаларды оңалту орталығы" : "Центр: Реабилитационный центр детей г. Семей"}</span>
+                <span>{modalLang === "kz" ? "Уақыты: " : "Время: "}{new Date(report.created_at).toLocaleString()}</span>
               </div>
 
               {/* Formatted Pre */}
@@ -99,7 +134,7 @@ export function ReportModal({ patientCode, lang, onClose }: Props) {
 
               <div style={{ fontSize: "11px", color: "var(--muted)", fontStyle: "italic", display: "flex", alignItems: "center", gap: "6px" }}>
                 <Shield size={14} color="var(--teal)" />
-                {lang === "kz" 
+                {modalLang === "kz" 
                   ? "ҚР Денсаулық сақтау министрлігінің БЦП хаттамасына және ДДҰ ХҚЖ стандартына сәйкес."
                   : "Соответствует клиническому протоколу МЗ РК «ДЦП у детей» и стандартам МКФ ВОЗ."}
               </div>
@@ -111,11 +146,11 @@ export function ReportModal({ patientCode, lang, onClose }: Props) {
         {/* Actions */}
         <div style={{ borderTop: "1px solid var(--line)", paddingTop: "14px", marginTop: "16px", display: "flex", justifyContent: "flex-end", gap: "10px" }} className="no-print">
           <button onClick={onClose} className="btn">
-            {lang === "kz" ? "Жабу" : "Закрыть"}
+            {modalLang === "kz" ? "Жабу" : "Закрыть"}
           </button>
           <button onClick={() => window.print()} className="btn btn-primary">
             <Printer size={16} />
-            {lang === "kz" ? "Басып шығару (PDF)" : "Печать протокола (PDF)"}
+            {modalLang === "kz" ? "Басып шығару (PDF)" : "Печать протокола (PDF)"}
           </button>
         </div>
 

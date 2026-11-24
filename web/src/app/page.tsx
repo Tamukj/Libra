@@ -2,12 +2,15 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Header } from "@/components/Header";
+import { MethodVerdict } from "@/components/MethodVerdict";
 import { CdssTrafficLight } from "@/components/CdssTrafficLight";
 import { KinematicsChart } from "@/components/KinematicsChart";
 import { RadarGvs } from "@/components/RadarGvs";
 import { RegionalStats } from "@/components/RegionalStats";
 import { MlValidation } from "@/components/MlValidation";
 import { ReportModal } from "@/components/ReportModal";
+import { LegalModal } from "@/components/LegalModal";
+import { OnboardingModal } from "@/components/OnboardingModal";
 import {
   getPatients,
   getPatientAnalysis,
@@ -34,6 +37,8 @@ export default function MainPage() {
 
   const [loading, setLoading] = useState<boolean>(true);
   const [reportModalOpen, setReportModalOpen] = useState<boolean>(false);
+  const [legalModalOpen, setLegalModalOpen] = useState<boolean>(false);
+  const [onboardingModalOpen, setOnboardingModalOpen] = useState<boolean>(false);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -108,7 +113,14 @@ export default function MainPage() {
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
       
       {/* 1. Header */}
-      <Header lang={lang} setLang={setLang} activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Header
+        lang={lang}
+        setLang={setLang}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onOpenGuide={() => setOnboardingModalOpen(true)}
+        onOpenLegal={() => setLegalModalOpen(true)}
+      />
 
       {/* 2. Main Content Canvas */}
       <main className="container" style={{ flex: 1, paddingBlock: "28px", display: "flex", flexDirection: "column", gap: "24px" }}>
@@ -202,10 +214,13 @@ export default function MainPage() {
             {activeTab === "patient" && analysis && (
               <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
                 
-                {/* CDSS Traffic Light */}
+                {/* 1. Method Verdict: Verbal vs VR */}
+                <MethodVerdict modalities={analysis.modalities} lang={lang} />
+
+                {/* 2. CDSS Traffic Light */}
                 <CdssTrafficLight analysis={analysis} lang={lang} />
 
-                {/* Split View: Kinematics Curve (Left) + GVS Radar (Right) */}
+                {/* 3. Split View: Kinematics Curve (Left) + GVS Radar (Right) */}
                 <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr", gap: "20px" }}>
                   {kinematics && <KinematicsChart data={kinematics} lang={lang} />}
                   <RadarGvs summary={analysis.summary} lang={lang} />
@@ -300,6 +315,22 @@ export default function MainPage() {
           patientCode={selectedCode}
           lang={lang}
           onClose={() => setReportModalOpen(false)}
+        />
+      )}
+
+      {/* 4. Legal & Standards Modal */}
+      {legalModalOpen && (
+        <LegalModal
+          lang={lang}
+          onClose={() => setLegalModalOpen(false)}
+        />
+      )}
+
+      {/* 5. Onboarding Guide Modal */}
+      {onboardingModalOpen && (
+        <OnboardingModal
+          lang={lang}
+          onClose={() => setOnboardingModalOpen(false)}
         />
       )}
 

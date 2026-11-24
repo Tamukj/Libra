@@ -89,7 +89,7 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
         </div>
 
         {/* Legend */}
-        <div style={{ display: "flex", gap: "14px", fontSize: "12px" }}>
+        <div style={{ display: "flex", gap: "14px", fontSize: "12px", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
             <span style={{ width: "12px", height: "12px", background: "var(--norm-corridor)", borderRadius: "2px", opacity: 0.6 }} />
             <span>{t.norm_legend}</span>
@@ -109,9 +109,53 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
         </div>
       </div>
 
+      {/* Guide Banner */}
+      <div style={{
+        background: "var(--paper)",
+        border: "1px solid var(--line)",
+        padding: "8px 12px",
+        borderRadius: "6px",
+        fontSize: "12px",
+        color: "var(--muted)",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
+      }}>
+        <span>
+          {lang === "kz"
+            ? "💡 Нұсқаулық: Сұр дәліз — дені сау балалар нормасы. Сарғыш сызықтың (VR) сұр аймақтан асып кетуі — патологиялық компенсация."
+            : "💡 Подсказка: Серый коридор — доверительный интервал нормы здоровых детей (±1 SD). Выход оранжевой линии (VR) выше серого коридора означает патологическую перегрузку."}
+        </span>
+        <span style={{ fontWeight: "600", color: "var(--ink)" }}>0% - 60% Опора | 60% - 100% Перенос</span>
+      </div>
+
       {/* SVG Canvas */}
       <div style={{ width: "100%", overflowX: "auto" }}>
         <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", display: "block" }}>
+          
+          {/* Phase 60% Divider Background */}
+          <rect
+            x={scaleX(60)}
+            y={padTop}
+            width={scaleX(100) - scaleX(60)}
+            height={height - padTop - padBottom}
+            fill="var(--linen)"
+            opacity="0.35"
+          />
+          <text x={scaleX(30)} y={padTop + 14} fontSize="10" fill="var(--muted)" textAnchor="middle" fontWeight="600">
+            {lang === "kz" ? "ТІРЕУ ФАЗАСЫ (STANCE 0-60%)" : "ФАЗА ОПОРЫ (STANCE 0-60%)"}
+          </text>
+          <text x={scaleX(80)} y={padTop + 14} fontSize="10" fill="var(--muted)" textAnchor="middle" fontWeight="600">
+            {lang === "kz" ? "АУЫСУ ФАЗАСЫ (SWING 60-100%)" : "ФАЗА ПЕРЕНОСА (SWING 60-100%)"}
+          </text>
+          <line
+            x1={scaleX(60)}
+            y1={padTop}
+            x2={scaleX(60)}
+            y2={height - padBottom}
+            stroke="var(--line)"
+            strokeDasharray="4 2"
+          />
           
           {/* Grid lines */}
           {[0, 25, 50, 75, 100].map((pct) => (
