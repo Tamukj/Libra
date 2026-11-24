@@ -6,7 +6,7 @@ import { MLMetrics } from "@/lib/types";
 
 interface Props {
   metrics: MLMetrics;
-  lang: "ru" | "kz";
+  lang: "ru" | "kz" | "en";
 }
 
 export function MlValidation({ metrics, lang }: Props) {
@@ -38,7 +38,7 @@ export function MlValidation({ metrics, lang }: Props) {
       </div>
 
       {/* 4 Quantitative Validation Metrics */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
+      <div className="grid-kpi-4">
         
         <div className="card">
           <div style={{ fontSize: "12px", color: "var(--muted)", textTransform: "uppercase", fontWeight: "600" }}>
@@ -48,7 +48,7 @@ export function MlValidation({ metrics, lang }: Props) {
             {(metrics.balanced_accuracy * 100).toFixed(1)}%
           </div>
           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-            Честная клиническая точность
+            {lang === "kz" ? "Шынайы клиникалық дәлдік" : "Честная клиническая точность"}
           </div>
         </div>
 
@@ -60,7 +60,7 @@ export function MlValidation({ metrics, lang }: Props) {
             {metrics.roc_auc.toFixed(3)}
           </div>
           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-            Высокая дискриминативность
+            {lang === "kz" ? "Жоғары ажырату қабілеті" : "Высокая дискриминативность"}
           </div>
         </div>
 
@@ -72,7 +72,7 @@ export function MlValidation({ metrics, lang }: Props) {
             {(metrics.sensitivity * 100).toFixed(1)}%
           </div>
           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-            Выявление истинного VR-эффекта
+            {lang === "kz" ? "Нақты VR-эффектісін анықтау" : "Выявление истинного VR-эффекта"}
           </div>
         </div>
 
@@ -84,7 +84,7 @@ export function MlValidation({ metrics, lang }: Props) {
             {(metrics.specificity * 100).toFixed(1)}%
           </div>
           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-            Защита от ложного назначения
+            {lang === "kz" ? "Жалған тағайындаудан қорғау" : "Защита от ложного назначения"}
           </div>
         </div>
 

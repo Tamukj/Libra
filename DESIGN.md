@@ -1,6 +1,6 @@
-# DESIGN.md — GaitAI Design System & Engineering Architecture
+# DESIGN.md — Libra Design System & Clinical Architecture
 
-> Проект: **GaitAI (Ассистент клинической биомеханики при ДЦП)**  
+> Проект: **Libra (Клиническая биомеханика и CDSS при ДЦП)**  
 > Хакатон: **AI-Sana Shakarim Solveathon: AI & Medicine-2026 (г. Семей, область Абай)**  
 > Архитектурное вдохновение: **Earwright & Earwright-Hub**
 

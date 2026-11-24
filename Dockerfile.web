@@ -1,4 +1,4 @@
-# Multi-stage build for GaitAI Next.js Frontend (Earwright-Hub pattern)
+# Multi-stage build for Libra Clinical Web Platform
 FROM node:24-alpine AS builder
 
 WORKDIR /app

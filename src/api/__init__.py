@@ -1,1 +1,1 @@
-"""FastAPI Application and Routes for GaitAI Platform."""
+"""FastAPI Application and Routes for Libra Platform."""

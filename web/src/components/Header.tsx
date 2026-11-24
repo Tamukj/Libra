@@ -5,8 +5,8 @@ import { Activity, Languages, Building2, ShieldCheck, HelpCircle, Scale } from "
 import { translations } from "@/lib/translations";
 
 interface HeaderProps {
-  lang: "ru" | "kz";
-  setLang: (lang: "ru" | "kz") => void;
+  lang: "ru" | "kz" | "en";
+  setLang: (lang: "ru" | "kz" | "en") => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onOpenGuide?: () => void;

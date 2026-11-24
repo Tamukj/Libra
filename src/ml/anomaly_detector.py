@@ -24,9 +24,12 @@ class KinematicPCAAnomalyDetector:
     def fit(self, curves: np.ndarray):
         """
         Fits PCA on baseline stable gait cycle curves.
-        curves: 2D array of shape (n_cycles, n_points), e.g. (870, 1001).
+        curves: 2D array of shape (n_cycles, n_points), e.g. (870, 51).
         """
         clean_curves = self.imputer.fit_transform(curves)
+        n_samples, n_features = clean_curves.shape
+        n_comp = min(self.n_components, max(1, n_samples - 1), n_features)
+        self.pca = PCA(n_components=n_comp, random_state=42)
         projected = self.pca.fit_transform(clean_curves)
         reconstructed = self.pca.inverse_transform(projected)
 
@@ -41,6 +44,16 @@ class KinematicPCAAnomalyDetector:
         """
         if self.threshold is None:
             raise RuntimeError("Anomaly detector must be fitted before running detection.")
+
+        if len(curves) == 0:
+            return {
+                "is_anomaly": np.array([], dtype=bool),
+                "reconstruction_error": np.array([], dtype=float),
+                "threshold": self.threshold,
+                "anomaly_rate": 0.0,
+                "n_anomalies": 0,
+                "n_total": 0,
+            }
 
         clean_curves = self.imputer.transform(curves)
         projected = self.pca.transform(clean_curves)

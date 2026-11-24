@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 36" width="160" height="36" fill="none">
+  <g transform="translate(2, 2)">
+    <rect width="32" height="32" rx="7" fill="#1c1917"/>
+    <path d="M 10 13 C 10 9.7 12.7 7 16 7 C 19.3 7 22 9.7 22 13" stroke="#fbf8f1" stroke-width="2" stroke-linecap="round"/>
+    <path d="M 7 21 L 25 21" stroke="#fbf8f1" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="16" cy="17" r="1.75" fill="#a44d12"/>
+  </g>
+  <text x="44" y="24" font-family="Manrope, system-ui, sans-serif" font-size="20" font-weight="800" letter-spacing="-0.04em" fill="#1c1917">libra</text>
+  <text x="96" y="14" font-family="system-ui, sans-serif" font-size="8" font-weight="700" letter-spacing="0.08em" fill="#a44d12">HEALTH</text>
+</svg>

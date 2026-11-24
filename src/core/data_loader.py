@@ -1,4 +1,4 @@
-"""Data ingestion, parsing, and caching module for GaitAI."""
+"""Data ingestion, parsing, and caching module for Libra."""
 
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -46,7 +46,7 @@ def load_discrete_dataset(path: Path) -> pd.DataFrame:
 def load_kinematics_dataset(path: Path) -> pd.DataFrame:
     """
     Loads and interpolates a Kinematics_Kinetics_*.csv file.
-    Contains 1001 points (0 to 1000) for pelvis, hip, knee, ankle angles and hip moment.
+    Contains 51 points (GC 0% to 100% with step 20 = 2%) for pelvis, hip, knee, ankle angles and hip moment.
     """
     if not path.exists():
         raise FileNotFoundError(f"Kinematics file not found: {path}")
@@ -70,6 +70,8 @@ def load_kinematics_dataset(path: Path) -> pd.DataFrame:
     ts_cols = [c for c in df.columns if "_pct_GC_" in c]
     for col in ts_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
+    if ts_cols:
+        df[ts_cols] = df[ts_cols].interpolate(method="linear", axis=1, limit_direction="both")
 
     return df
 
@@ -103,14 +105,21 @@ def get_patient_discrete_summary(
     b_gvs_a = float(sub_base["GVS_aSagA"].dropna().mean())
     b_pctm = float(sub_base["pctmZeroStSagH"].dropna().mean() if not sub_base["pctmZeroStSagH"].dropna().empty else 0.0)
 
+    def _mean_or(series: pd.Series, fallback: float) -> float:
+        clean = series.dropna()
+        if clean.empty:
+            return float(fallback)
+        val = clean.mean()
+        return float(fallback) if (np.isnan(val) or pd.isna(val)) else float(val)
+
     # VR averages
-    vr_gps = float(sub_vr["GPS_a"].dropna().mean() if not sub_vr.empty else b_gps)
-    vr_amin_sagh = float(sub_vr["aMinSagH"].dropna().mean() if not sub_vr.empty else b_amin_sagh)
-    vr_gvs_p = float(sub_vr["GVS_aSagP"].dropna().mean() if not sub_vr.empty else b_gvs_p)
-    vr_gvs_h = float(sub_vr["GVS_aSagH"].dropna().mean() if not sub_vr.empty else b_gvs_h)
-    vr_gvs_k = float(sub_vr["GVS_aSagK"].dropna().mean() if not sub_vr.empty else b_gvs_k)
-    vr_gvs_a = float(sub_vr["GVS_aSagA"].dropna().mean() if not sub_vr.empty else b_gvs_a)
-    vr_pctm = float(sub_vr["pctmZeroStSagH"].dropna().mean() if not sub_vr.empty and not sub_vr["pctmZeroStSagH"].dropna().empty else b_pctm)
+    vr_gps = _mean_or(sub_vr["GPS_a"], b_gps) if not sub_vr.empty else b_gps
+    vr_amin_sagh = _mean_or(sub_vr["aMinSagH"], b_amin_sagh) if not sub_vr.empty else b_amin_sagh
+    vr_gvs_p = _mean_or(sub_vr["GVS_aSagP"], b_gvs_p) if not sub_vr.empty else b_gvs_p
+    vr_gvs_h = _mean_or(sub_vr["GVS_aSagH"], b_gvs_h) if not sub_vr.empty else b_gvs_h
+    vr_gvs_k = _mean_or(sub_vr["GVS_aSagK"], b_gvs_k) if not sub_vr.empty else b_gvs_k
+    vr_gvs_a = _mean_or(sub_vr["GVS_aSagA"], b_gvs_a) if not sub_vr.empty else b_gvs_a
+    vr_pctm = _mean_or(sub_vr["pctmZeroStSagH"], b_pctm) if not sub_vr.empty else b_pctm
 
     res = {
         "subject": subject_id,

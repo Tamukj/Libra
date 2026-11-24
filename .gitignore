@@ -57,3 +57,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+
+# Audit swarm scratch artifacts
+.audit/
+*.tsbuildinfo
+repomix-output.*
+
