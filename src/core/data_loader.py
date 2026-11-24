@@ -129,6 +129,10 @@ def get_patient_discrete_summary(
         "leg_length": leg_length,
         "cycles_baseline": len(sub_base),
         "cycles_vr": len(sub_vr),
+        "cycles_verbal": 0,
+        "baseline_cycles": len(sub_base),
+        "vr_cycles": len(sub_vr),
+        "verbal_cycles": 0,
         # Baseline
         "baseline_gps": b_gps,
         "baseline_amin_sagh": b_amin_sagh,
@@ -159,6 +163,7 @@ def get_patient_discrete_summary(
         sub_vb = df_verbal[df_verbal["subject"] == subject_id]
         if not sub_vb.empty:
             res["cycles_verbal"] = len(sub_vb)
+            res["verbal_cycles"] = len(sub_vb)
             res["verbal_gps"] = float(sub_vb["GPS_a"].dropna().mean())
             res["verbal_amin_sagh"] = float(sub_vb["aMinSagH"].dropna().mean())
             res["verbal_gvs_pelvis"] = float(sub_vb["GVS_aSagP"].dropna().mean())

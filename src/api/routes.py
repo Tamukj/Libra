@@ -73,10 +73,25 @@ def require_clinician_auth(api_key: Optional[str] = Depends(API_KEY_HEADER)) -> 
         detail="Unauthorized: Valid X-API-Key required for clinical modification operations."
     )
 
+def _compute_mean_pelvic_tilt(df_kin: pd.DataFrame, subject: str) -> Optional[float]:
+    """Computes true directional sagittal pelvic tilt angle across gait cycles."""
+    if df_kin is None or df_kin.empty:
+        return None
+    sub = df_kin[df_kin["subject"] == subject]
+    if sub.empty:
+        return None
+    p_cols = [c for c in df_kin.columns if c.startswith("aSagP_pct_GC_")]
+    if not p_cols:
+        return None
+    vals = sub[p_cols].values
+    if vals.size == 0 or np.isnan(vals).all():
+        return None
+    return float(np.nanmean(vals))
+
 def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[str, Any]:
     """Resolves patient summary from discrete CSV datasets or database sessions."""
     try:
-        return get_patient_discrete_summary(_DF_BASE, _DF_VR, code, df_verbal=_DF_VB)
+        summary = get_patient_discrete_summary(_DF_BASE, _DF_VR, code, df_verbal=_DF_VB)
     except Exception:
         sessions = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).all()
         if not sessions:
@@ -112,7 +127,11 @@ def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[s
         vr_a = float(vr_sess.avg_gvs_ankle if vr_sess else b_a)
         vb_a = float(vb_sess.avg_gvs_ankle if vb_sess else b_a)
 
-        return {
+        b_cycles = base_sess.cycle_count
+        vr_cycles = vr_sess.cycle_count if vr_sess else 0
+        vb_cycles = vb_sess.cycle_count if vb_sess else 0
+
+        summary = {
             "subject": patient.code,
             "side": patient.side,
             "weight": patient.weight,
@@ -124,9 +143,12 @@ def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[s
             "vr_amin_sagh": vr_hip,
             "verbal_gps": vb_gps,
             "verbal_amin_sagh": float(vb_sess.avg_amin_sagh if vb_sess else b_hip),
-            "baseline_cycles": base_sess.cycle_count,
-            "vr_cycles": vr_sess.cycle_count if vr_sess else 0,
-            "verbal_cycles": vb_sess.cycle_count if vb_sess else 0,
+            "baseline_cycles": b_cycles,
+            "vr_cycles": vr_cycles,
+            "verbal_cycles": vb_cycles,
+            "cycles_baseline": b_cycles,
+            "cycles_vr": vr_cycles,
+            "cycles_verbal": vb_cycles,
             "delta_gps": vr_gps - b_gps,
             "delta_amin_sagh": vr_hip - b_hip,
             "delta_gvs_pelvis": vr_p - b_p,
@@ -146,6 +168,16 @@ def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[s
             "verbal_gvs_knee": vb_k,
             "verbal_gvs_ankle": vb_a,
         }
+
+    # Enrich with true kinematic pelvic tilt angles if available
+    tilt_b = _compute_mean_pelvic_tilt(_DF_KIN, code)
+    tilt_vr = _compute_mean_pelvic_tilt(_DF_KIN_VR, code)
+    tilt_vb = _compute_mean_pelvic_tilt(_DF_KIN_VB, code)
+    summary["baseline_pelvis_tilt"] = round(tilt_b, 2) if tilt_b is not None else None
+    summary["vr_pelvis_tilt"] = round(tilt_vr, 2) if tilt_vr is not None else None
+    summary["verbal_pelvis_tilt"] = round(tilt_vb, 2) if tilt_vb is not None else None
+    summary["delta_pelvis_tilt"] = round(tilt_vr - tilt_b, 2) if (tilt_vr is not None and tilt_b is not None) else None
+    return summary
 
 @router.get("/patients")
 def list_patients(db: Session = Depends(get_db)):
@@ -180,7 +212,8 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
         delta_hip=summary["delta_amin_sagh"],
         delta_gvs_p=summary["delta_gvs_pelvis"],
         delta_gvs_k=summary["delta_gvs_knee"],
-        delta_gvs_a=summary["delta_gvs_ankle"]
+        delta_gvs_a=summary["delta_gvs_ankle"],
+        delta_pelvis_term=summary.get("delta_pelvis_tilt")
     )
 
     # Dynamic PCA Anomaly Detection on patient's VR kinematic curves
@@ -201,10 +234,14 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
     icf_b770_vr = classify_icf_b770(summary["vr_gps"])
     icf_d450 = classify_icf_d450(anomaly_rate * 100.0)
 
-    # ML predictions
-    patient_cycles = _DF_BASE[_DF_BASE["subject"] == code]
-    if not patient_cycles.empty:
-        _, probs = _ML_CLASSIFIER.predict_cycle_condition(patient_cycles)
+    # ML predictions: evaluates probability that VR condition cycles exhibit the learned VR gait pattern
+    sub_vr_cycles = _DF_VR[_DF_VR["subject"] == code]
+    sub_base_cycles = _DF_BASE[_DF_BASE["subject"] == code]
+    if not sub_vr_cycles.empty:
+        _, probs = _ML_CLASSIFIER.predict_cycle_condition(sub_vr_cycles)
+        response_prob = float(np.mean(probs))
+    elif not sub_base_cycles.empty:
+        _, probs = _ML_CLASSIFIER.predict_cycle_condition(sub_base_cycles)
         response_prob = float(np.mean(probs))
     else:
         response_prob = 0.55
@@ -342,7 +379,8 @@ def create_patient_report(
         delta_hip=summary["delta_amin_sagh"],
         delta_gvs_p=summary["delta_gvs_pelvis"],
         delta_gvs_k=summary["delta_gvs_knee"],
-        delta_gvs_a=summary["delta_gvs_ankle"]
+        delta_gvs_a=summary["delta_gvs_ankle"],
+        delta_pelvis_term=summary.get("delta_pelvis_tilt")
     )
 
     # Dynamic PCA Anomaly Detection on patient's VR kinematic curves for d450
@@ -430,28 +468,36 @@ def get_patient_diff(
             "recommendations_kz": "Ағымдағы оңалту бағытын жалғастыру."
         }
 
+    base_gps = float(summary.get("baseline_gps", 0.0))
+    base_hip = float(summary.get("baseline_amin_sagh", 0.0))
+    base_p = float(summary.get("baseline_gvs_pelvis", 0.0))
+    base_k = float(summary.get("baseline_gvs_knee", 0.0))
+    base_a = float(summary.get("baseline_gvs_ankle", 0.0))
+
     # Session A metrics (e.g. Baseline)
-    gps_a = summary.get("baseline_gps", 10.4)
+    gps_a = base_gps
     tje_a = 0.0
     pcr_a = 0.0
 
     # Session B metrics (e.g. VR or Verbal)
     if session_b.lower() == "verbal":
-        gps_b = summary.get("verbal_gps", 10.2)
-        d_hip_b = summary.get("verbal_amin_sagh", summary.get("baseline_amin_sagh", 0.0)) - summary.get("baseline_amin_sagh", 0.0)
-        d_p_b = summary.get("verbal_gvs_pelvis", 5.0) - summary.get("baseline_gvs_pelvis", 5.0)
-        pcr_b = compute_pcr(d_p_b, 0.0, 0.0, d_hip_b)
-        tje_b = compute_true_joint_extension(d_hip_b, d_p_b)
-        label_b = "Сессия 2 (Verbal / Дәрігер нұсқауы)"
-    else:
-        gps_b = summary.get("vr_gps", 9.8)
-        d_hip_b = summary.get("delta_amin_sagh", -2.7)
-        d_p_b = summary.get("delta_gvs_pelvis", 1.2)
-        d_k_b = summary.get("delta_gvs_knee", 0.0)
-        d_a_b = summary.get("delta_gvs_ankle", 0.0)
+        gps_b = float(summary.get("verbal_gps", base_gps))
+        d_hip_b = float(summary.get("verbal_amin_sagh", base_hip)) - base_hip
+        d_p_b = float(summary.get("verbal_gvs_pelvis", base_p)) - base_p
+        d_k_b = float(summary.get("verbal_gvs_knee", base_k)) - base_k
+        d_a_b = float(summary.get("verbal_gvs_ankle", base_a)) - base_a
         pcr_b = compute_pcr(d_p_b, d_k_b, d_a_b, d_hip_b)
         tje_b = compute_true_joint_extension(d_hip_b, d_p_b)
-        label_b = "Сессия 2 (VR Реабилитация / 1 айдан кейін)"
+        label_b = "Условие Verbal (Голосовая обратная связь)"
+    else:
+        gps_b = float(summary.get("vr_gps", base_gps))
+        d_hip_b = float(summary.get("vr_amin_sagh", base_hip)) - base_hip
+        d_p_b = float(summary.get("vr_gvs_pelvis", base_p)) - base_p
+        d_k_b = float(summary.get("vr_gvs_knee", base_k)) - base_k
+        d_a_b = float(summary.get("vr_gvs_ankle", base_a)) - base_a
+        pcr_b = compute_pcr(d_p_b, d_k_b, d_a_b, d_hip_b)
+        tje_b = compute_true_joint_extension(d_hip_b, d_p_b)
+        label_b = "Условие VR (Зрительная обратная связь с аватаром)"
 
     sess_a_data = {
         "label": f"Сессия 1 ({session_a})",
@@ -545,16 +591,23 @@ async def upload_patient_csv(
         GaitSession.condition == "Baseline"
     ).first()
     if not session_obj:
+        calc_p = _parse_val("GVS_aSagP", 0.0)
+        calc_h = _parse_val("GVS_aSagH", 0.0)
+        calc_k = _parse_val("GVS_aSagK", 0.0)
+        calc_a = _parse_val("GVS_aSagA", 0.0)
+        gvs_sq = [v**2 for v in [calc_p, calc_h, calc_k, calc_a] if v > 0]
+        derived_gps = math.sqrt(sum(gvs_sq) / len(gvs_sq)) if gvs_sq else 0.0
+
         session_obj = GaitSession(
             patient_id=patient.id,
             condition="Baseline",
             cycle_count=len(df_upload),
-            avg_gps=_parse_val("GPS_a", 10.4),
-            avg_amin_sagh=_parse_val("aMinSagH", -5.0),
-            avg_gvs_pelvis=_parse_val("GVS_aSagP", 4.5),
-            avg_gvs_hip=_parse_val("GVS_aSagH", 9.2),
-            avg_gvs_knee=_parse_val("GVS_aSagK", 8.1),
-            avg_gvs_ankle=_parse_val("GVS_aSagA", 7.3)
+            avg_gps=_parse_val("GPS_a", derived_gps),
+            avg_amin_sagh=_parse_val("aMinSagH", 0.0),
+            avg_gvs_pelvis=calc_p,
+            avg_gvs_hip=calc_h,
+            avg_gvs_knee=calc_k,
+            avg_gvs_ankle=calc_a
         )
         db.add(session_obj)
     else:

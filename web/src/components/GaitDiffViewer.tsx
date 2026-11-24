@@ -65,7 +65,7 @@ export function GaitDiffViewer({ patientCode }: Props) {
               color: sessionB === "VR" ? "var(--white)" : "var(--ink)"
             }}
           >
-            {lang === "kz" ? "Сессия 1 → VR (1 ай)" : "Сессия 1 → VR (1 месяц)"}
+            {lang === "kz" ? "Baseline → VR (Көру кері байланысы)" : "Baseline → VR (Зрительная ОС)"}
           </button>
           <button
             onClick={() => setSessionB("Verbal")}
@@ -80,7 +80,7 @@ export function GaitDiffViewer({ patientCode }: Props) {
               color: sessionB === "Verbal" ? "var(--white)" : "var(--ink)"
             }}
           >
-            {lang === "kz" ? "Сессия 1 → Verbal" : "Сессия 1 → Verbal"}
+            {lang === "kz" ? "Baseline → Verbal (Дауыс нұсқауы)" : "Baseline → Verbal (Голосовая ОС)"}
           </button>
         </div>
       </div>
