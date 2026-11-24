@@ -69,6 +69,7 @@ class GaitSession(Base):
     avg_gvs_hip: Mapped[float] = mapped_column(Float, default=0.0)
     avg_gvs_knee: Mapped[float] = mapped_column(Float, default=0.0)
     avg_gvs_ankle: Mapped[float] = mapped_column(Float, default=0.0)
+    avg_pctm_zero: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     recorded_at: Mapped[datetime.datetime] = mapped_column(UTCDateTime, default=_utcnow)
 
     patient: Mapped[Patient] = relationship("Patient", back_populates="sessions")

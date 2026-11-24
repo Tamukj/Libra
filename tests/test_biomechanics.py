@@ -11,10 +11,15 @@ from src.core.biomechanics import (
 )
 
 def test_true_joint_extension():
-    # If hip extension improved by -4.2 degrees, but pelvis tilted by +2.4 degrees
+    # If hip extension improved by -4.2 degrees, but pelvis tilted anteriorly by +2.4 degrees
     # True Joint Extension should discount the pelvic tilt
     tje = compute_true_joint_extension(delta_hip=-4.2, delta_pelvis=2.4)
     assert pytest.approx(tje, 0.01) == -1.8
+
+    # If pelvic tilt decreased (delta_pelvis < 0), max(0, delta_pelvis) clamps to 0
+    # so hip extension gain is not artificially inflated
+    tje_clamped = compute_true_joint_extension(delta_hip=-4.2, delta_pelvis=-3.0)
+    assert pytest.approx(tje_clamped, 0.01) == -4.2
 
 def test_pcr_calculation():
     # De Mulder et al. dataset numbers:
@@ -149,6 +154,38 @@ def test_analyze_compensation_risk_nan_guards():
     assert res["status"] in ["green", "yellow", "red"]
     assert not np.isnan(res["tje"])
     assert not np.isnan(res["pcr"])
+
+
+def test_compare_modalities_uses_pelvis_tilt_and_matches_cdss():
+    summary = {
+        "baseline_amin_sagh": 15.0,
+        "baseline_gvs_pelvis": 12.0,
+        "baseline_gvs_knee": 10.0,
+        "baseline_gvs_ankle": 6.0,
+        "has_vr": True,
+        "vr_amin_sagh": 10.0,
+        "vr_gvs_pelvis": 11.0,
+        "vr_gvs_knee": 10.2,
+        "vr_gvs_ankle": 6.1,
+        "delta_pelvis_tilt": 2.5,
+        "has_verbal": True,
+        "verbal_amin_sagh": 11.5,
+        "verbal_gvs_pelvis": 12.2,
+        "verbal_gvs_knee": 10.0,
+        "verbal_gvs_ankle": 6.0,
+        "verbal_delta_pelvis_tilt": -1.0,
+    }
+    mod = compare_modalities(summary)
+    risk = analyze_compensation_risk(
+        delta_hip=-5.0,
+        delta_gvs_p=-1.0,
+        delta_gvs_k=0.2,
+        delta_gvs_a=0.1,
+        delta_pelvis_term=2.5,
+    )
+    assert mod["tje_vr"] == pytest.approx(-2.5, abs=1e-6)
+    assert mod["tje_vr"] == pytest.approx(risk["tje"], abs=1e-6)
+    assert mod["tje_verbal"] == pytest.approx(-3.5, abs=1e-6)
 
 
 

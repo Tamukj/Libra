@@ -108,7 +108,62 @@ def test_vr_responder_predictor(discrete_data):
     assert "responder_probability" in res
     assert 0.0 <= res["responder_probability"] <= 1.0
     assert "is_predicted_responder" in res
+    assert "loo_balanced_accuracy" in res
+    assert "loo_roc_auc" in res
+    assert "model_reliable" in res
+    assert isinstance(res["model_reliable"], bool)
+    assert res["model_reliable"] == (res["loo_roc_auc"] >= 0.60)
     assert "clinical_status_ru" in res
     assert "clinical_status_kz" in res
     assert "recommendation_ru" in res
     assert "recommendation_kz" in res
+
+
+def test_gait_condition_classifier_kinematics_and_three_class(discrete_data):
+    df_base, df_vr = discrete_data
+    df_vb = load_discrete_dataset(DATA_DIR / "Discrete_Parameters_Verbal.csv")
+    df_kin_base = load_kinematics_dataset(DATA_DIR / "Kinematics_Kinetics_Baseline.csv")
+    df_kin_vr = load_kinematics_dataset(DATA_DIR / "Kinematics_Kinetics_VR.csv")
+    df_kin_vb = load_kinematics_dataset(DATA_DIR / "Kinematics_Kinetics_Verbal.csv")
+
+    clf = GaitConditionClassifier(n_splits=5)
+    metrics = clf.evaluate_group_kfold(df_base, df_vr, df_kin_base=df_kin_base, df_kin_vr=df_kin_vr)
+    assert 0.60 <= metrics["balanced_accuracy"] <= 0.85
+    assert 0.65 <= metrics["roc_auc"] <= 0.90
+    imps = metrics["feature_importances"]
+    for key in ("aMinSagH", "GVS_aSagP", "GPS_a", "GVS_aSagH", "GVS_aSagK", "GVS_aSagA", "kinematic_waveforms"):
+        assert key in imps
+    assert sum(imps.values()) == pytest.approx(1.0, abs=1e-4)
+
+    three = clf.evaluate_three_class_group_kfold(
+        df_base, df_vb, df_vr,
+        df_kin_base=df_kin_base, df_kin_verbal=df_kin_vb, df_kin_vr=df_kin_vr,
+    )
+    assert three["classes"] == ["Baseline", "Verbal", "VR"]
+    assert three["balanced_accuracy"] > 0.35
+    assert three["f1_macro"] > 0.35
+
+
+def test_vr_responder_nan_auc_guard():
+    predictor = VRResponderPredictor()
+    # Fit directly on minimal synthetic data without calling fit_evaluate_subjects (empty metrics_)
+    df_syn = pd.DataFrame({
+        "weight": [30.0, 40.0, 50.0, 60.0],
+        "height": [1.2, 1.3, 1.4, 1.5],
+        "LegLength": [0.6, 0.65, 0.7, 0.75],
+        "GPS_a": [10.0, 11.0, 9.0, 12.0],
+        "GVS_aSagP": [12.0, 13.0, 11.0, 14.0],
+        "GVS_aSagH": [14.0, 15.0, 12.0, 16.0],
+        "GVS_aSagK": [10.0, 11.0, 9.0, 12.0],
+        "GVS_aSagA": [5.0, 6.0, 4.0, 7.0],
+        "aMinSagH": [10.0, 12.0, 8.0, 14.0],
+    })
+    X_imp = predictor.imputer.fit_transform(df_syn)
+    X_sc = predictor.scaler.fit_transform(X_imp)
+    predictor.clf.fit(X_sc, [0, 1, 0, 1])
+    predictor.is_fitted = True
+    predictor.metrics_ = {"balanced_accuracy": 0.5, "roc_auc": float("nan")}
+
+    out = predictor.predict_subject_response(df_syn.iloc[[0]])
+    assert out["model_reliable"] is False
+    assert out["loo_roc_auc"] == 0.5
