@@ -100,6 +100,12 @@ def test_create_clinical_report(client):
     assert "жамбас" in data_kz["narrative"].lower()
 
 def test_upload_patient_csv(client):
+    from src.database.session import SessionLocal
+    from src.database.models import Patient
+    with SessionLocal() as db:
+        db.query(Patient).filter(Patient.code == "s99999_test").delete()
+        db.commit()
+
     # Test European CSV format with ; separator and , decimal
     csv_content = "subject;side;weight;height;leg_length;GPS_a;aMinSagH;GVS_aSagP\ns99999_test;LEFT;46,5;1,42;0,73;11,2;-4,5;3,8\n".encode("utf-8")
     response = client.post(
@@ -162,4 +168,44 @@ def test_xai_feature_attributions(client):
     res_kin = client.get("/api/v1/patients/s99999_test/kinematics")
     assert res_kin.status_code == 200
     assert "joints" in res_kin.json()
+
+def test_diff_reversed_sessions(client):
+    # session_a=VR, session_b=Baseline
+    res = client.get("/api/v1/patients/s61520_1/diff?session_a=VR&session_b=Baseline")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["session_a"] == "VR"
+    assert data["session_b"] == "Baseline"
+    assert "VR" in data["session_a_label"]
+    assert "Baseline" in data["session_b_label"]
+    assert "delta_gps" in data
+
+def test_diff_missing_condition_returns_404(client):
+    from src.database.session import SessionLocal
+    from src.database.models import Patient
+    with SessionLocal() as db:
+        db.query(Patient).filter(Patient.code == "s_only_base").delete()
+        db.commit()
+
+    # Upload a patient with only baseline
+    csv_content = "subject;side;weight;height;leg_length;GPS_a;aMinSagH;GVS_aSagP\ns_only_base;RIGHT;40,0;1,35;0,70;9,5;-3,0;2,0\n".encode("utf-8")
+    up_res = client.post("/api/v1/patients/upload", files={"file": ("s_only_base.csv", csv_content, "text/csv")})
+    assert up_res.status_code == 200
+    # Requesting Verbal when patient has no verbal session should return 404 rather than 500
+    res = client.get("/api/v1/patients/s_only_base/diff?session_a=Baseline&session_b=Verbal")
+    assert res.status_code == 404
+    assert "Verbal" in res.json()["detail"]
+
+def test_report_audience_persistence(client):
+    res = client.post("/api/v1/patients/s61520_1/report?lang=ru&audience=parent")
+    assert res.status_code == 200
+    report_id = res.json()["report_id"]
+    
+    from src.database.session import SessionLocal
+    from src.database.models import ClinicalReport
+    with SessionLocal() as db:
+        rep = db.query(ClinicalReport).filter(ClinicalReport.id == report_id).first()
+        assert rep is not None
+        assert rep.audience == "parent"
+
 

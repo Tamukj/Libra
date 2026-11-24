@@ -66,11 +66,31 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
     d_ankle = _safe_float(summary.get("delta_gvs_ankle"), 0.0)
 
     # Compute advanced metrics
-    d_pelvis_tilt = summary.get("delta_pelvis_tilt")
+    raw_tilt = summary.get("delta_pelvis_tilt")
+    d_pelvis_tilt = _safe_float(raw_tilt) if raw_tilt is not None else None
     risk = analyze_compensation_risk(d_hip, d_pelvis, d_knee, d_ankle, delta_pelvis_term=d_pelvis_tilt)
     pcr = risk["pcr"]
     tje = risk["tje"]
-    modalities = compare_modalities(summary)
+    has_vr = summary.get("has_vr", summary.get("cycles_vr", 0) > 0)
+    has_vb = summary.get("has_verbal", summary.get("cycles_verbal", 0) > 0)
+    if not has_vr and not has_vb:
+        modalities = {
+            "best_method": "Baseline",
+            "verdict_ru": "Зафиксирован исходный шаг (Baseline). Тестирование режимов биообратной связи (VR / Verbal) еще не проводилось.",
+            "verdict_kz": "Бастапқы жүріс (Baseline) тіркелді. Кері байланыс сынамалары (VR / Verbal) әлі өткізілмеді."
+        }
+    else:
+        modalities = compare_modalities(summary)
+    if not has_vr and not has_vb:
+        risk["label_ru"] = "Базовая биомеханическая оценка (Baseline)"
+        risk["label_kz"] = "Базалық биомеханикалық бағалау (Baseline)"
+        risk["recommendation_ru"] = "Сессия VR-терапии еще не проводилась. Зафиксирован исходный стереотип походки (Baseline)."
+        risk["recommendation_kz"] = "VR-терапия сессиясы әлі өткізілмеді. Бастапқы жүріс стереотипі (Baseline) тіркелді."
+    elif not has_vr and has_vb:
+        risk["label_ru"] = f"Оценка вербальной биообратной связи (Verbal): {modalities['best_method']}"
+        risk["label_kz"] = f"Вербалды кері байланысты бағалау (Verbal): {modalities['best_method']}"
+        risk["recommendation_ru"] = modalities["verdict_ru"]
+        risk["recommendation_kz"] = modalities["verdict_kz"]
 
     icf_b_pre = classify_icf_b770(b_gps)
     icf_b_post = classify_icf_b770(vr_gps)
@@ -81,7 +101,10 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
     else:
         try:
             f_anom = float(raw_anomaly)
-            anomaly_pct = f_anom * 100.0 if f_anom <= 1.0 else f_anom
+            if np.isnan(f_anom) or not np.isfinite(f_anom):
+                anomaly_pct = 5.0
+            else:
+                anomaly_pct = f_anom * 100.0 if f_anom <= 1.0 else f_anom
         except (ValueError, TypeError):
             anomaly_pct = 5.0
     icf_d = classify_icf_d450(anomaly_pct)
@@ -156,12 +179,15 @@ def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
     subject = summary.get("subject", "N/A")
     d_hip = _safe_float(summary.get("delta_amin_sagh"), 0.0)
     d_pelvis = _safe_float(summary.get("delta_gvs_pelvis"), 0.0)
-    b_gps = _safe_float(summary.get("baseline_gps"), 0.0)
+    b_gps = _safe_float(summary.get("baseline_gps"), 10.0)
     vr_gps = _safe_float(summary.get("vr_gps"), b_gps)
 
     from src.core.biomechanics import compute_sagittal_gdi, analyze_compensation_risk
-    d_pelvis_tilt = summary.get("delta_pelvis_tilt")
-    risk = analyze_compensation_risk(d_hip, d_pelvis, 0.0, 0.0, delta_pelvis_term=d_pelvis_tilt)
+    d_knee = _safe_float(summary.get("delta_gvs_knee"), 0.0)
+    d_ankle = _safe_float(summary.get("delta_gvs_ankle"), 0.0)
+    raw_tilt = summary.get("delta_pelvis_tilt")
+    d_pelvis_tilt = _safe_float(raw_tilt) if raw_tilt is not None else None
+    risk = analyze_compensation_risk(d_hip, d_pelvis, d_knee, d_ankle, delta_pelvis_term=d_pelvis_tilt)
     gdi_val = compute_sagittal_gdi(vr_gps)
 
     # Hip improvement in degrees
@@ -208,7 +234,5 @@ def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
             f"При любых вопросах обращайтесь к вашему лечащему врачу-реабилитологу. "
             f"В экстренных ситуациях незамедлительно звоните по номеру 103."
         )
-
-    return narrative
 
     return narrative

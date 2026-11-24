@@ -58,7 +58,20 @@ class GaitConditionClassifier:
         y = df["condition"].values
         groups = df["subject"].values
 
-        gkf = GroupKFold(n_splits=self.n_splits)
+        n_groups = len(np.unique(groups))
+        if n_groups < 2:
+            self.fit_full(df_base, df_vr)
+            return {
+                "balanced_accuracy": 0.5,
+                "roc_auc": 0.5,
+                "sensitivity": 0.0,
+                "specificity": 0.0,
+                "f1_macro": 0.0,
+                "n_splits": 0,
+                "n_cycles": len(y),
+            }
+        effective_splits = min(self.n_splits, n_groups)
+        gkf = GroupKFold(n_splits=effective_splits)
         y_trues: List[int] = []
         y_probs: List[float] = []
 
@@ -97,6 +110,9 @@ class GaitConditionClassifier:
         self.feature_importances_ = {
             name: float(imp) for name, imp in zip(self.feature_names, avg_imp)
         }
+
+        # Fit full model so instance clf/scaler/imputer are ready for prediction
+        self.fit_full(df_base, df_vr)
 
         return {
             "balanced_accuracy": b_acc,
@@ -201,17 +217,36 @@ class VRResponderPredictor:
         y_preds = []
         y_probs = []
 
-        for train_idx, test_idx in loo.split(X_df):
-            fold_imputer = SimpleImputer(strategy="median")
-            fold_scaler = StandardScaler()
-            X_tr = fold_scaler.fit_transform(fold_imputer.fit_transform(X_df.iloc[train_idx]))
-            X_te = fold_scaler.transform(fold_imputer.transform(X_df.iloc[test_idx]))
+        if len(y) == 0:
+            return {
+                "balanced_accuracy": 0.0,
+                "roc_auc": float("nan"),
+                "n_subjects": 0,
+                "n_responders": 0,
+                "n_compensators": 0
+            }
 
-            model = LogisticRegression(class_weight="balanced", C=1.0, random_state=42)
-            model.fit(X_tr, y[train_idx])
-            p = model.predict_proba(X_te)[0, 1]
-            y_probs.append(p)
-            y_preds.append(int(p >= 0.5))
+        if len(np.unique(y)) < 2:
+            y_preds = list(y)
+            y_probs = [float(v) for v in y]
+        else:
+            for train_idx, test_idx in loo.split(X_df):
+                if len(np.unique(y[train_idx])) < 2:
+                    maj = int(y[train_idx][0])
+                    y_probs.append(float(maj))
+                    y_preds.append(maj)
+                    continue
+
+                fold_imputer = SimpleImputer(strategy="median")
+                fold_scaler = StandardScaler()
+                X_tr = fold_scaler.fit_transform(fold_imputer.fit_transform(X_df.iloc[train_idx]))
+                X_te = fold_scaler.transform(fold_imputer.transform(X_df.iloc[test_idx]))
+
+                model = LogisticRegression(class_weight="balanced", C=1.0, random_state=42)
+                model.fit(X_tr, y[train_idx])
+                p = model.predict_proba(X_te)[0, 1]
+                y_probs.append(p)
+                y_preds.append(int(p >= 0.5))
 
         b_acc = float(balanced_accuracy_score(y, y_preds))
         try:
@@ -219,11 +254,14 @@ class VRResponderPredictor:
         except Exception:
             auc = float("nan")
 
-        # Fit final model on all subjects
+        # Fit final model on all subjects if multiple classes exist
         X_all_imputed = self.imputer.fit_transform(X_df)
         X_all_scaled = self.scaler.fit_transform(X_all_imputed)
-        self.clf.fit(X_all_scaled, y)
-        self.is_fitted = True
+        if len(np.unique(y)) >= 2:
+            self.clf.fit(X_all_scaled, y)
+            self.is_fitted = True
+        else:
+            self.is_fitted = False
         self.metrics_ = {
             "balanced_accuracy": b_acc,
             "roc_auc": auc,

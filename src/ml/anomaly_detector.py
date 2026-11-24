@@ -55,7 +55,7 @@ class KinematicPCAAnomalyDetector:
                 "n_total": 0,
             }
 
-        clean_curves = self.imputer.transform(curves)
+        clean_curves = self.imputer.transform(np.atleast_2d(np.asarray(curves, dtype=float)))
         projected = self.pca.transform(clean_curves)
         reconstructed = self.pca.inverse_transform(projected)
 
@@ -68,5 +68,5 @@ class KinematicPCAAnomalyDetector:
             "threshold": self.threshold,
             "anomaly_rate": float(np.mean(is_anomaly)),
             "n_anomalies": int(np.sum(is_anomaly)),
-            "n_total": len(curves),
+            "n_total": len(clean_curves),
         }

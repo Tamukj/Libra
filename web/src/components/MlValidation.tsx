@@ -33,7 +33,7 @@ export function MlValidation({ metrics, lang }: Props) {
         <p style={{ fontSize: "13px", color: "var(--ink)", lineHeight: "1.6" }}>
           В биомедицине случайный сплит строк (`train_test_split`) дает <strong>ложные 95-99% точности</strong> из-за запоминания антропометрии ребенка.
           Наша модель валидирована по стандарту <strong>GroupKFold (k={metrics.n_splits}) строго по {metrics.n_subjects} пациентам</strong>:
-          шаги одного ребенка никогда не попадают одновременно в обучение и тест!
+          шаги одного ребенка никогда не попадают одновременно в обучающую и проверочную выборки.
         </p>
       </div>
 
@@ -41,10 +41,10 @@ export function MlValidation({ metrics, lang }: Props) {
       <div className="grid-kpi-4">
         
         <div className="card">
-          <div style={{ fontSize: "12px", color: "var(--muted)", textTransform: "uppercase", fontWeight: "600" }}>
-            Balanced Accuracy
+          <div style={{ fontSize: "12px", color: "var(--muted)", fontWeight: 500 }}>
+            Balanced accuracy
           </div>
-          <div style={{ fontSize: "28px", fontWeight: "700", color: "var(--teal)", marginTop: "4px" }}>
+          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, color: "var(--teal)", marginTop: "4px" }}>
             {(metrics.balanced_accuracy * 100).toFixed(1)}%
           </div>
           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
@@ -53,10 +53,10 @@ export function MlValidation({ metrics, lang }: Props) {
         </div>
 
         <div className="card">
-          <div style={{ fontSize: "12px", color: "var(--muted)", textTransform: "uppercase", fontWeight: "600" }}>
-            ROC-AUC Score
+          <div style={{ fontSize: "12px", color: "var(--muted)", fontWeight: 500 }}>
+            ROC-AUC score
           </div>
-          <div style={{ fontSize: "28px", fontWeight: "700", color: "var(--teal)", marginTop: "4px" }}>
+          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, color: "var(--teal)", marginTop: "4px" }}>
             {metrics.roc_auc.toFixed(3)}
           </div>
           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
@@ -65,10 +65,10 @@ export function MlValidation({ metrics, lang }: Props) {
         </div>
 
         <div className="card">
-          <div style={{ fontSize: "12px", color: "var(--muted)", textTransform: "uppercase", fontWeight: "600" }}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", fontWeight: 500 }}>
             Sensitivity (Sens)
           </div>
-          <div style={{ fontSize: "28px", fontWeight: "700", color: "var(--ink)", marginTop: "4px" }}>
+          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, color: "var(--ink)", marginTop: "4px" }}>
             {(metrics.sensitivity * 100).toFixed(1)}%
           </div>
           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
@@ -77,10 +77,10 @@ export function MlValidation({ metrics, lang }: Props) {
         </div>
 
         <div className="card">
-          <div style={{ fontSize: "12px", color: "var(--muted)", textTransform: "uppercase", fontWeight: "600" }}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", fontWeight: 500 }}>
             Specificity (Spec)
           </div>
-          <div style={{ fontSize: "28px", fontWeight: "700", color: "var(--ink)", marginTop: "4px" }}>
+          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, color: "var(--ink)", marginTop: "4px" }}>
             {(metrics.specificity * 100).toFixed(1)}%
           </div>
           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>

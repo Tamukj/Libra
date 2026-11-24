@@ -29,17 +29,36 @@ export default function PortalDashboard() {
     loadData();
   }, []);
 
-  // Preset known critical patients from cohort
+  // Dynamic cohort risk metrics
   const criticalCodes = ["s61520_1", "s61520_4", "s61520_10", "s61520_19", "s61520_22", "s61520_27"];
+
+  const classifyPatientRisk = (p: any) => {
+    const pcr = p.pcr ?? p.actual_pcr;
+    if (typeof pcr === "number" && !isNaN(pcr)) {
+      if (pcr > 0.8) return { status: "danger", label: `PCR = ${pcr.toFixed(2)} · ${lang === "kz" ? "Гиперлордоз қаупі" : "Гиперлордоз"}`, badgeClass: "badge-red" };
+      if (pcr >= 0.4) return { status: "warning", label: `PCR = ${pcr.toFixed(2)} · ${lang === "kz" ? "Қалыпты бейімделу" : "Адаптация"}`, badgeClass: "badge-amber" };
+      return { status: "normal", label: `PCR = ${pcr.toFixed(2)} · ${lang === "kz" ? "Қалыпты" : "Норма"}`, badgeClass: "badge-green" };
+    }
+    const isCritical = criticalCodes.includes(p.code);
+    return isCritical
+      ? { status: "danger", label: `PCR > 0.80 · ${lang === "kz" ? "Гиперлордоз қаупі" : "Гиперлордоз"}`, badgeClass: "badge-red" }
+      : { status: "normal", label: `PCR < 0.40 · ${lang === "kz" ? "Қалыпты" : "Норма"}`, badgeClass: "badge-green" };
+  };
+
+  const dangerCount = patients.filter((p) => classifyPatientRisk(p).status === "danger").length;
+  const normalCount = Math.max(0, patients.length - dangerCount);
+  const totalCount = patients.length || 1;
+  const dangerPct = Math.round((dangerCount / totalCount) * 100);
+  const normalPct = 100 - dangerPct;
 
   const filteredPatients = patients.filter((p) => {
     const matchesSearch = p.code.toLowerCase().includes(search.toLowerCase()) || p.side.toLowerCase().includes(search.toLowerCase());
     const matchesSide = sideFilter === "all" || p.side === sideFilter;
-    const isCritical = criticalCodes.includes(p.code);
+    const riskStatus = classifyPatientRisk(p).status;
     const matchesRisk =
       riskFilter === "all" ||
-      (riskFilter === "danger" && isCritical) ||
-      (riskFilter === "normal" && !isCritical);
+      (riskFilter === "danger" && riskStatus === "danger") ||
+      (riskFilter === "normal" && riskStatus === "normal");
     return matchesSearch && matchesSide && matchesRisk;
   });
 
@@ -62,9 +81,9 @@ export default function PortalDashboard() {
           
           <div className="card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--muted)" }}>{t.kpi_cohort_title}</span>
+              <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>{t.kpi_cohort_title}</span>
             </div>
-            <div style={{ fontSize: "24px", fontWeight: 750, letterSpacing: "-0.02em", color: "var(--ink)", margin: "4px 0 2px" }}>
+            <div className="tabular-nums" style={{ fontSize: "24px", fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink)", margin: "4px 0 2px" }}>
               {patients.length || 29}
             </div>
             <div style={{ fontSize: "12px", color: "var(--muted)" }}>
@@ -74,11 +93,11 @@ export default function PortalDashboard() {
 
           <div className="card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--muted)" }}>{t.kpi_risk_title}</span>
+              <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>{t.kpi_risk_title}</span>
               <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: "var(--red)" }}></span>
             </div>
-            <div style={{ fontSize: "24px", fontWeight: 750, letterSpacing: "-0.02em", color: "var(--red)", margin: "4px 0 2px" }}>
-              9 (31%)
+            <div className="tabular-nums" style={{ fontSize: "24px", fontWeight: 600, letterSpacing: "-0.02em", color: "var(--red)", margin: "4px 0 2px" }}>
+              {dangerCount} ({dangerPct}%)
             </div>
             <div style={{ fontSize: "12px", color: "var(--muted)" }}>
               {t.kpi_risk_desc}
@@ -87,11 +106,11 @@ export default function PortalDashboard() {
 
           <div className="card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--muted)" }}>{t.kpi_true_title}</span>
+              <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>{t.kpi_true_title}</span>
               <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: "var(--teal)" }}></span>
             </div>
-            <div style={{ fontSize: "24px", fontWeight: 750, letterSpacing: "-0.02em", color: "var(--teal)", margin: "4px 0 2px" }}>
-              14 (48%)
+            <div className="tabular-nums" style={{ fontSize: "24px", fontWeight: 600, letterSpacing: "-0.02em", color: "var(--teal)", margin: "4px 0 2px" }}>
+              {normalCount} ({normalPct}%)
             </div>
             <div style={{ fontSize: "12px", color: "var(--muted)" }}>
               {t.kpi_true_desc}
@@ -100,9 +119,9 @@ export default function PortalDashboard() {
 
           <div className="card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--muted)" }}>{t.kpi_gps_title}</span>
+              <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>{t.kpi_gps_title}</span>
             </div>
-            <div style={{ fontSize: "24px", fontWeight: 750, letterSpacing: "-0.02em", color: "var(--ink)", margin: "4px 0 2px" }}>
+            <div className="tabular-nums" style={{ fontSize: "24px", fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink)", margin: "4px 0 2px" }}>
               10.4°
             </div>
             <div style={{ fontSize: "12px", color: "var(--muted)" }}>
@@ -147,7 +166,7 @@ export default function PortalDashboard() {
               style={{ fontSize: "12px", padding: "5px 12px" }}
             >
               <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", background: "var(--red)" }}></span>
-              <span>{t.filter_danger_label} (6)</span>
+              <span>{t.filter_danger_label} ({dangerCount})</span>
             </button>
             <button
               onClick={() => setRiskFilter("normal")}
@@ -155,7 +174,7 @@ export default function PortalDashboard() {
               style={{ fontSize: "12px", padding: "5px 12px" }}
             >
               <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", background: "var(--teal)" }}></span>
-              <span>{t.filter_normal_label} (23)</span>
+              <span>{t.filter_normal_label} ({normalCount})</span>
             </button>
           </div>
 
@@ -228,7 +247,7 @@ export default function PortalDashboard() {
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            fontWeight: "750",
+                            fontWeight: "600",
                             fontSize: "12px"
                           }}>
                             {p.code.split("_")[1] || "CP"}
@@ -255,17 +274,15 @@ export default function PortalDashboard() {
                       </td>
 
                       <td style={{ padding: "12px 14px" }}>
-                        {isCritical ? (
-                          <span className="badge badge-red" title="Высокий риск тазовой компенсации">
-                            <AlertOctagon size={12} />
-                            <span>PCR &gt; 0.80 · {lang === "kz" ? "Гиперлордоз қаупі" : "Гиперлордоз"}</span>
-                          </span>
-                        ) : (
-                          <span className="badge badge-green" title="Безопасная реабилитация в VR">
-                            <CheckCircle2 size={12} />
-                            <span>PCR &lt; 0.40 · {lang === "kz" ? "Қалыпты" : "Норма"}</span>
-                          </span>
-                        )}
+                        {(() => {
+                          const risk = classifyPatientRisk(p);
+                          return (
+                            <span className={`badge ${risk.badgeClass}`} title={risk.label}>
+                              {risk.status === "danger" ? <AlertOctagon size={12} /> : <CheckCircle2 size={12} />}
+                              <span>{risk.label}</span>
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       <td style={{ padding: "12px 18px", textAlign: "right" }}>

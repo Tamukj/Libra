@@ -35,31 +35,37 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
     ...jointData.verbal.mean,
     ...jointData.norm_td.mean.map((m, i) => m + jointData.norm_td.std[i]),
     ...jointData.norm_td.mean.map((m, i) => m - jointData.norm_td.std[i]),
-  ];
-  const minY = Math.floor(Math.min(...allValues) / 5) * 5 - 5;
-  const maxY = Math.ceil(Math.max(...allValues) / 5) * 5 + 5;
+  ].filter((v): v is number => typeof v === "number" && !isNaN(v) && isFinite(v));
+  const minY = allValues.length > 0 ? Math.floor(Math.min(...allValues) / 5) * 5 - 5 : -10;
+  const maxY = allValues.length > 0 ? Math.ceil(Math.max(...allValues) / 5) * 5 + 5 : 40;
 
   const scaleX = (pct: number) => padLeft + (pct / 100) * (width - padLeft - padRight);
   const scaleY = (val: number) => padTop + (1 - (val - minY) / (maxY - minY)) * (height - padTop - padBottom);
 
   // Generate SVG path for a curve
   const makePath = (points: number[]) => {
+    const denom = points.length > 1 ? points.length - 1 : 1;
     return points
       .map((val, idx) => {
-        const x = scaleX((idx / 50) * 100);
-        const y = scaleY(val);
+        const safeVal = typeof val === "number" && !isNaN(val) ? val : 0;
+        const x = scaleX((idx / denom) * 100);
+        const y = scaleY(safeVal);
         return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
       })
       .join(" ");
   };
 
   // Generate SVG area for Norm TD corridor (+/- 1 SD)
-  const normUpper = jointData.norm_td.mean.map((m, i) => m + jointData.norm_td.std[i]);
-  const normLower = jointData.norm_td.mean.map((m, i) => m - jointData.norm_td.std[i]);
+  const stdArr = jointData.norm_td?.std || [];
+  const meanArr = jointData.norm_td?.mean || [];
+  const normUpper = meanArr.map((m, i) => m + (typeof stdArr[i] === "number" && !isNaN(stdArr[i]) ? stdArr[i] : 0));
+  const normLower = meanArr.map((m, i) => m - (typeof stdArr[i] === "number" && !isNaN(stdArr[i]) ? stdArr[i] : 0));
+  const denom = normUpper.length > 1 ? normUpper.length - 1 : 1;
+  const safeScaleY = (v: number) => scaleY(typeof v === "number" && !isNaN(v) ? v : 0);
   const normAreaPath =
-    normUpper.map((val, idx) => `${idx === 0 ? "M" : "L"} ${scaleX((idx / 50) * 100).toFixed(1)} ${scaleY(val).toFixed(1)}`).join(" ") +
+    normUpper.map((val, idx) => `${idx === 0 ? "M" : "L"} ${scaleX((idx / denom) * 100).toFixed(1)} ${safeScaleY(val).toFixed(1)}`).join(" ") +
     " " +
-    normLower.reverse().map((val, idx) => `L ${scaleX(((50 - idx) / 50) * 100).toFixed(1)} ${scaleY(val).toFixed(1)}`).join(" ") +
+    normLower.slice().reverse().map((val, idx) => `L ${scaleX(((denom - idx) / denom) * 100).toFixed(1)} ${safeScaleY(val).toFixed(1)}`).join(" ") +
     " Z";
 
   return (
@@ -81,7 +87,7 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
                 background: activeJoint === tab.key ? "var(--ink)" : "var(--paper)",
                 color: activeJoint === tab.key ? "var(--white)" : "var(--ink)",
                 borderColor: activeJoint === tab.key ? "var(--ink)" : "var(--line)",
-                fontWeight: 650
+                fontWeight: 500
               }}
             >
               {tab.label}
@@ -130,7 +136,7 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
             ? "Сұр аймақ — әдебиеттік нормативтік дәліз (Schwartz 2008 ±1 SD). Сарғыш сызықтың (VR) нормадан жоғары шығуы — биомеханикалық компенсация."
             : "Серый коридор — литературный нормативный диапазон здоровых детей (Schwartz 2008 ±1 SD). Отклонение линии VR выше серого диапазона указывает на компенсаторную нагрузку."}
         </span>
-        <span style={{ fontWeight: 650, color: "var(--ink)" }}>{lang === "kz" ? "0%–60% Тіреу · 60%–100% Ауысу" : "0%–60% Опора · 60%–100% Перенос"}</span>
+        <span style={{ fontWeight: 500, color: "var(--ink)" }}>{lang === "kz" ? "0%–60% Тіреу · 60%–100% Ауысу" : "0%–60% Опора · 60%–100% Перенос"}</span>
       </div>
 
       {/* SVG Canvas */}
@@ -149,10 +155,10 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
 
           {/* Stance / Swing Labels */}
           <text x={scaleX(30)} y={padTop - 8} fontSize="11" fill="var(--muted)" textAnchor="middle" fontWeight="600">
-            {lang === "kz" ? "ОПОРА (0%–60%)" : "ФАЗА ОПОРЫ (0%–60%)"}
+            {lang === "kz" ? "ТІРЕК КЕЗЕҢІ (0%–60%)" : "ФАЗА ОПОРЫ (0%–60%)"}
           </text>
           <text x={scaleX(80)} y={padTop - 8} fontSize="11" fill="var(--muted)" textAnchor="middle" fontWeight="600">
-            {lang === "kz" ? "ПЕРЕНОС (60%–100%)" : "ФАЗА ПЕРЕНОСА (60%–100%)"}
+            {lang === "kz" ? "АУЫСУ КЕЗЕҢІ (60%–100%)" : "ФАЗА ПЕРЕНОСА (60%–100%)"}
           </text>
 
           {/* Stance / Swing Boundary Line */}

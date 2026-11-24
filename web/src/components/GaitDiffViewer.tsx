@@ -58,7 +58,7 @@ export function GaitDiffViewer({ patientCode }: Props) {
             style={{
               padding: "4px 10px",
               fontSize: "11px",
-              fontWeight: 650,
+              fontWeight: 500,
               border: "none",
               borderRadius: "6px",
               background: sessionB === "VR" ? "var(--ink)" : "transparent",
@@ -73,7 +73,7 @@ export function GaitDiffViewer({ patientCode }: Props) {
             style={{
               padding: "4px 10px",
               fontSize: "11px",
-              fontWeight: 650,
+              fontWeight: 500,
               border: "none",
               borderRadius: "6px",
               background: sessionB === "Verbal" ? "var(--ink)" : "transparent",
@@ -112,12 +112,12 @@ export function GaitDiffViewer({ patientCode }: Props) {
                 <AlertTriangle size={22} color="var(--amber)" />
               )}
               <div>
-                <div style={{ fontSize: "14px", fontWeight: 750, color: "var(--ink)" }}>
+                <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--ink)" }}>
                   {diff.status === "improved"
-                    ? (lang === "kz" ? "ОҢ ДИНАМИКА: КЛИНИКАЛЫҚ ПРОГРЕСС" : "ПОЛОЖИТЕЛЬНАЯ ДИНАМИКА: ИСТИННЫЙ ПРОГРЕСС")
+                    ? (lang === "kz" ? "Оң динамика: клиникалық прогресс" : "Положительная динамика: истинный прогресс")
                     : diff.status === "regressed"
-                    ? (lang === "kz" ? "ЕСКЕРТУ: ПАТОЛОГИЯЛЫҚ КОМПЕНСАЦИЯ ӨСТІ" : "ВНИМАНИЕ: РОСТ ПАТОЛОГИЧЕСКОЙ КОМПЕНСАЦИИ")
-                    : (lang === "kz" ? "ТҰРАҚТЫ ДВИГАТЕЛЬДІ СТАТУС" : "СТАБИЛЬНЫЙ ДВИГАТЕЛЬНЫЙ СТАТУС")}
+                    ? (lang === "kz" ? "Ескерту: патологиялық компенсация өсті" : "Внимание: рост патологической компенсации")
+                    : (lang === "kz" ? "Тұрақты қимыл-қозғалыс статусы" : "Стабильный двигательный статус")}
                 </div>
                 <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>
                   {lang === "kz" ? diff.verdict_kz : diff.verdict_ru}
@@ -157,12 +157,12 @@ export function GaitDiffViewer({ patientCode }: Props) {
               <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600 }}>
                 {lang === "kz" ? "Сагитталды GDI индексі" : "Индекс походки GDI (0-100)"}
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }}>
-                <span style={{ fontSize: "20px", fontWeight: 750, color: "var(--ink)" }}>{diff.gdi_b.toFixed(0)}</span>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }} className="tabular-nums">
+                <span style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink)" }}>{diff.gdi_b.toFixed(0)}</span>
                 <span style={{ fontSize: "12px", color: "var(--muted)" }}>/ 100</span>
                 <span style={{
                   fontSize: "12px",
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: diff.delta_gdi >= 0 ? "var(--teal)" : "var(--red)",
                   marginLeft: "auto"
                 }}>
@@ -176,14 +176,14 @@ export function GaitDiffViewer({ patientCode }: Props) {
 
             {/* 2. True Joint Extension (TJE) */}
             <div style={{ padding: "12px", background: "var(--paper)", borderRadius: "6px", border: "1px solid var(--line)" }}>
-              <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600 }}>
+              <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 500 }}>
                 {lang === "kz" ? "Шынайы буын жазылуы (TJE)" : "Истинное разгибание (TJE)"}
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }}>
-                <span style={{ fontSize: "20px", fontWeight: 750, color: "var(--ink)" }}>{diff.tje_b.toFixed(1)}°</span>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }} className="tabular-nums">
+                <span style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink)" }}>{diff.tje_b.toFixed(1)}°</span>
                 <span style={{
                   fontSize: "12px",
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: diff.tje_b < 0 ? "var(--teal)" : "var(--amber)",
                   marginLeft: "auto"
                 }}>
@@ -197,22 +197,24 @@ export function GaitDiffViewer({ patientCode }: Props) {
 
             {/* 3. Pathological Compensation Ratio (PCR) */}
             <div style={{ padding: "12px", background: "var(--paper)", borderRadius: "6px", border: "1px solid var(--line)" }}>
-              <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600 }}>
+              <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 500 }}>
                 {lang === "kz" ? "Компенсация коэфф. (PCR)" : "Коэфф. компенсации (PCR)"}
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }}>
-                <span style={{ fontSize: "20px", fontWeight: 750, color: diff.pcr_b > 0.8 ? "var(--red)" : "var(--teal)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }} className="tabular-nums">
+                <span style={{ fontSize: "20px", fontWeight: 600, color: diff.pcr_b > 0.8 ? "var(--red)" : diff.pcr_b >= 0.4 ? "var(--amber)" : "var(--teal)" }}>
                   {diff.pcr_b.toFixed(2)}
                 </span>
                 <span style={{
                   fontSize: "11px",
-                  fontWeight: 700,
-                  color: diff.pcr_b > 0.8 ? "var(--red)" : "var(--teal)",
+                  fontWeight: 600,
+                  color: diff.pcr_b > 0.8 ? "var(--red)" : diff.pcr_b >= 0.4 ? "var(--amber)" : "var(--teal)",
                   marginLeft: "auto"
                 }}>
                   {diff.pcr_b > 0.8
                     ? (lang === "kz" ? "Қауіп (>0.8)" : "Риск (>0.8)")
-                    : (lang === "kz" ? "Қалыпты (<0.8)" : "Норма (<0.8)")}
+                    : diff.pcr_b >= 0.4
+                    ? (lang === "kz" ? "Орташа (0.4-0.8)" : "Умеренно (0.4-0.8)")
+                    : (lang === "kz" ? "Қалыпты (<0.4)" : "Норма (<0.4)")}
                 </span>
               </div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>
@@ -222,14 +224,14 @@ export function GaitDiffViewer({ patientCode }: Props) {
 
             {/* 4. Gait Profile Score (GPS) */}
             <div style={{ padding: "12px", background: "var(--paper)", borderRadius: "6px", border: "1px solid var(--line)" }}>
-              <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600 }}>
+              <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 500 }}>
                 {lang === "kz" ? "Жүріс девиациясы (GPS)" : "Девиация шага (GPS)"}
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }}>
-                <span style={{ fontSize: "20px", fontWeight: 750, color: "var(--ink)" }}>{diff.gps_b.toFixed(1)}°</span>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }} className="tabular-nums">
+                <span style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink)" }}>{diff.gps_b.toFixed(1)}°</span>
                 <span style={{
                   fontSize: "12px",
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: diff.delta_gps < 0 ? "var(--teal)" : "var(--red)",
                   marginLeft: "auto"
                 }}>

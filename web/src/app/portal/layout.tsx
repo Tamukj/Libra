@@ -4,7 +4,7 @@ import React, { useState, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LibraLogo } from "@/components/LibraLogo";
-import { Users, BarChart2, LogOut, Upload, Stethoscope, HelpCircle, Scale, AlertTriangle, Sparkles } from "lucide-react";
+import { Users, BarChart2, LogOut, Upload, Stethoscope, HelpCircle, Scale, AlertTriangle } from "lucide-react";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { LegalModal } from "@/components/LegalModal";
 import { uploadPatientCSV } from "@/lib/api";
@@ -18,6 +18,11 @@ function PortalHeader() {
   const [legalOpen, setLegalOpen] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLogout = () => {
+    document.cookie = "libra_session=; path=/; max-age=0";
+    router.push("/login");
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -177,9 +182,15 @@ function PortalHeader() {
             </div>
 
             {/* Logout */}
-            <Link href="/login" className="btn" style={{ padding: "6px 8px", color: "var(--muted)" }} title="Выход из портала" aria-label="Выход">
+            <button
+              onClick={handleLogout}
+              className="btn"
+              style={{ padding: "6px 8px", color: "var(--muted)", background: "transparent", border: "none", cursor: "pointer" }}
+              title="Выход из портала"
+              aria-label="Выход"
+            >
               <LogOut size={15} />
-            </Link>
+            </button>
 
           </div>
 
@@ -263,14 +274,12 @@ function PortalFooter() {
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   return (
-    <LanguageProvider>
-      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
-        <PortalHeader />
-        <main style={{ flex: 1 }}>
-          {children}
-        </main>
-        <PortalFooter />
-      </div>
-    </LanguageProvider>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
+      <PortalHeader />
+      <main style={{ flex: 1 }}>
+        {children}
+      </main>
+      <PortalFooter />
+    </div>
   );
 }
