@@ -102,6 +102,9 @@ export async function getPatientAnalysis(code: string): Promise<PatientAnalysis>
   try {
     return await fetchJson<PatientAnalysis>(`/api/v1/patients/${code}/analysis`);
   } catch (e) {
+    if (e instanceof Error && /API error \[4\d\d\]/.test(e.message)) {
+      throw e;
+    }
     console.warn(`Backend API not reachable for patient ${code}, using fallback analysis:`, e);
     const meta = getFallbackPatientMeta(code);
     const { isCritical, status, pcr, tje, baselineGps, vrGps, side, weight, height, legLength } = meta;
@@ -219,6 +222,9 @@ export async function getPatientKinematics(code: string): Promise<KinematicsResp
   try {
     return await fetchJson<KinematicsResponse>(`/api/v1/patients/${code}/kinematics`);
   } catch (e) {
+    if (e instanceof Error && /API error \[4\d\d\]/.test(e.message)) {
+      throw e;
+    }
     console.warn(`Backend API not reachable for kinematics of ${code}, generating fallback curves:`, e);
     const time_percent = Array.from({ length: 51 }, (_, i) => i * 2);
     const makeCurve = (baseOffset: number, amp: number, phase: number) => {

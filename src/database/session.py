@@ -63,6 +63,8 @@ def init_db(seed_cohort: bool = True):
                         cols = [row[1] for row in conn.execute(text("PRAGMA table_info(gait_sessions)")).fetchall()]
                         if "avg_pctm_zero" not in cols:
                             conn.execute(text("ALTER TABLE gait_sessions ADD COLUMN avg_pctm_zero FLOAT"))
+                        if "avg_pelvis_tilt" not in cols:
+                            conn.execute(text("ALTER TABLE gait_sessions ADD COLUMN avg_pelvis_tilt FLOAT"))
 
                 if not seed_cohort:
                     return

@@ -127,17 +127,17 @@ def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[s
     sessions = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).all() if patient else []
     if sessions:
         base_sess = next((s for s in sessions if s.condition == "Baseline"), None)
-        if base_sess:
-            vr_sess = next((s for s in sessions if s.condition == "VR"), None)
-            vb_sess = next((s for s in sessions if s.condition == "Verbal"), None)
-
-            b_gps = float(base_sess.avg_gps)
-            b_hip = float(base_sess.avg_amin_sagh)
-            b_p = float(base_sess.avg_gvs_pelvis)
-            b_h = float(base_sess.avg_gvs_hip)
-            b_k = float(base_sess.avg_gvs_knee)
-            b_a = float(base_sess.avg_gvs_ankle)
-            b_pctm = _opt_float(getattr(base_sess, "avg_pctm_zero", None))
+        vr_sess = next((s for s in sessions if s.condition == "VR"), None)
+        vb_sess = next((s for s in sessions if s.condition == "Verbal"), None)
+        ref_sess = base_sess or vr_sess or vb_sess
+        if ref_sess:
+            b_gps = float(ref_sess.avg_gps)
+            b_hip = float(ref_sess.avg_amin_sagh)
+            b_p = float(ref_sess.avg_gvs_pelvis)
+            b_h = float(ref_sess.avg_gvs_hip)
+            b_k = float(ref_sess.avg_gvs_knee)
+            b_a = float(ref_sess.avg_gvs_ankle)
+            b_pctm = _opt_float(getattr(ref_sess, "avg_pctm_zero", None)) if base_sess else None
 
             vr_gps = float(vr_sess.avg_gps) if vr_sess and vr_sess.avg_gps is not None else None
             vr_hip = float(vr_sess.avg_amin_sagh) if vr_sess and vr_sess.avg_amin_sagh is not None else None
@@ -155,12 +155,12 @@ def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[s
             vb_a = float(vb_sess.avg_gvs_ankle) if vb_sess and vb_sess.avg_gvs_ankle is not None else None
             vb_pctm = _opt_float(getattr(vb_sess, "avg_pctm_zero", None)) if vb_sess else None
 
-            d_gps = (vr_gps - b_gps) if vr_gps is not None else 0.0
-            d_hip = (vr_hip - b_hip) if vr_hip is not None else 0.0
-            d_p = (vr_p - b_p) if vr_p is not None else 0.0
-            d_h = (vr_h - b_h) if vr_h is not None else 0.0
-            d_k = (vr_k - b_k) if vr_k is not None else 0.0
-            d_a = (vr_a - b_a) if vr_a is not None else 0.0
+            d_gps = (vr_gps - b_gps) if (base_sess and vr_gps is not None) else 0.0
+            d_hip = (vr_hip - b_hip) if (base_sess and vr_hip is not None) else 0.0
+            d_p = (vr_p - b_p) if (base_sess and vr_p is not None) else 0.0
+            d_h = (vr_h - b_h) if (base_sess and vr_h is not None) else 0.0
+            d_k = (vr_k - b_k) if (base_sess and vr_k is not None) else 0.0
+            d_a = (vr_a - b_a) if (base_sess and vr_a is not None) else 0.0
             d_pctm = (vr_pctm - b_pctm) if (vr_pctm is not None and b_pctm is not None) else None
 
             summary = {
@@ -171,7 +171,7 @@ def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[s
                 "leg_length": patient.leg_length if patient else 0.70,
                 "baseline_gps": b_gps,
                 "vr_gps": vr_gps if vr_gps is not None else b_gps,
-                "verbal_gps": vb_gps if vb_gps is not None else b_gps,
+                "verbal_gps": vb_gps,
                 "delta_gps": d_gps,
                 "baseline_amin_sagh": b_hip,
                 "vr_amin_sagh": vr_hip if vr_hip is not None else b_hip,
@@ -197,14 +197,18 @@ def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[s
                 "vr_pctm_zero": vr_pctm,
                 "verbal_pctm_zero": vb_pctm,
                 "delta_pctm_zero": d_pctm,
-                "cycles_baseline": base_sess.cycle_count,
+                "cycles_baseline": base_sess.cycle_count if base_sess else 0,
                 "cycles_vr": vr_sess.cycle_count if vr_sess else 0,
                 "cycles_verbal": vb_sess.cycle_count if vb_sess else 0,
-                "baseline_cycles": base_sess.cycle_count,
+                "baseline_cycles": base_sess.cycle_count if base_sess else 0,
                 "vr_cycles": vr_sess.cycle_count if vr_sess else 0,
                 "verbal_cycles": vb_sess.cycle_count if vb_sess else 0,
+                "has_baseline": base_sess is not None,
                 "has_vr": vr_sess is not None,
                 "has_verbal": vb_sess is not None,
+                "_db_tilt_b": _opt_float(getattr(base_sess, "avg_pelvis_tilt", None)) if base_sess else None,
+                "_db_tilt_vr": _opt_float(getattr(vr_sess, "avg_pelvis_tilt", None)) if vr_sess else None,
+                "_db_tilt_vb": _opt_float(getattr(vb_sess, "avg_pelvis_tilt", None)) if vb_sess else None,
             }
 
     if summary is None:
@@ -215,10 +219,19 @@ def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[s
         except Exception:
             raise HTTPException(status_code=404, detail=f"No biomechanical gait sessions recorded for patient {code}")
 
-    # Enrich with true kinematic pelvic tilt angles if available
+    # Enrich with true kinematic pelvic tilt angles (or uploaded IMU pelvic tilt) if available
+    db_tilt_b = summary.pop("_db_tilt_b", None)
+    db_tilt_vr = summary.pop("_db_tilt_vr", None)
+    db_tilt_vb = summary.pop("_db_tilt_vb", None)
     tilt_b = _compute_mean_pelvic_tilt(_DF_KIN, code)
+    if tilt_b is None:
+        tilt_b = db_tilt_b
     tilt_vr = _compute_mean_pelvic_tilt(_DF_KIN_VR, code)
+    if tilt_vr is None:
+        tilt_vr = db_tilt_vr
     tilt_vb = _compute_mean_pelvic_tilt(_DF_KIN_VB, code)
+    if tilt_vb is None:
+        tilt_vb = db_tilt_vb
     summary["baseline_pelvis_tilt"] = round(tilt_b, 2) if tilt_b is not None else None
     summary["vr_pelvis_tilt"] = round(tilt_vr, 2) if tilt_vr is not None else None
     summary["verbal_pelvis_tilt"] = round(tilt_vb, 2) if tilt_vb is not None else None
@@ -329,7 +342,8 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
     # Compute Sagittal GDI (0-100 scale)
     summary["baseline_gdi"] = compute_sagittal_gdi(summary["baseline_gps"])
     summary["vr_gdi"] = compute_sagittal_gdi(summary["vr_gps"])
-    summary["verbal_gdi"] = compute_sagittal_gdi(summary.get("verbal_gps", summary["baseline_gps"]))
+    vb_gps_val = summary.get("verbal_gps")
+    summary["verbal_gdi"] = compute_sagittal_gdi(vb_gps_val) if vb_gps_val is not None else None
     summary["delta_gdi"] = round(summary["vr_gdi"] - summary["baseline_gdi"], 1)
 
     return {
@@ -523,6 +537,11 @@ def _extract_session_metrics(summary: Dict[str, Any], condition: str) -> Dict[st
     base_a = _safe_float(summary.get("baseline_gvs_ankle"), 0.0)
 
     if c == "baseline":
+        if not summary.get("has_baseline", True):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Baseline gait session not recorded for patient {summary.get('subject')}"
+            )
         return {
             "label": f"Сессия ({condition})",
             "gps": base_gps,
@@ -762,7 +781,29 @@ async def upload_patient_csv(
     side_col = _find_col_by_aliases(df_upload, "side")
     parsed_side: Optional[str] = None
     if side_col and not df_upload[side_col].dropna().empty:
-        parsed_side = str(df_upload[side_col].dropna().iloc[0]).strip()
+        raw_side = str(df_upload[side_col].dropna().iloc[0]).strip().lower()
+        side_map = {
+            "left": "LEFT", "l": "LEFT", "левая": "LEFT", "левый": "LEFT", "л": "LEFT", "сол": "LEFT",
+            "right": "RIGHT", "r": "RIGHT", "правая": "RIGHT", "правый": "RIGHT", "п": "RIGHT", "оң": "RIGHT",
+        }
+        if raw_side not in side_map:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid limb side value. Expected LEFT or RIGHT."
+            )
+        parsed_side = side_map[raw_side]
+
+    opt_gps = _parse_optional("GPS_a")
+    opt_p = _parse_optional("GVS_aSagP")
+    opt_h = _parse_optional("GVS_aSagH")
+    opt_k = _parse_optional("GVS_aSagK")
+    opt_a = _parse_optional("GVS_aSagA")
+    opt_amin = _parse_optional("aMinSagH")
+    if all(v is None for v in (opt_gps, opt_p, opt_h, opt_k, opt_a, opt_amin)):
+        raise HTTPException(
+            status_code=400,
+            detail="CSV must contain at least one valid numeric gait metric column (GPS_a, aMinSagH, or GVS_aSag*)."
+        )
 
     patient = db.query(Patient).filter(Patient.code == resolved_code).first()
     try:
@@ -787,18 +828,16 @@ async def upload_patient_csv(
             if has_leg:
                 patient.leg_length = raw_leg
 
-        calc_p, _ = _parse_val("GVS_aSagP", 0.0)
-        calc_h, _ = _parse_val("GVS_aSagH", 0.0)
-        calc_k, _ = _parse_val("GVS_aSagK", 0.0)
-        calc_a, _ = _parse_val("GVS_aSagA", 0.0)
+        calc_p = opt_p if opt_p is not None else 0.0
+        calc_h = opt_h if opt_h is not None else 0.0
+        calc_k = opt_k if opt_k is not None else 0.0
+        calc_a = opt_a if opt_a is not None else 0.0
         gvs_sq = [v**2 for v in [calc_p, calc_h, calc_k, calc_a] if v > 0]
         derived_gps = math.sqrt(sum(gvs_sq) / len(gvs_sq)) if gvs_sq else 0.0
-        avg_gps, _ = _parse_val("GPS_a", derived_gps)
-        avg_amin_sagh, _ = _parse_val("aMinSagH", 0.0)
+        avg_gps = opt_gps if opt_gps is not None else derived_gps
+        avg_amin_sagh = opt_amin if opt_amin is not None else 0.0
         avg_pctm_zero = _parse_optional("pctmZeroStSagH")
-
-        # Validate optional pelvic_tilt_mean column if present
-        _parse_optional("pelvic_tilt_mean")
+        avg_pelvis_tilt = _parse_optional("pelvic_tilt_mean")
 
         existing_session = (
             db.query(GaitSession)
@@ -814,6 +853,7 @@ async def upload_patient_csv(
             existing_session.avg_gvs_knee = calc_k
             existing_session.avg_gvs_ankle = calc_a
             existing_session.avg_pctm_zero = avg_pctm_zero
+            existing_session.avg_pelvis_tilt = avg_pelvis_tilt
         else:
             db.add(GaitSession(
                 patient_id=patient.id,
@@ -826,6 +866,7 @@ async def upload_patient_csv(
                 avg_gvs_knee=calc_k,
                 avg_gvs_ankle=calc_a,
                 avg_pctm_zero=avg_pctm_zero,
+                avg_pelvis_tilt=avg_pelvis_tilt,
             ))
 
         db.commit()

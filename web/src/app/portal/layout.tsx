@@ -51,6 +51,7 @@ function PortalHeader() {
         : `CSV успешно импортирован (${res.code}).`;
     setUploadNotice((lang === "kz" ? res.message_kz : res.message_ru) || fallbackMsg);
     if (res.code) {
+      window.dispatchEvent(new CustomEvent("libra:patient-updated", { detail: { code: res.code } }));
       router.push(`/portal/patients/${encodeURIComponent(res.code)}`);
     }
     router.refresh();

@@ -26,6 +26,7 @@ export default function PatientDossierPage() {
   const [reportOpen, setReportOpen] = useState(false);
 
   useEffect(() => {
+    let active = true;
     async function loadData() {
       try {
         const [an, kin, pts] = await Promise.all([
@@ -33,6 +34,7 @@ export default function PatientDossierPage() {
           getPatientKinematics(id),
           getPatients()
         ]);
+        if (!active) return;
         setAnalysis(an);
         setKinematics(kin);
         const p = pts.find((item) => item.code === id) || null;
@@ -40,10 +42,21 @@ export default function PatientDossierPage() {
       } catch (err) {
         console.error("Failed to load patient dossier:", err);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
     loadData();
+    const onPatientUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<{ code?: string }>).detail;
+      if (!detail?.code || detail.code === id) {
+        loadData();
+      }
+    };
+    window.addEventListener("libra:patient-updated", onPatientUpdated);
+    return () => {
+      active = false;
+      window.removeEventListener("libra:patient-updated", onPatientUpdated);
+    };
   }, [id]);
 
   const fmt = (v?: number | null, fallback = "—") =>

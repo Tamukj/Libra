@@ -6,12 +6,12 @@ export interface Patient {
   height: number;
   leg_length: number;
   clinic_name: string | null;
-  pcr?: number;
-  tje?: number;
+  pcr?: number | null;
+  tje?: number | null;
   status?: "green" | "yellow" | "red";
-  baseline_gps?: number;
-  vr_gps?: number;
-  delta_amin_sagh?: number;
+  baseline_gps?: number | null;
+  vr_gps?: number | null;
+  delta_amin_sagh?: number | null;
   has_vr?: boolean;
   has_verbal?: boolean;
 }
@@ -46,7 +46,7 @@ export interface DiscreteSummary {
   vr_gvs_knee: number;
   vr_gvs_ankle: number;
   vr_pctm_zero?: number | null;
-  verbal_gps?: number;
+  verbal_gps?: number | null;
   verbal_amin_sagh?: number;
   verbal_gvs_pelvis?: number;
   verbal_gvs_hip?: number;
@@ -62,14 +62,14 @@ export interface DiscreteSummary {
   delta_pctm_zero?: number | null;
   baseline_gdi?: number;
   vr_gdi?: number;
-  verbal_gdi?: number;
+  verbal_gdi?: number | null;
   delta_gdi?: number;
 }
 
 export interface CdssRisk {
   status: "green" | "yellow" | "red";
-  pcr: number;
-  tje: number;
+  pcr: number | null;
+  tje: number | null;
   label_ru: string;
   label_kz: string;
   recommendation_ru: string;

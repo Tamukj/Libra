@@ -16,7 +16,9 @@ export function MlValidation({ metrics, lang }: Props) {
     GPS_a: lang === "kz" ? "Жалпы жүріс индексі (GPS)" : "Суммарный индекс (GPS)",
     GVS_aSagH: lang === "kz" ? "Сан девиациясы (GVS Hip)" : "Девиация бедра (GVS Hip)",
     GVS_aSagK: lang === "kz" ? "Тізе девиациясы (GVS Knee)" : "Девиация колена (GVS Knee)",
-    GVS_aSagA: lang === "kz" ? "Тобық девиациясы (GVS Ankle)" : "Девиация стопы (GVS Ankle)"
+    GVS_aSagA: lang === "kz" ? "Тобық девиациясы (GVS Ankle)" : "Девиация стопы (GVS Ankle)",
+    pctmZeroStSagH: lang === "kz" ? "Сан моментінің ауысуы (pctmZeroStSagH)" : "Переход момента бедра (pctmZeroStSagH)",
+    kinematic_waveforms: lang === "kz" ? "Кинематикалық траекториялар (0–100% цикл)" : "Кинематические траектории (0–100% цикла)"
   };
 
   return (

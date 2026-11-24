@@ -359,3 +359,45 @@ def test_export_patient_fhir_bundle(client):
     assert "presentedForm" in report_res and len(report_res["presentedForm"]) == 2
 
 
+def test_imu_pelvis_tilt_and_vr_before_baseline(client):
+    # 1. Uploading VR before Baseline should still resolve without 404
+    vr_first_csv = (
+        "side;pelvis_gvs;hip_gvs;knee_gvs;ankle_gvs;hip_min_ext;gps;pelvis_tilt_mean\n"
+        "left;12,0;11,0;10,0;5,0;-1,5;8,5;15,0\n"
+    ).encode("utf-8")
+    res_vr_first = client.post(
+        "/api/v1/patients/upload",
+        files={"file": ("vr_first.csv", vr_first_csv, "text/csv")},
+        data={"condition": "VR", "subject_code": "s_vr_first"},
+    )
+    assert res_vr_first.status_code == 200
+    assert client.get("/api/v1/patients/s_vr_first/analysis").status_code == 200
+    assert client.get("/api/v1/patients/s_vr_first/fhir").status_code == 200
+
+    # 2. Uploading Baseline afterwards with pelvis_tilt_mean should compute delta_pelvis_tilt & TJE
+    base_csv = (
+        "side;pelvis_gvs;hip_gvs;knee_gvs;ankle_gvs;hip_min_ext;gps;pelvis_tilt_mean\n"
+        "left;9,0;10,0;10,0;5,0;1,5;8,0;11,0\n"
+    ).encode("utf-8")
+    res_base = client.post(
+        "/api/v1/patients/upload",
+        files={"file": ("base_second.csv", base_csv, "text/csv")},
+        data={"condition": "Baseline", "subject_code": "s_vr_first"},
+    )
+    assert res_base.status_code == 200
+    an = client.get("/api/v1/patients/s_vr_first/analysis").json()
+    assert an["summary"]["side"] == "LEFT"
+    assert an["summary"]["delta_pelvis_tilt"] == pytest.approx(4.0, abs=1e-2)
+    # delta_hip = -1.5 - 1.5 = -3.0; TJE = -3.0 + 4.0 = +1.0
+    assert an["cdss_risk"]["tje"] == pytest.approx(1.0, abs=1e-2)
+    assert an["cdss_risk"]["tje"] == pytest.approx(an["modalities"]["tje_vr"], abs=1e-4)
+
+    # 3. CSV with zero valid gait metrics must return 400
+    empty_metrics_csv = "subject;side;weight\ns_bad_csv;RIGHT;40,0\n".encode("utf-8")
+    res_bad = client.post(
+        "/api/v1/patients/upload",
+        files={"file": ("bad.csv", empty_metrics_csv, "text/csv")},
+    )
+    assert res_bad.status_code == 400
+
+
