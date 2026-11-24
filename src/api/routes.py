@@ -196,6 +196,7 @@ def list_patients(db: Session = Depends(get_db)):
         for p in patients
     ]
 
+@router.get("/patients/{code}/summary", include_in_schema=False)
 @router.get("/patients/{code}/analysis")
 def get_patient_analysis(code: str, db: Session = Depends(get_db)):
     """
@@ -344,6 +345,7 @@ def get_patient_kinematics(code: str, db: Session = Depends(get_db)):
         "joints": kinematics_data
     }
 
+@router.get("/open-data/regional", include_in_schema=False)
 @router.get("/statistics/regional")
 def get_regional_data():
     """Returns open data statistics for Kazakhstan and Abai Region (stat.gov.kz)."""
@@ -520,6 +522,7 @@ def get_patient_diff(
         **diff_res
     }
 
+@router.post("/ingest/discrete", include_in_schema=False)
 @router.post("/patients/upload")
 async def upload_patient_csv(
     file: UploadFile = File(...),
