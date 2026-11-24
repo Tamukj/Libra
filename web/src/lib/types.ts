@@ -118,10 +118,11 @@ export interface PatientAnalysis {
       recommendation_kz: string;
     };
     pca_stability?: {
-      anomaly_rate: number;
+      has_curves?: boolean;
+      anomaly_rate: number | null;
       n_anomalies: number;
       n_cycles: number;
-      is_stable: boolean;
+      is_stable: boolean | null;
       cycles?: Array<{
         cycle_index: number;
         spe: number;
@@ -160,40 +161,49 @@ export interface KinematicsResponse {
   };
 }
 
-export interface RegionalStats {
-  country: {
-    name_ru: string;
-    name_kz: string;
-    is_reference_snapshot?: boolean;
-    snapshot_note_ru?: string;
-    snapshot_note_kz?: string;
-    total_children_disability: number;
-    children_with_cp: number;
-    primary_disability_annual: number;
-    neurological_ratio_pct: number;
-    sources: string[];
+export interface CohortAnalytics {
+  source: {
+    name: string;
+    citation: string;
+    doi: string;
+    license: string;
   };
-  region_abai: {
-    name_ru: string;
-    name_kz: string;
-    children_disability: number;
-    musculoskeletal_cp_children: number;
-    rehab_centers: Array<{
-      name: string;
-      city: string;
-      annual_capacity: number;
-    }>;
-    annual_coverage_pct: number;
-    average_waiting_months: number;
-    labs_3d_grail_count: number;
-    economic_impact: {
-      is_model_estimate?: boolean;
-      methodology_ru?: string;
-      methodology_kz?: string;
-      time_saved_per_patient_minutes: number;
-      cost_reduction_pct: number;
-      annual_queue_reduction_estimate_pct: number;
-    };
+  total_patients: number;
+  cycles: {
+    baseline: number;
+    verbal: number;
+    vr: number;
+    total: number;
+  };
+  cdss_distribution: {
+    green: number;
+    yellow: number;
+    red: number;
+  };
+  best_method_distribution: {
+    VR: number;
+    Verbal: number;
+    Baseline: number;
+  };
+  side_distribution: {
+    LEFT: number;
+    RIGHT: number;
+  };
+  averages: {
+    baseline_gps: number | null;
+    verbal_gps: number | null;
+    vr_gps: number | null;
+    delta_amin_sagh: number | null;
+    tje_vr: number | null;
+    pcr_vr: number | null;
+  };
+  anthropometrics: {
+    weight_min: number | null;
+    weight_max: number | null;
+    height_min: number | null;
+    height_max: number | null;
+    leg_length_min: number | null;
+    leg_length_max: number | null;
   };
 }
 

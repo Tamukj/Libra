@@ -3,7 +3,6 @@
 import os
 import json
 import math
-import base64
 import datetime
 import secrets
 from typing import List, Dict, Any, Optional, Tuple
@@ -32,7 +31,8 @@ from src.core.normative_data import NORMATIVE_PROFILES
 from src.ml.vr_predictor import GaitConditionClassifier, VRResponderPredictor
 from src.ml.anomaly_detector import KinematicPCAAnomalyDetector
 from src.ml.local_reporter import generate_clinical_narrative, generate_parent_narrative, _safe_float
-from src.api.open_data import get_regional_statistics
+from src.ml.pdf_reporter import generate_pdf_report
+from src.api.cohort_analytics import build_cohort_analytics
 
 router = APIRouter(prefix="/api/v1")
 
@@ -148,7 +148,7 @@ def _compute_patient_cycle_stability(
     code: str,
     summary: Dict[str, Any],
     sessions: Optional[List[GaitSession]] = None,
-) -> Tuple[float, int, int, List[Dict[str, Any]]]:
+) -> Tuple[Optional[float], int, int, List[Dict[str, Any]]]:
     """Computes PCA kinematic anomaly rate and per-cycle SPE diagnostics."""
     target_curves: Optional[np.ndarray] = None
     if sessions:
@@ -183,11 +183,11 @@ def _compute_patient_cycle_stability(
         ]
         return float(pca_res["anomaly_rate"]), int(pca_res["n_anomalies"]), int(pca_res["n_total"]), cycles_list
 
-    n_cycles = summary.get("vr_cycles", 0) or summary.get("baseline_cycles", 20)
-    return 0.05, 1, int(n_cycles), []
+    n_cycles = summary.get("vr_cycles", 0) or summary.get("baseline_cycles", 0)
+    return None, 0, int(n_cycles), []
 
 
-def _compute_patient_anomaly_rate(code: str, summary: Dict[str, Any], sessions: Optional[List[GaitSession]] = None) -> Tuple[float, int, int]:
+def _compute_patient_anomaly_rate(code: str, summary: Dict[str, Any], sessions: Optional[List[GaitSession]] = None) -> Tuple[Optional[float], int, int]:
     rate, n_anom, n_tot, _ = _compute_patient_cycle_stability(code, summary, sessions=sessions)
     return rate, n_anom, n_tot
 
@@ -395,7 +395,7 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
 
     icf_b770_base = classify_icf_b770(summary["baseline_gps"])
     icf_b770_vr = classify_icf_b770(summary["vr_gps"])
-    icf_d450 = classify_icf_d450(anomaly_rate * 100.0)
+    icf_d450 = classify_icf_d450(anomaly_rate * 100.0) if anomaly_rate is not None else None
 
     # ML predictions: evaluates probability that VR condition cycles exhibit the learned VR gait pattern
     sub_vr_cycles = _DF_VR[_DF_VR["subject"] == code]
@@ -415,16 +415,32 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
         )
         response_prob = float(np.mean(probs))
     else:
-        cond_prefix = "vr" if summary.get("has_vr") else "baseline"
+        has_vr = bool(summary.get("has_vr"))
+        cond_prefix = "vr" if has_vr else "baseline"
+        target_cond = "VR" if has_vr else "Baseline"
         df_uploaded_row = pd.DataFrame([{
+            "subject": code,
             "GPS_a": summary.get(f"{cond_prefix}_gps"),
             "GVS_aSagP": summary.get(f"{cond_prefix}_gvs_pelvis"),
             "GVS_aSagH": summary.get(f"{cond_prefix}_gvs_hip"),
             "GVS_aSagK": summary.get(f"{cond_prefix}_gvs_knee"),
             "GVS_aSagA": summary.get(f"{cond_prefix}_gvs_ankle"),
             "aMinSagH": summary.get(f"{cond_prefix}_amin_sagh"),
+            "pctmZeroStSagH": summary.get(f"{cond_prefix}_pctm_zero"),
         }])
-        _, probs = _ML_CLASSIFIER.predict_cycle_condition(df_uploaded_row)
+        target_sess = next((s for s in sessions if s.condition == target_cond), None)
+        parsed_kin = _parse_session_kinematics(target_sess)
+        df_kin_uploaded = None
+        if parsed_kin and parsed_kin.get("joints"):
+            kin_row: Dict[str, Any] = {"subject": code}
+            for j_name, j_series in parsed_kin["joints"].items():
+                j_mean = j_series.get("mean") or []
+                if len(j_mean) == 51:
+                    for idx_pt, val in enumerate(j_mean):
+                        kin_row[f"{j_name}_pct_GC_{idx_pt * 20}"] = val
+            if len(kin_row) > 1:
+                df_kin_uploaded = pd.DataFrame([kin_row])
+        _, probs = _ML_CLASSIFIER.predict_cycle_condition(df_uploaded_row, df_kin=df_kin_uploaded)
         response_prob = float(probs[0])
 
     responder_prediction = _VR_RESPONDER.predict_subject_response(summary)
@@ -444,7 +460,7 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
         "icf": {
             "b770_baseline": icf_b770_base,
             "b770_vr": icf_b770_vr,
-            "d450": icf_d450,
+            "d450": icf_d450 or "N/A",
         },
         "ml": {
             "vr_gait_signature_confidence": response_prob,
@@ -452,10 +468,11 @@ def get_patient_analysis(code: str, db: Session = Depends(get_db)):
             "is_vr_discriminative": bool(response_prob > 0.5),
             "responder_prediction": responder_prediction,
             "pca_stability": {
+                "has_curves": anomaly_rate is not None,
                 "anomaly_rate": anomaly_rate,
                 "n_anomalies": n_anomalies,
                 "n_cycles": n_cycles,
-                "is_stable": bool(anomaly_rate < 0.15),
+                "is_stable": bool(anomaly_rate < 0.15) if anomaly_rate is not None else None,
                 "cycles": cycle_stability,
             }
         }
@@ -484,13 +501,14 @@ def get_patient_kinematics(code: str, db: Session = Depends(get_db)):
             db_kin_by_cond[sess.condition] = parsed["joints"]
 
     has_db_curves = len(db_kin_by_cond) > 0
-    is_surrogate = False
     if sub_base.empty and not has_db_curves:
-        # Fallback to reference cohort patient s61520_1 so discrete-only uploaded patients display curves smoothly
-        sub_base = _DF_KIN[_DF_KIN["subject"] == "s61520_1"]
-        sub_vr = _DF_KIN_VR[_DF_KIN_VR["subject"] == "s61520_1"]
-        sub_vb = _DF_KIN_VB[_DF_KIN_VB["subject"] == "s61520_1"]
-        is_surrogate = True
+        return {
+            "subject": code,
+            "is_surrogate": False,
+            "is_fallback": False,
+            "has_curves": False,
+            "joints": {},
+        }
 
     joints = ["aSagP", "aSagH", "aSagK", "aSagA"]
     if "mSagH_pct_GC_0" in _DF_KIN.columns:
@@ -560,16 +578,51 @@ def get_patient_kinematics(code: str, db: Session = Depends(get_db)):
 
     return {
         "subject": code,
-        "is_surrogate": is_surrogate,
-        "is_fallback": is_surrogate,
+        "is_surrogate": False,
+        "is_fallback": False,
+        "has_curves": True,
         "joints": kinematics_data
     }
 
-@router.get("/open-data/regional", include_in_schema=False)
-@router.get("/statistics/regional")
-def get_regional_data():
-    """Returns open data statistics for Kazakhstan and Abai Region (stat.gov.kz)."""
-    return get_regional_statistics()
+@router.get("/analytics/cohort")
+def get_cohort_analytics_endpoint(db: Session = Depends(get_db)):
+    """Returns live cohort analytics computed directly from database patients and gait cycles."""
+    patients = db.query(Patient).all()
+    records: List[Dict[str, Any]] = []
+    for p in patients:
+        try:
+            summary = _resolve_patient_summary(p.code, p, db)
+            risk = analyze_compensation_risk(
+                delta_hip=summary["delta_amin_sagh"],
+                delta_gvs_p=summary["delta_gvs_pelvis"],
+                delta_gvs_k=summary["delta_gvs_knee"],
+                delta_gvs_a=summary["delta_gvs_ankle"],
+                delta_pelvis_term=summary.get("delta_pelvis_tilt"),
+            )
+            mod = compare_modalities(summary)
+            records.append({
+                "code": p.code,
+                "side": p.side,
+                "weight": p.weight,
+                "height": p.height,
+                "leg_length": p.leg_length,
+                "status": risk["status"],
+                "tje": risk["tje"],
+                "pcr": risk["pcr"],
+                "best_method": mod["best_method"],
+                "has_vr": bool(summary.get("has_vr", False)),
+                "has_verbal": bool(summary.get("has_verbal", False)),
+                "cycles_baseline": summary.get("cycles_baseline", 0),
+                "cycles_verbal": summary.get("cycles_verbal", 0),
+                "cycles_vr": summary.get("cycles_vr", 0),
+                "baseline_gps": summary.get("baseline_gps"),
+                "verbal_gps": summary.get("verbal_gps"),
+                "vr_gps": summary.get("vr_gps"),
+                "delta_amin_sagh": summary.get("delta_amin_sagh"),
+            })
+        except HTTPException:
+            continue
+    return build_cohort_analytics(records)
 
 @router.get("/ml/metrics")
 def get_ml_metrics():
@@ -592,12 +645,13 @@ def create_patient_report(
     auth: Dict[str, Any] = Depends(require_clinician_auth),
     db: Session = Depends(get_db)
 ):
-    """Generates official bilingual clinical narrative (doctor/Damumed or parent guidance) and records it in database."""
+    """Generates official bilingual clinical narrative (doctor protocol or parent guidance) and records it in database."""
     patient = db.query(Patient).filter(Patient.code == code).first()
     if not patient:
         raise HTTPException(status_code=404, detail=f"Patient {code} not found")
 
     summary = _resolve_patient_summary(code, patient, db)
+    sessions = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).all()
 
     risk = analyze_compensation_risk(
         delta_hip=summary["delta_amin_sagh"],
@@ -608,10 +662,11 @@ def create_patient_report(
     )
 
     # Dynamic PCA Anomaly Detection on patient's VR kinematic curves for d450
-    anomaly_rate, _, _ = _compute_patient_anomaly_rate(code, summary)
+    anomaly_rate, _, _ = _compute_patient_anomaly_rate(code, summary, sessions=sessions)
+    summary["anomaly_rate"] = anomaly_rate
 
     icf_b770 = classify_icf_b770(summary["vr_gps"])
-    icf_d450 = classify_icf_d450(anomaly_rate * 100.0)
+    icf_d450 = classify_icf_d450(anomaly_rate * 100.0) if anomaly_rate is not None else "N/A"
 
     if audience == "parent":
         narrative_ru = generate_parent_narrative(summary, lang="ru")
@@ -624,8 +679,8 @@ def create_patient_report(
         patient_id=patient.id,
         icf_b770=icf_b770,
         icf_d450=icf_d450,
-        tje=risk["tje"],
-        pcr=risk["pcr"],
+        tje=risk["tje"] if risk["tje"] is not None else 0.0,
+        pcr=risk["pcr"] if risk["pcr"] is not None else 0.0,
         status=risk["status"],
         narrative_ru=narrative_ru,
         narrative_kz=narrative_kz,
@@ -1089,100 +1144,20 @@ async def upload_patient_csv(
     }
 
 
-def _fhir_quantity_observation(
-    obs_id: str,
-    patient_code: str,
-    code_val: str,
-    display: str,
-    value: Optional[float],
-    unit: str,
-    issued: str,
-    system: str = "urn:libra:biomechanics",
-) -> Dict[str, Any]:
-    obs: Dict[str, Any] = {
-        "resourceType": "Observation",
-        "id": obs_id,
-        "status": "final",
-        "category": [{
-            "coding": [{
-                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                "code": "exam",
-                "display": "Exam",
-            }]
-        }],
-        "code": {
-            "coding": [{"system": system, "code": code_val, "display": display}],
-            "text": display,
-        },
-        "subject": {"reference": f"Patient/{patient_code}"},
-        "effectiveDateTime": issued,
-    }
-    if value is not None and math.isfinite(value):
-        obs["valueQuantity"] = {
-            "value": round(float(value), 3),
-            "unit": unit,
-            "system": "http://unitsofmeasure.org",
-            "code": unit,
-        }
-    else:
-        obs["dataAbsentReason"] = {
-            "coding": [{
-                "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
-                "code": "not-applicable",
-                "display": "Not Applicable",
-            }]
-        }
-    return obs
-
-
-def _fhir_icf_observation(
-    obs_id: str,
-    patient_code: str,
-    icf_domain: str,
-    display: str,
-    icf_code: str,
-    issued: str,
-) -> Dict[str, Any]:
-    return {
-        "resourceType": "Observation",
-        "id": obs_id,
-        "status": "final",
-        "category": [{
-            "coding": [{
-                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                "code": "survey",
-                "display": "Survey",
-            }]
-        }],
-        "code": {
-            "coding": [{
-                "system": "http://hl7.org/fhir/sid/icf",
-                "code": icf_domain,
-                "display": display,
-            }],
-            "text": display,
-        },
-        "subject": {"reference": f"Patient/{patient_code}"},
-        "effectiveDateTime": issued,
-        "valueCodeableConcept": {
-            "coding": [{
-                "system": "http://hl7.org/fhir/sid/icf",
-                "code": icf_code,
-                "display": icf_code,
-            }],
-            "text": icf_code,
-        },
-    }
-
-
-@router.get("/patients/{code}/fhir")
-def export_patient_fhir(code: str, db: Session = Depends(get_db)):
-    """Exports anonymized HL7 FHIR R4 Bundle (Patient, Biomechanical & ICF Observations, CDSS DiagnosticReport)."""
+@router.get("/patients/{code}/report.pdf")
+def export_patient_pdf_report(
+    code: str,
+    lang: str = Query("ru", pattern="^(ru|kz|en)$"),
+    audience: str = Query("doctor", pattern="^(doctor|parent)$"),
+    db: Session = Depends(get_db),
+):
+    """Generates and returns a downloadable A4 PDF clinical or parent report with metric table, hip curves, and ICF codes."""
     patient = db.query(Patient).filter(Patient.code == code).first()
     if not patient:
         raise HTTPException(status_code=404, detail=f"Patient {code} not found")
 
     summary = _resolve_patient_summary(code, patient, db)
+    sessions = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).all()
     risk = analyze_compensation_risk(
         delta_hip=summary["delta_amin_sagh"],
         delta_gvs_p=summary["delta_gvs_pelvis"],
@@ -1190,113 +1165,51 @@ def export_patient_fhir(code: str, db: Session = Depends(get_db)):
         delta_gvs_a=summary["delta_gvs_ankle"],
         delta_pelvis_term=summary.get("delta_pelvis_tilt"),
     )
-    anomaly_rate, _, _ = _compute_patient_anomaly_rate(code, summary)
+    modalities = compare_modalities(summary)
+    anomaly_rate, _, _ = _compute_patient_anomaly_rate(code, summary, sessions=sessions)
+    summary["anomaly_rate"] = anomaly_rate
+
+    icf_b770_base = classify_icf_b770(summary["baseline_gps"])
     icf_b770_vr = classify_icf_b770(summary["vr_gps"])
-    icf_d450 = classify_icf_d450(anomaly_rate * 100.0)
+    icf_d450 = classify_icf_d450(anomaly_rate * 100.0) if anomaly_rate is not None else None
 
-    narrative_ru = generate_clinical_narrative(summary, lang="ru")
-    narrative_kz = generate_clinical_narrative(summary, lang="kz")
-    disclaimer = (
-        "Rule 8.4 CDSS Non-Diagnostic Disclaimer: Libra is a Clinical Decision Support System; "
-        "it does not establish a medical diagnosis or prescribe treatment without clinician verification."
-    )
-    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    eff_lang = "kz" if lang == "kz" else "ru"
+    if audience == "parent":
+        narrative = generate_parent_narrative(summary, lang=eff_lang)
+    else:
+        narrative = generate_clinical_narrative(summary, lang=eff_lang)
 
-    patient_resource = {
-        "resourceType": "Patient",
-        "id": patient.code,
-        "identifier": [{
-            "system": "urn:libra:patient-code",
-            "value": patient.code,
-        }],
-        "active": True,
-        "extension": [
-            {"url": "urn:libra:affected-side", "valueString": patient.side},
-            {"url": "urn:libra:weight-kg", "valueDecimal": round(float(patient.weight), 2)},
-            {"url": "urn:libra:height-m", "valueDecimal": round(float(patient.height), 3)},
-            {"url": "urn:libra:leg-length-m", "valueDecimal": round(float(patient.leg_length), 3)},
-        ],
-    }
+    # Extract real sagittal hip curve (no surrogate substitution in PDF)
+    hip_curves: Optional[Dict[str, Any]] = None
+    kin_resp = get_patient_kinematics(code, db=db)
+    if not kin_resp.get("is_surrogate"):
+        hip_joint = kin_resp.get("joints", {}).get("aSagH")
+        if hip_joint:
+            hip_curves = {
+                "time_percent": hip_joint["time_percent"],
+                "baseline": hip_joint["baseline"]["mean"],
+                "vr": hip_joint["vr"]["mean"],
+                "verbal": hip_joint["verbal"]["mean"] if summary.get("has_verbal") else None,
+                "norm_mean": hip_joint["norm_td"]["mean"],
+                "norm_std": hip_joint["norm_td"]["std"],
+            }
 
-    obs_gps = _fhir_quantity_observation(
-        f"obs-gps-{patient.code}", patient.code, "GPS_a",
-        "Gait Profile Score (Sagittal GPS_a)", summary.get("vr_gps"), "deg", now_iso,
-    )
-    obs_tje = _fhir_quantity_observation(
-        f"obs-tje-{patient.code}", patient.code, "TJE",
-        "True Joint Extension (TJE)", risk.get("tje"), "deg", now_iso,
-    )
-    obs_pcr = _fhir_quantity_observation(
-        f"obs-pcr-{patient.code}", patient.code, "PCR",
-        "Pathological Compensation Ratio (PCR)", risk.get("pcr"), "{ratio}", now_iso,
-    )
-    obs_hip = _fhir_quantity_observation(
-        f"obs-aminsagh-{patient.code}", patient.code, "aMinSagH",
-        "Minimum Sagittal Hip Flexion/Extension (aMinSagH)", summary.get("vr_amin_sagh"), "deg", now_iso,
-    )
-    obs_b770 = _fhir_icf_observation(
-        f"obs-icf-b770-{patient.code}", patient.code, "b770",
-        "WHO ICF b770 Gait pattern functions", icf_b770_vr, now_iso,
-    )
-    obs_d450 = _fhir_icf_observation(
-        f"obs-icf-d450-{patient.code}", patient.code, "d450",
-        "WHO ICF d450 Walking stability", icf_d450, now_iso,
+    pdf_bytes = generate_pdf_report(
+        summary=summary,
+        risk=risk,
+        modalities=modalities,
+        icf_b770_base=icf_b770_base,
+        icf_b770_vr=icf_b770_vr,
+        icf_d450=icf_d450,
+        narrative=narrative,
+        lang=eff_lang,
+        audience=audience,
+        hip_curves=hip_curves,
     )
 
-    obs_refs = [
-        {"reference": f"Observation/{obs['id']}"}
-        for obs in (obs_gps, obs_tje, obs_pcr, obs_hip, obs_b770, obs_d450)
-    ]
-
-    diagnostic_report = {
-        "resourceType": "DiagnosticReport",
-        "id": f"report-{patient.code}",
-        "status": "preliminary",
-        "category": [{
-            "coding": [{
-                "system": "http://terminology.hl7.org/CodeSystem/v2-0074",
-                "code": "PHY",
-                "display": "Physical Therapy / Biomechanics",
-            }]
-        }],
-        "code": {
-            "coding": [{
-                "system": "http://loinc.org",
-                "code": "55110-1",
-                "display": "Gait analysis report",
-            }],
-            "text": "Libra CDSS Clinical Biomechanics Report",
-        },
-        "subject": {"reference": f"Patient/{patient.code}"},
-        "effectiveDateTime": now_iso,
-        "issued": now_iso,
-        "result": obs_refs,
-        "conclusion": f"{disclaimer}\n\n[RU]\n{narrative_ru}\n\n[KZ]\n{narrative_kz}",
-        "presentedForm": [
-            {
-                "contentType": "text/plain",
-                "language": "ru",
-                "data": base64.b64encode(narrative_ru.encode("utf-8")).decode("ascii"),
-            },
-            {
-                "contentType": "text/plain",
-                "language": "kk",
-                "data": base64.b64encode(narrative_kz.encode("utf-8")).decode("ascii"),
-            },
-        ],
-    }
-
-    entries = [
-        {"fullUrl": f"urn:uuid:patient-{patient.code}", "resource": patient_resource},
-        *[{"fullUrl": f"urn:uuid:{obs['id']}", "resource": obs} for obs in (obs_gps, obs_tje, obs_pcr, obs_hip, obs_b770, obs_d450)],
-        {"fullUrl": f"urn:uuid:report-{patient.code}", "resource": diagnostic_report},
-    ]
-
-    return {
-        "resourceType": "Bundle",
-        "id": f"libra-fhir-{patient.code}",
-        "type": "collection",
-        "timestamp": now_iso,
-        "entry": entries,
-    }
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="libra-report-{code}-{eff_lang}.pdf"'},
+    )
 

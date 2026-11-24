@@ -96,23 +96,24 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
     icf_b_post = classify_icf_b770(vr_gps)
 
     raw_anomaly = summary.get("anomaly_rate")
-    if raw_anomaly is None:
-        anomaly_pct = 5.0
-    else:
+    anomaly_pct = None
+    if raw_anomaly is not None:
         try:
             f_anom = float(raw_anomaly)
-            if np.isnan(f_anom) or not np.isfinite(f_anom):
-                anomaly_pct = 5.0
-            else:
+            if not np.isnan(f_anom) and np.isfinite(f_anom):
                 anomaly_pct = f_anom * 100.0 if f_anom <= 1.0 else f_anom
         except (ValueError, TypeError):
-            anomaly_pct = 5.0
-    icf_d = classify_icf_d450(anomaly_pct)
+            anomaly_pct = None
+    icf_d = classify_icf_d450(anomaly_pct) if anomaly_pct is not None else None
 
     if lang == "kz":
         icf_pre_desc = ICF_DESCRIPTIONS_KZ.get(icf_b_pre, icf_b_pre)
         icf_post_desc = ICF_DESCRIPTIONS_KZ.get(icf_b_post, icf_b_post)
-        icf_d_desc = ICF_DESCRIPTIONS_KZ.get(icf_d, icf_d)
+        icf_d_desc = (
+            ICF_DESCRIPTIONS_KZ.get(icf_d, icf_d)
+            if icf_d is not None
+            else "Бағаланбады (51 нүктелі кинематикалық қисықтар жоқ)"
+        )
 
         narrative = (
             f"КЛИНИКАЛЫҚ БИОМЕХАНИКАЛЫҚ ҚОРЫТЫНДЫ (Libra CDSS)\n"
@@ -135,13 +136,17 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
             f"--------------------------------------------------\n"
             f"НАЗАР АУДАРЫҢЫЗ (Ереже 8.4-бабы): Libra дәрігерлік шешімді қолдау жүйесі (CDSS) "
             f"болып табылады, диагноз қоймайды және емдеу препараттарын тағайындамайды. Қорытынды емдеуші "
-            f"дәрігердің растауына жатады (Damumed МИС интеграциясы). Шұғыл жағдайларда және денсаулыққа қауіп "
+            f"дәрігердің тексеруіне жатады. Шұғыл жағдайларда және денсаулыққа қауіп "
             f"төнгенде 103 нөмірі бойынша жедел медициналық көмекке хабарласыңыз."
         )
     else:
         icf_pre_desc = ICF_DESCRIPTIONS_RU.get(icf_b_pre, icf_b_pre)
         icf_post_desc = ICF_DESCRIPTIONS_RU.get(icf_b_post, icf_b_post)
-        icf_d_desc = ICF_DESCRIPTIONS_RU.get(icf_d, icf_d)
+        icf_d_desc = (
+            ICF_DESCRIPTIONS_RU.get(icf_d, icf_d)
+            if icf_d is not None
+            else "Не оценивался (отсутствуют 51-точечные кривые кинематики)"
+        )
 
         narrative = (
             f"КЛИНИЧЕСКИЙ БИОМЕХАНИЧЕСКИЙ ПРОТОКОЛ (Libra CDSS)\n"
@@ -164,7 +169,7 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
             f"--------------------------------------------------\n"
             f"ВНИМАНИЕ (ст. 8.4 Положения): Libra является системой поддержки принятия врачебных решений (CDSS), "
             f"не ставит диагноз и не назначает лекарственные средства. Заключение подлежит обязательной верификации "
-            f"лечащим врачом-реабилитологом (готов к экспорту в МИС Damumed). В экстренных случаях и опасных ситуациях "
+            f"лечащим врачом-реабилитологом. В экстренных случаях и опасных ситуациях "
             f"незамедлительно обращайтесь к врачу или вызывайте скорую помощь по номеру 103."
         )
 

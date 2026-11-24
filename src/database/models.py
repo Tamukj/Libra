@@ -33,8 +33,8 @@ class Clinic(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    city: Mapped[str] = mapped_column(String(100), default="Семей")
-    region: Mapped[str] = mapped_column(String(100), default="Абай облысы / Область Абай")
+    city: Mapped[str] = mapped_column(String(100), default="")
+    region: Mapped[str] = mapped_column(String(100), default="")
     created_at: Mapped[datetime.datetime] = mapped_column(UTCDateTime, default=_utcnow)
 
     patients: Mapped[List["Patient"]] = relationship("Patient", back_populates="clinic")

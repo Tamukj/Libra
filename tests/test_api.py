@@ -132,15 +132,16 @@ def test_patient_kinematics(client):
     assert len(joints["aSagH"]["baseline"]["mean"]) == 51
     assert len(joints["aSagH"]["norm_td"]["mean"]) == 51
 
-def test_regional_statistics(client):
-    response = client.get("/api/v1/statistics/regional")
+def test_cohort_analytics(client):
+    response = client.get("/api/v1/analytics/cohort")
     assert response.status_code == 200
     data = response.json()
-    
-    assert "country" in data
-    assert "region_abai" in data
-    assert data["country"]["children_with_cp"] > 20000
-    assert data["region_abai"]["children_disability"] > 2500
+
+    assert data["total_patients"] >= 29
+    assert data["cycles"]["total"] >= 2606
+    cdss = data["cdss_distribution"]
+    assert cdss["green"] + cdss["yellow"] + cdss["red"] == data["total_patients"]
+    assert data["source"]["doi"] == "10.48804/JUNNWW"
 
 def test_ml_metrics(client):
     response = client.get("/api/v1/ml/metrics")
@@ -166,11 +167,14 @@ def test_create_clinical_report(client):
     data_ru = response_ru.json()
     assert data_ru["patient"] == "s61520_22"
     assert "МКФ" in data_ru["narrative"] or "b770" in data_ru["narrative"]
-    
+    assert data_ru["icf_d450"] == "d450.3"
+    assert "d450.3" in data_ru["narrative"]
+
     response_kz = client.post("/api/v1/patients/s61520_22/report?lang=kz")
     assert response_kz.status_code == 200
     data_kz = response_kz.json()
     assert "жамбас" in data_kz["narrative"].lower()
+    assert "d450.3" in data_kz["narrative"]
 
 def test_upload_patient_csv(client):
     from src.database.session import SessionLocal
@@ -334,33 +338,17 @@ def test_ingest_template_endpoints(client):
     assert "pelvis_gvs;hip_gvs" in res_imu.text
 
 
-def test_export_patient_fhir_bundle(client):
-    res = client.get("/api/v1/patients/s61520_22/fhir")
-    assert res.status_code == 200
-    bundle = res.json()
-    assert bundle["resourceType"] == "Bundle"
-    assert bundle["type"] == "collection"
-    resources = [e["resource"] for e in bundle["entry"]]
-    types = [r["resourceType"] for r in resources]
-    assert "Patient" in types
-    assert "DiagnosticReport" in types
-    assert types.count("Observation") == 6
+def test_export_patient_pdf_report(client):
+    for lang in ("ru", "kz"):
+        res = client.get(f"/api/v1/patients/s61520_22/report.pdf?lang={lang}&audience=doctor")
+        assert res.status_code == 200
+        assert "application/pdf" in res.headers["content-type"]
+        assert res.content.startswith(b"%PDF-")
+        assert len(res.content) > 5000
 
-    patient_res = next(r for r in resources if r["resourceType"] == "Patient")
-    assert "name" not in patient_res
-    assert patient_res["identifier"][0]["value"] == "s61520_22"
-
-    obs_codes = [
-        r["code"]["coding"][0]["code"]
-        for r in resources
-        if r["resourceType"] == "Observation"
-    ]
-    for expected in ("GPS_a", "TJE", "PCR", "aMinSagH", "b770", "d450"):
-        assert expected in obs_codes
-
-    report_res = next(r for r in resources if r["resourceType"] == "DiagnosticReport")
-    assert "Rule 8.4" in report_res["conclusion"]
-    assert "presentedForm" in report_res and len(report_res["presentedForm"]) == 2
+    res_parent = client.get("/api/v1/patients/s61520_1/report.pdf?lang=ru&audience=parent")
+    assert res_parent.status_code == 200
+    assert res_parent.content.startswith(b"%PDF-")
 
 
 def test_imu_pelvis_tilt_and_vr_before_baseline(client):
@@ -376,7 +364,7 @@ def test_imu_pelvis_tilt_and_vr_before_baseline(client):
     )
     assert res_vr_first.status_code == 200
     assert client.get("/api/v1/patients/s_vr_first/analysis").status_code == 200
-    assert client.get("/api/v1/patients/s_vr_first/fhir").status_code == 200
+    assert client.get("/api/v1/patients/s_vr_first/report.pdf?lang=ru").status_code == 200
 
     # 2. Uploading Baseline afterwards with pelvis_tilt_mean should compute delta_pelvis_tilt & TJE
     base_csv = (

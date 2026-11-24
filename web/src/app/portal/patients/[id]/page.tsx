@@ -156,7 +156,7 @@ export default function PatientDossierPage() {
 
           <button onClick={() => setReportOpen(true)} className="btn btn-amber">
             <FileText size={15} />
-            <span>{t.btn_damumed_protocol || "Оформить протокол Damumed"}</span>
+            <span>{t.btn_clinical_protocol || "Оформить отчёт (PDF)"}</span>
           </button>
         </div>
 
@@ -281,8 +281,8 @@ export default function PatientDossierPage() {
                     <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px dashed var(--line)", display: "flex", justifyContent: "space-between", fontSize: "11.5px", color: "var(--muted)" }}>
                       <span>
                         {lang === "kz"
-                          ? `VR жүріс паттернінің айқындығы (GroupKFold AUC ${(analysis.ml.binary_roc_auc ?? 0.772).toFixed(3)}):`
-                          : `Сигнатура VR-походки по циклам (GroupKFold AUC ${(analysis.ml.binary_roc_auc ?? 0.772).toFixed(3)}):`}
+                          ? `VR жүріс паттернінің айқындығы${typeof analysis.ml.binary_roc_auc === "number" ? ` (GroupKFold AUC ${analysis.ml.binary_roc_auc.toFixed(3)})` : ""}:`
+                          : `Сигнатура VR-походки по циклам${typeof analysis.ml.binary_roc_auc === "number" ? ` (GroupKFold AUC ${analysis.ml.binary_roc_auc.toFixed(3)})` : ""}:`}
                       </span>
                       <strong className="tabular-nums" style={{ color: "var(--ink)" }}>
                         {(analysis.ml.vr_gait_signature_confidence * 100).toFixed(0)}%
@@ -294,28 +294,44 @@ export default function PatientDossierPage() {
             })()}
 
             {/* Model 2: PCA Gait Stability & Fatigue Monitor */}
-            <div className="card" style={{ padding: "16px", borderLeft: `4px solid ${analysis.ml?.pca_stability?.is_stable ? "var(--teal)" : "var(--red)"}` }}>
+            {(() => {
+              const pca = analysis.ml?.pca_stability;
+              const hasCurves = pca?.has_curves !== false && pca?.anomaly_rate !== null && pca?.anomaly_rate !== undefined;
+              const isStable = hasCurves ? Boolean(pca?.is_stable) : null;
+              const borderCol = !hasCurves ? "var(--line)" : isStable ? "var(--teal)" : "var(--red)";
+              return (
+            <div className="card" style={{ padding: "16px", borderLeft: `4px solid ${borderCol}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600 }}>
                   <Activity size={16} color="var(--teal)" />
                   <span>{lang === "kz" ? "PCA қадам тұрақтылығы және шаршау детекторы" : "PCA-детектор стабильности шагов и утомления"}</span>
                 </div>
-                <span className={`badge ${analysis.ml?.pca_stability?.is_stable ? "badge-green" : "badge-red"}`}>
-                  {analysis.ml?.pca_stability?.is_stable ? (lang === "kz" ? "Тұрақты локомоция" : "Стабильный шаг") : (lang === "kz" ? "Шаршау белгісі" : "Риск спотыкания")}
-                </span>
+                {!hasCurves ? (
+                  <span className="badge badge-neutral">
+                    {lang === "kz" ? "Қисықтар жоқ" : "Нет 51-т. кривых"}
+                  </span>
+                ) : (
+                  <span className={`badge ${isStable ? "badge-green" : "badge-red"}`}>
+                    {isStable ? (lang === "kz" ? "Тұрақты локомоция" : "Стабильный шаг") : (lang === "kz" ? "Шаршау белгісі" : "Риск спотыкания")}
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: "13px", color: "var(--ink)", fontWeight: "600", marginBottom: "4px" }}>
-                {lang === "kz"
-                  ? `Аномальді циклдер: ${analysis.ml?.pca_stability?.n_anomalies || 0} / ${analysis.ml?.pca_stability?.n_cycles || 0} (${((analysis.ml?.pca_stability?.anomaly_rate ?? 0.0) * 100).toFixed(1)}%)`
-                  : `Нестабильных шагов: ${analysis.ml?.pca_stability?.n_anomalies || 0} из ${analysis.ml?.pca_stability?.n_cycles || 0} (${((analysis.ml?.pca_stability?.anomaly_rate ?? 0.0) * 100).toFixed(1)}%)`}
+                {!hasCurves
+                  ? (lang === "kz"
+                      ? "51 нүктелі кинематикалық қисықтар жүктелмеген — PCA аномалиясы есептелмеді."
+                      : "В загруженном дискретном CSV нет 51-точечных кривых — PCA-детекция не проводилась.")
+                  : lang === "kz"
+                  ? `Аномальді циклдер: ${pca?.n_anomalies || 0} / ${pca?.n_cycles || 0} (${((pca?.anomaly_rate ?? 0.0) * 100).toFixed(1)}%)`
+                  : `Нестабильных шагов: ${pca?.n_anomalies || 0} из ${pca?.n_cycles || 0} (${((pca?.anomaly_rate ?? 0.0) * 100).toFixed(1)}%)`}
               </div>
               <div style={{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.5 }}>
                 {lang === "kz"
                   ? "Kinematic PCA бақылауы шаршау мен тепе-теңдікті жоғалту қаупін алдын ала анықтайды."
                   : "Мониторинг реконструкции кинематических кривых предотвращает спотыкания при утомлении."}
               </div>
-              {analysis.ml?.pca_stability?.cycles && analysis.ml.pca_stability.cycles.length > 0 && (() => {
-                const cycles = analysis.ml.pca_stability!.cycles!;
+              {pca?.cycles && pca.cycles.length > 0 && (() => {
+                const cycles = pca.cycles!;
                 const maxSpe = Math.max(...cycles.map((c) => Math.max(c.spe, c.threshold)), 1);
                 const anomalousIds = cycles.filter((c) => c.is_anomaly).map((c) => `#${c.cycle_index}`);
                 return (
@@ -350,6 +366,8 @@ export default function PatientDossierPage() {
                 );
               })()}
             </div>
+              );
+            })()}
           </div>
 
           {/* 2. Verdict Banner (Baseline vs Verbal vs VR Intervention) */}

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LibraLogo } from "@/components/LibraLogo";
-import { Users, BarChart2, LogOut, Upload, Stethoscope, HelpCircle, Scale, AlertTriangle, Eye } from "lucide-react";
+import { Users, BarChart2, LogOut, Upload, Stethoscope, HelpCircle, Scale, AlertTriangle, Eye, ShieldCheck } from "lucide-react";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { LegalModal } from "@/components/LegalModal";
 import { UploadCsvModal } from "@/components/UploadCsvModal";
@@ -62,7 +62,8 @@ function PortalHeader() {
 
   const navLinks = [
     { href: "/portal", label: lang === "kz" ? "Пациенттер" : "Пациенты", icon: Users },
-    { href: "/portal/analytics", label: lang === "kz" ? "Аймақ статистикасы" : "Статистика региона", icon: BarChart2 },
+    { href: "/portal/analytics", label: lang === "kz" ? "Когорта талдауы" : "Аналитика когорты", icon: BarChart2 },
+    { href: "/portal/ml-validation", label: lang === "kz" ? "ML валидация" : "ML-валидация", icon: ShieldCheck },
   ];
 
   return (
@@ -199,9 +200,9 @@ function PortalHeader() {
             }}>
               <Stethoscope size={14} color="var(--amber)" />
               <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                <span style={{ fontWeight: 700 }}>{lang === "kz" ? "Дәр. Аманжолов Қ." : "Д-р Аманжолов К."}</span>
+                <span style={{ fontWeight: 700 }}>{lang === "kz" ? "Оңалту дәрігері" : "Врач-реабилитолог"}</span>
                 <span style={{ fontSize: "10px", color: "var(--muted)" }} className="hide-on-mobile">
-                  {lang === "kz" ? "Семей қ. ОБА" : "ОДБ г. Семей"}
+                  {lang === "kz" ? "Клиникалық CDSS" : "Клинический CDSS"}
                 </span>
               </div>
             </div>
@@ -290,7 +291,7 @@ function PortalFooter() {
     <footer style={{ borderTop: "1px solid var(--line)", background: "var(--white)", padding: "16px 0", fontSize: "12px", color: "var(--muted)" }} className="no-print">
       <div className="container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
         <div>
-          <strong>Libra</strong> · {lang === "kz" ? "Семей қ. облыстық балалар ауруханасы" : "Областная детская больница г. Семей"}
+          <strong>Libra</strong> · {lang === "kz" ? "БЦП кезіндегі жүрісті талдау платформасы (CDSS)" : "Платформа анализа походки при ДЦП (CDSS)"}
         </div>
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
           <Link href="/privacy" style={{ textDecoration: "underline", color: "var(--muted)" }}>{lang === "kz" ? "Құпиялылық саясаты" : "Политика конфиденциальности"}</Link>

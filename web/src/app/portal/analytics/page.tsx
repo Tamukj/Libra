@@ -1,23 +1,23 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { getRegionalStats } from "@/lib/api";
-import { RegionalStats as RegionalStatsType } from "@/lib/types";
-import { RegionalStats } from "@/components/RegionalStats";
+import { getCohortAnalytics } from "@/lib/api";
+import { CohortAnalytics as CohortAnalyticsType } from "@/lib/types";
+import { CohortAnalytics } from "@/components/CohortAnalytics";
 import { useLanguage } from "@/lib/LanguageContext";
 
 export default function AnalyticsPage() {
-  const [stats, setStats] = useState<RegionalStatsType | null>(null);
+  const [stats, setStats] = useState<CohortAnalyticsType | null>(null);
   const [loading, setLoading] = useState(true);
   const { lang, setLang } = useLanguage();
 
   useEffect(() => {
     async function loadStats() {
       try {
-        const data = await getRegionalStats();
+        const data = await getCohortAnalytics();
         setStats(data);
       } catch (err) {
-        console.error("Failed to load regional statistics:", err);
+        console.error("Failed to load cohort analytics:", err);
       } finally {
         setLoading(false);
       }
@@ -27,22 +27,20 @@ export default function AnalyticsPage() {
 
   return (
     <div className="container" style={{ paddingBlock: "28px", display: "flex", flexDirection: "column", gap: "20px" }}>
-      
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h1 style={{ fontSize: "26px", letterSpacing: "-0.025em" }}>
             {lang === "kz"
-              ? "Балалар церебралды сал ауруының эпидемиологиясы: Қазақстан және Абай облысы"
-              : "Эпидемиология детского церебрального паралича: Казахстан и область Абай"}
+              ? "Когорта бойынша биомеханикалық аналитика"
+              : "Биомеханическая аналитика когорты"}
           </h1>
           <p style={{ color: "var(--muted)", fontSize: "14px", marginTop: "4px" }}>
             {lang === "kz"
-              ? "ҚР Ұлттық статистика бюросы (stat.gov.kz) және Денсаулық сақтау министрлігінің ашық деректері (data.egov.kz)"
-              : "Агрегированные показатели Бюро национальной статистики АСПиР РК (stat.gov.kz) и открытых данных Минздрава РК (data.egov.kz)"}
+              ? "Деректер базасындағы барлық пациенттер мен қадам циклдері бойынша нақты агрегаттар"
+              : "Живые агрегаты по всем пациентам и циклам шага в системе (Baseline / Verbal / VR)"}
           </p>
         </div>
 
-        {/* Local language switch for regional report */}
         <div style={{ display: "inline-flex", border: "1px solid var(--line)", borderRadius: "6px", overflow: "hidden", background: "var(--white)" }}>
           <button
             onClick={() => setLang("kz")}
@@ -78,16 +76,15 @@ export default function AnalyticsPage() {
 
       {loading ? (
         <div style={{ padding: "60px", textAlign: "center", color: "var(--muted)" }}>
-          {lang === "kz" ? "Статистикалық деректер жүктелуде..." : "Загрузка статистических данных..."}
+          {lang === "kz" ? "Когорта талдауы жүктелуде..." : "Загрузка аналитики когорты..."}
         </div>
       ) : stats ? (
-        <RegionalStats stats={stats} lang={lang} />
+        <CohortAnalytics stats={stats} lang={lang} />
       ) : (
         <div className="card" style={{ padding: "40px", textAlign: "center" }}>
-          {lang === "kz" ? "Статистикалық мәліметтерді жүктеу қатесі." : "Ошибка загрузки статистических сведений."}
+          {lang === "kz" ? "Аналитиканы жүктеу қатесі." : "Ошибка загрузки аналитики когорты."}
         </div>
       )}
-
     </div>
   );
 }

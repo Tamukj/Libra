@@ -638,7 +638,7 @@ class VRResponderPredictor:
         bacc_val = 0.0 if (raw_bacc is None or np.isnan(raw_bacc) or not np.isfinite(raw_bacc)) else float(raw_bacc)
         auc_valid = raw_auc is not None and not np.isnan(raw_auc) and np.isfinite(raw_auc)
         auc_val = float(raw_auc) if auc_valid else 0.5
-        model_reliable = bool(auc_valid and auc_val >= 0.60)
+        model_reliable = bool(auc_valid and auc_val >= 0.75)
 
         return {
             "responder_probability": prob,

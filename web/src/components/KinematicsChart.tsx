@@ -12,8 +12,25 @@ interface KinematicsProps {
 export function KinematicsChart({ data, lang }: KinematicsProps) {
   const [activeJoint, setActiveJoint] = useState<"aSagH" | "aSagP" | "aSagK" | "aSagA">("aSagH");
 
-  const jointData = data.joints[activeJoint];
-  if (!jointData) return null;
+  const jointData = data.joints?.[activeJoint];
+  if (!jointData) {
+    return (
+      <div className="card" style={{ padding: "18px", display: "flex", alignItems: "flex-start", gap: "10px", color: "var(--muted)", fontSize: "13px" }}>
+        <AlertTriangle size={17} color="var(--amber)" style={{ flexShrink: 0, marginTop: "2px" }} />
+        <div>
+          <strong style={{ color: "var(--ink)" }}>
+            {lang === "kz"
+              ? "51 нүктелі кинематикалық қисықтар жоқ"
+              : "51-точечные кривые кинематики не загружены"}
+          </strong>{" "}
+          —{" "}
+          {lang === "kz"
+            ? "Бұл пациент үшін тек дискретті параметрлер сақталған. Графикті көру үшін 51 нүктелі кинематика CSV файлын жүктеңіз."
+            : "Для этого пациента сохранены только дискретные показатели. Загрузите CSV с 51-точечными кривыми цикла шага, чтобы построить график без подмены данных."}
+        </div>
+      </div>
+    );
+  }
 
   const jointTabs = [
     { key: "aSagH" as const, label: lang === "kz" ? "Сан (Hip)" : "Бедро (Hip)" },

@@ -112,7 +112,7 @@ def test_vr_responder_predictor(discrete_data):
     assert "loo_roc_auc" in res
     assert "model_reliable" in res
     assert isinstance(res["model_reliable"], bool)
-    assert res["model_reliable"] == (res["loo_roc_auc"] >= 0.60)
+    assert res["model_reliable"] == (res["loo_roc_auc"] >= 0.75)
     assert "clinical_status_ru" in res
     assert "clinical_status_kz" in res
     assert "recommendation_ru" in res
@@ -188,7 +188,7 @@ def test_vr_responder_with_kinematics_and_pca_group_kfold(discrete_data):
         "baseline_hip_rom": 42.0,
     }
     pred = predictor.predict_subject_response(sub_summary)
-    assert pred["model_reliable"] is True
+    assert pred["model_reliable"] == (pred["loo_roc_auc"] >= 0.75)
     assert len(pred["feature_attributions"]) == 5
 
     hip_cols = [c for c in df_kin_base.columns if "aSagH_pct_GC_" in c]

@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { FileText, Printer, X, Shield, Download } from "lucide-react";
-import { createReport, downloadFhirBundle } from "@/lib/api";
+import { createReport, downloadReportPdf } from "@/lib/api";
 
 interface Props {
   patientCode: string;
@@ -15,8 +15,8 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
   const [audience, setAudience] = useState<"doctor" | "parent">("doctor");
   const [loading, setLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
-  const [fhirLoading, setFhirLoading] = useState(false);
-  const [fhirError, setFhirError] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [report, setReport] = useState<{ narrative: string; created_at: string; pcr: number; tje: number; icf_b770: string } | null>(null);
 
   React.useEffect(() => {
@@ -97,7 +97,7 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
                   cursor: "pointer"
                 }}
               >
-                {modalLang === "kz" ? "Дәрігерге (Damumed)" : "Врачу (Damumed)"}
+                {modalLang === "kz" ? "Дәрігерге (Хаттама)" : "Врачу (Протокол)"}
               </button>
               <button
                 onClick={() => setAudience("parent")}
@@ -169,7 +169,7 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               
               <div style={{ background: "var(--linen)", padding: "12px", borderRadius: "6px", fontSize: "12px", color: "var(--muted)", display: "flex", justifyContent: "space-between" }}>
-                <span>{modalLang === "kz" ? "Орталық: Семей қ. Балаларды оңалту орталығы" : "Центр: Реабилитационный центр детей г. Семей"}</span>
+                <span>{modalLang === "kz" ? "Libra CDSS · Жүріс биомеханикасының есебі" : "Libra CDSS · Отчёт биомеханики походки"}</span>
                 <span>{modalLang === "kz" ? "Уақыты: " : "Время: "}{(() => {
                   const d = new Date(report.created_at);
                   return isNaN(d.getTime()) ? report.created_at : d.toLocaleString();
@@ -225,9 +225,9 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
         </div>
 
         {/* Actions */}
-        {fhirError && (
+        {pdfError && (
           <div style={{ marginTop: "10px", fontSize: "12px", color: "var(--red)", fontWeight: 600 }} className="no-print">
-            {fhirError}
+            {pdfError}
           </div>
         )}
         <div style={{ borderTop: "1px solid var(--line)", paddingTop: "14px", marginTop: "16px", display: "flex", justifyContent: "flex-end", gap: "10px", flexWrap: "wrap" }} className="no-print">
@@ -236,38 +236,38 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
           </button>
           <button
             onClick={async () => {
-              setFhirLoading(true);
-              setFhirError(null);
+              setPdfLoading(true);
+              setPdfError(null);
               try {
-                await downloadFhirBundle(patientCode);
+                await downloadReportPdf(patientCode, modalLang, audience);
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
-                setFhirError(
+                setPdfError(
                   modalLang === "kz"
-                    ? `HL7 FHIR жүктеу қатесі: ${msg}`
-                    : `Ошибка экспорта HL7 FHIR: ${msg}`
+                    ? `PDF жүктеу қатесі: ${msg}`
+                    : `Ошибка экспорта PDF: ${msg}`
                 );
               } finally {
-                setFhirLoading(false);
+                setPdfLoading(false);
               }
             }}
-            disabled={fhirLoading}
+            disabled={pdfLoading}
             className="btn btn-teal"
           >
             <Download size={16} />
             <span>
-              {fhirLoading
+              {pdfLoading
                 ? modalLang === "kz"
-                  ? "Жүктелуде..."
-                  : "Экспорт..."
+                  ? "PDF жасалуда..."
+                  : "Генерация PDF..."
                 : modalLang === "kz"
-                ? "HL7 FHIR (Damumed JSON) жүктеу"
-                : "Экспорт HL7 FHIR (Damumed JSON)"}
+                ? "PDF есепті жүктеу"
+                : "Скачать PDF-отчёт"}
             </span>
           </button>
           <button onClick={() => window.print()} className="btn btn-primary">
             <Printer size={16} />
-            {modalLang === "kz" ? "Басып шығару (PDF)" : "Печать протокола (PDF)"}
+            {modalLang === "kz" ? "Басып шығару" : "Печать"}
           </button>
         </div>
 

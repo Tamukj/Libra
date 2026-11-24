@@ -76,9 +76,9 @@ def init_db(seed_cohort: bool = True):
                         clinic = db.query(Clinic).first()
                         if not clinic:
                             clinic = Clinic(
-                                name="Облыстық балаларды оңалту орталығы / Центр реабилитации детей области Абай",
-                                city="Семей",
-                                region="Абай облысы"
+                                name="Клиническая когорта ДЦП (KU Leuven) / БЦП клиникалық когортасы",
+                                city="",
+                                region=""
                             )
                             db.add(clinic)
                             db.flush()

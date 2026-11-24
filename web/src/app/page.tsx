@@ -21,7 +21,7 @@ export default function LandingPage() {
           <nav style={{ display: "flex", gap: "24px", fontSize: "13px", fontWeight: "600" }} className="hide-on-mobile">
             <Link href="#problem" style={{ color: "var(--muted)" }}>{lang === "kz" ? "Клиникалық міндет" : "Клиническая задача"}</Link>
             <Link href="#technology" style={{ color: "var(--muted)" }}>{lang === "kz" ? "Биомеханика" : "Биомеханика"}</Link>
-            <Link href="#regional" style={{ color: "var(--muted)" }}>{lang === "kz" ? "Аймақ статистикасы" : "Статистика региона"}</Link>
+            <Link href="/portal/analytics" style={{ color: "var(--muted)" }}>{lang === "kz" ? "Когорта талдауы" : "Аналитика когорты"}</Link>
             <Link href="/portal" style={{ color: "var(--muted)" }}>{lang === "kz" ? "Демо-портал" : "Демо-портал"}</Link>
           </nav>
 
@@ -82,8 +82,8 @@ export default function LandingPage() {
 
               <p style={{ fontSize: "15px", color: "var(--muted)", lineHeight: "1.6", maxWidth: "52ch", marginBottom: "28px" }}>
                 {lang === "kz"
-                  ? "CSV-деректері бойынша жүрістің клиникалық талдауы 30 секундта. Қолмен толтырылатын 40 минуттық құжаттаманы алмастырады, VR кезіндегі жамбастың жасырын компенсациясын анықтайды және Damumed-ке арналған ДДҰ ХҚЖ ресми хаттамасын дайындайды."
-                  : "Клинический анализ походки по CSV-данным за 30 секунд. Заменяет 40 минут ручного заполнения бланков, выявляет скрытые компенсации таза в VR и формирует готовый протокол по МКФ ВОЗ для вставки в Damumed."}
+                  ? "CSV-деректері бойынша Baseline, Verbal және VR режимдеріндегі жүрісті клиникалық салыстыру. Жамбастың жасырын компенсациясын (PCR / TJE) анықтайды, МКФ b770/d450 кодтарын есептейді және дайын PDF-есеп қалыптастырады."
+                  : "Клиническое сравнение походки по CSV-данным в условиях Baseline, Verbal и VR. Выявляет скрытую компенсацию таза (PCR / TJE), рассчитывает коды МКФ ВОЗ (b770 / d450) и формирует готовый PDF-отчёт для врача и родителей."}
               </p>
 
               <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
@@ -188,9 +188,9 @@ export default function LandingPage() {
                 </div>
                 <div>
                   <span style={{ color: "var(--muted)", display: "block", fontSize: "11px" }}>
-                    {lang === "kz" ? "Медициналық картаға экспорт" : "Экспорт в медкарту"}
+                    {lang === "kz" ? "Медициналық есеп" : "Клинический отчёт"}
                   </span>
-                  <strong>{lang === "kz" ? "Damumed МИС электронды хаттамасы" : "Электронный протокол МИС Damumed"}</strong>
+                  <strong>{lang === "kz" ? "МКФ ВОЗ бар PDF-құжат" : "Готовый PDF-документ с МКФ ВОЗ"}</strong>
                 </div>
               </div>
 
@@ -200,18 +200,18 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 3. Section: Clinical Challenge (Abai Region & Kazakhstan) */}
+      {/* 3. Section: Dataset & Clinical Scope (Real Verified Facts) */}
       <section id="problem" style={{ padding: "56px 0", borderBottom: "1px solid var(--line)", background: "var(--white)" }}>
-        <div className="container" id="regional">
+        <div className="container">
           
           <div style={{ maxWidth: "640px", marginBottom: "36px" }}>
             <h2 style={{ fontSize: "28px", marginBottom: "10px" }}>
-              {lang === "kz" ? "Балалардың оңалту қажеттілігі Қазақстанда" : "Потребность детской реабилитации в Казахстане"}
+              {lang === "kz" ? "Үш жүріс жағдайын салыстырмалы талдау" : "Сравнительный анализ трёх условий ходьбы"}
             </h2>
             <p style={{ color: "var(--muted)", fontSize: "14px", lineHeight: "1.6" }}>
               {lang === "kz"
-                ? "CSV-деректер бойынша жүрісті нақты биомеханикалық талдау ортопедиялық араласуларды жоспарлау және емдік дене шынықтыруды таңдау үшін қажет. Өңірлерде диагностика жиі көзбен жүргізіледі, бұл жамбастың патологиялық еңкеюін дер кезінде анықтауды қиындатады."
-                : "Точный биомеханический анализ походки по CSV-данным необходим для планирования ортопедических вмешательств и подбора ЛФК. В регионах диагностика часто проводится визуально, что затрудняет обнаружение патологических наклонов таза."}
+                ? "KU Leuven ашық педиатриялық когортасы (29 бала, 2 606 қадам циклі) негізінде Libra жүйесі қарапайым жүрісті (Baseline), вербалды нұсқауды (Verbal) және VR кері байланысты (VR) объективті түрде салыстырады."
+                : "На основе открытой педиатрической когорты KU Leuven (29 детей, 2 606 циклов шага) Libra объективно сопоставляет обычную ходьбу (Baseline), вербальные команды (Verbal) и VR-обратную связь (VR)."}
             </p>
           </div>
 
@@ -219,43 +219,43 @@ export default function LandingPage() {
             
             <div className="card-raised">
               <div style={{ fontFamily: "var(--serif)", fontSize: "40px", fontWeight: "500", color: "var(--ink)", lineHeight: 1 }}>
-                122 400
+                2 606
               </div>
               <div style={{ fontWeight: "700", marginTop: "10px", fontSize: "14px" }}>
-                {lang === "kz" ? "ҚР-дағы мүгедектігі бар балалар" : "Детей с инвалидностью в РК"}
+                {lang === "kz" ? "Талданған қадам циклдері" : "Проанализированных циклов шага"}
               </div>
               <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
                 {lang === "kz"
-                  ? "Ұлттық статистика бюросының мәліметтері бойынша 22 150 балада БЦП диагнозы бар және қозғалыс бұзылыстарын мониторингтеуді қажет етеді."
-                  : "По данным Бюро национальной статистики, 22 150 детей имеют диагноз ДЦП и нуждаются в мониторинге двигательных нарушений."}
+                  ? "Baseline (866), Verbal (870) және VR (870) режимдеріндегі 51 нүктелі кинематика мен дискретті параметрлер."
+                  : "51-точечные кинематические кривые и дискретные параметры в условиях Baseline (866), Verbal (870) и VR (870)."}
               </p>
             </div>
 
             <div className="card-raised">
               <div style={{ fontFamily: "var(--serif)", fontSize: "40px", fontWeight: "500", color: "var(--amber)", lineHeight: 1 }}>
-                2 840
+                GroupKFold
               </div>
               <div style={{ fontWeight: "700", marginTop: "10px", fontSize: "14px" }}>
-                {lang === "kz" ? "Абай облысында есепте тұрған балалар" : "Детей на учете в области Абай"}
+                {lang === "kz" ? "Деректер ағып кетуінсіз ML" : "ML без утечки по пациентам"}
               </div>
               <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
                 {lang === "kz"
-                  ? "Семей қаласы мен іргелес аудандарда жүрісті объективті аппараттық бақылауға жоғары қажеттілік сақталуда."
-                  : "В Семее и прилегающих районах сохраняется высокая потребность в объективном аппаратном контроле походки."}
+                  ? "Бір пациенттің қадамдары train және test іріктемелерінде ешқашан араласпайды (k=5, AUC 0.772)."
+                  : "Циклы одного ребёнка строго разделены между обучением и проверкой (5 фолдов по subject, ROC-AUC 0.772)."}
               </p>
             </div>
 
             <div className="card-raised">
               <div style={{ fontFamily: "var(--serif)", fontSize: "40px", fontWeight: "500", color: "var(--teal)", lineHeight: 1 }}>
-                {lang === "kz" ? "30 секунд" : "30 секунд"}
+                PDF + МКФ
               </div>
               <div style={{ fontWeight: "700", marginTop: "10px", fontSize: "14px" }}>
-                {lang === "kz" ? "Қорытынды жасау уақыты" : "Время формирования заключения"}
+                {lang === "kz" ? "Екі тілдегі дайын есеп" : "Двуязычный PDF-отчёт"}
               </div>
               <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
                 {lang === "kz"
-                  ? "Libra жүріс параметрлерін, Бейкер индекстерін есептеп, дәрігерге арналған дайын қарап-тексеру хаттамасын құрастырады."
-                  : "Libra рассчитывает параметры походки, индексы Бейкера и формирует готовый протокол осмотра для врача."}
+                  ? "Қазақ және орыс тілдеріндегі b770 / d450 кодтары, кестелері және қисықтары бар жүктелетін A4 PDF-құжат."
+                  : "Скачиваемый A4 PDF-документ с таблицей дельт, графиком бедра и кодами МКФ b770 / d450 на русском и казахском."}
               </p>
             </div>
 
@@ -336,7 +336,7 @@ export default function LandingPage() {
               <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "6px", padding: "12px 14px", fontSize: "12px", display: "flex", flexDirection: "column", gap: "6px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--muted)" }}>{lang === "kz" ? "Жамбас еңкеюі:" : "Наклон таза:"}</span>
-                  <strong style={{ color: "var(--red)" }}>{lang === "kz" ? "Патологиялық (+5.5° ΔSagP)" : "Патологический (+5.5° ΔSagP)"}</strong>
+                  <strong style={{ color: "var(--red)" }}>{lang === "kz" ? "Патологиялық (+5.36° ΔSagP)" : "Патологический (+5.36° ΔSagP)"}</strong>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--muted)" }}>{lang === "kz" ? "Биомеханика:" : "Биомеханика:"}</span>

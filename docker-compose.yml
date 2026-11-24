@@ -61,7 +61,7 @@ services:
       context: .
       dockerfile: Dockerfile.web
     environment:
-      NEXT_PUBLIC_API_URL: "http://api:8000"
+      NEXT_PUBLIC_API_URL: ""
     networks:
       - edge
     depends_on:

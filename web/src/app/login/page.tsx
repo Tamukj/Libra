@@ -17,7 +17,6 @@ function LoginContent() {
   const [lang, setLang] = useState<"ru" | "kz">("ru");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [clinic, setClinic] = useState("semey_children");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -225,32 +224,6 @@ function LoginContent() {
 
           {/* Standard Login Form */}
           <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            
-            <div>
-              <label htmlFor="clinic" style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "var(--ink)" }}>
-                {lang === "kz" ? "Медициналық ұйым" : "Медицинская организация"}
-              </label>
-              <select
-                id="clinic"
-                value={clinic}
-                onChange={(e) => setClinic(e.target.value)}
-                style={{ width: "100%", height: "38px" }}
-              >
-                <option value="semey_children">
-                  {lang === "kz" ? "Семей қ. облыстық балалар ауруханасы" : "Областная детская больница г. Семей"}
-                </option>
-                <option value="astana_pediatric">
-                  {lang === "kz" ? "Ұлттық балаларды оңалту орталығы (Астана)" : "Национальный центр детской реабилитации (Астана)"}
-                </option>
-                <option value="almaty_pediatric">
-                  {lang === "kz" ? "Педиатрия және балалар хирургиясы ғылыми орталығы (Алматы)" : "Научный центр педиатрии и детской хирургии (Алматы)"}
-                </option>
-                <option value="ayala_semey">
-                  {lang === "kz" ? "«Аяла» оңалту орталығы (Семей қ.)" : "Реабилитационный центр «Аяла» (г. Семей)"}
-                </option>
-              </select>
-            </div>
-
             <div>
               <label htmlFor="email" style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "var(--ink)" }}>
                 {lang === "kz" ? "Дәрігердің жұмыс Email-і" : "Рабочий Email врача"}

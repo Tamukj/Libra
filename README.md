@@ -44,9 +44,9 @@ stateDiagram-v2
     DecisionSupport --> OutputDelivery : Clinical evaluation
 
     state OutputDelivery {
-        [*] --> InteractiveDashboard : 51-point curves, radar, regional stats
+        [*] --> InteractiveDashboard : 51-point curves, radar, cohort stats
         [*] --> MedicalNarrative : Doctor protocol and parent summary in KZ and RU
-        InteractiveDashboard --> ExportProtocol : Damumed integration
+        InteractiveDashboard --> ExportProtocol : Downloadable A4 PDF report
         MedicalNarrative --> ExportProtocol
     }
 
@@ -127,8 +127,8 @@ Follow these 9 steps to test the application:
 4. **Inspect true therapeutic response (Patient `s61520_13`):** Select patient `s61520_13`. Observe the Green indicator. The patient achieved true joint extension with a Pathological Compensation Ratio under 0.40 without dangerous pelvic tilt.
 5. **Compare modalities:** Scroll to the "Selection of rehabilitation tactics" card. The card compares Baseline, Verbal, and VR conditions, stating whether verbal feedback or VR feedback provides the safer outcome for the active patient.
 6. **Switch language:** Click the language button in the top navigation bar to toggle between Kazakh (`ҚАЗ`) and Russian (`РУС`). Notice that medical terminology and clinical narratives update across the entire interface.
-7. **View regional open data:** Click "Regional data" in the navigation bar. The modal displays epidemiology statistics for Kazakhstan and the Abai Region sourced from `stat.gov.kz` and `data.egov.kz`, showing 2,840 children with disabilities in the region and 0 dedicated 3D gait laboratories in Semey.
-8. **Generate clinical report:** Click "Generate report" in the upper right corner. Review the standardized clinical protocol containing WHO ICF codes `b770` and `d450`, metric deltas, and doctor recommendations ready for export to electronic medical record systems like Damumed.
+7. **View live cohort analytics:** Click "Cohort Analytics" (`Аналитика когорты` / `Когорта талдауы`) in the navigation bar to inspect real-time distributions of CDSS statuses, optimal modalities, cycle counts, and anthropometric ranges computed directly from the database.
+8. **Generate clinical PDF report:** Click "Generate Report (PDF)" (`Оформить отчёт (PDF)`) in the upper right corner. Switch between Doctor and Parent views or KZ/RU languages, then click **Download PDF** to download the A4 PDF containing the comparison table, hip kinematic curve, WHO ICF codes (`b770`, `d450`), and clinical narrative.
 9. **Test custom CSV upload:** Click "Upload CSV" in the top bar. Select or drag any table adhering to the discrete parameter format. The engine validates column headers, parses decimal commas, and displays the analyzed patient card.
 
 ---
@@ -199,9 +199,9 @@ The machine learning pipeline follows four design principles:
 | `GET` | `/api/v1/patients/{code}/analysis` | Baseline, Verbal, VR metrics, deltas, TJE, PCR, ICF, and ML output |
 | `GET` | `/api/v1/patients/{code}/kinematics` | 51-point kinematic curves for pelvis, hip, knee, and ankle |
 | `POST` | `/api/v1/patients/{code}/report` | Structured medical narrative with ICF codes in KZ and RU |
-| `GET` | `/api/v1/patients/{code}/fhir` | HL7 FHIR R4 Bundle (`Patient`, `Observation`, `DiagnosticReport`) for Damumed |
+| `GET` | `/api/v1/patients/{code}/report.pdf` | Downloadable A4 PDF report (metric table, hip curve, ICF codes, narrative) |
 | `GET` | `/api/v1/ml/metrics` | GroupKFold cross-validation results (binary + 3-class) and feature importances |
-| `GET` | `/api/v1/open-data/regional` | Healthcare statistics for Kazakhstan and the Abai Region |
+| `GET` | `/api/v1/analytics/cohort` | Live cohort aggregations computed from registered patients and gait cycles |
 | `GET` | `/api/v1/ingest/template` | Downloadable CSV templates (`format=vicon` or `format=imu`) |
 | `POST`| `/api/v1/patients/upload` | Multi-condition (`Baseline`/`Verbal`/`VR`) Vicon/IMU CSV ingestion |
 
@@ -215,7 +215,7 @@ The machine learning pipeline follows four design principles:
    - **True Joint Extension (TJE):** Directional pelvic tilt correction ($\Delta \text{PelvisTilt}$) is derived from sagittal kinematics (`aSagP`) to isolate anatomical hip extension from compensatory lumbar/pelvic sway.
    - **WHO ICF d450 Mapping:** The walking stability classification maps PCA kinematic anomaly rate (<5%, 5-12%, 12-25%, 25-45%, >=45%) as an algorithmic proxy for locomotor difficulty.
 3. **Advisory Status (CDSS):** Per Article 8.4 of the Solveathon Regulations, Libra is an assistive Clinical Decision Support System. It does not replace medical specialists, does not autonomously assign diagnoses, and does not prescribe pharmacotherapy. Final therapeutic decisions remain the sole responsibility of the attending pediatric physiatrist/rehabilitation physician.
-4. **Normative Curves & Regional Open-Data Snapshot:** The healthy TD reference corridor (`src/core/normative_data.py`) uses a parametric Winter/Schwartz-calibrated curve (mean ± 1 SD) rather than digitized raw lab trials; preloaded cohort GVS/GPS values come directly from the KU Leuven CSVs. Regional indicators in `src/api/open_data.py` are a static hackathon reference snapshot (`is_reference_snapshot: true`) rather than a live `stat.gov.kz` / `data.egov.kz` API integration, and economic impact percentages are analytical pilot estimates.
+4. **Normative Curves:** The healthy TD reference corridor (`src/core/normative_data.py`) uses a parametric Winter/Schwartz-calibrated curve (mean ± 1 SD) rather than digitized raw lab trials; preloaded cohort GVS/GPS values come directly from the KU Leuven CSVs.
 5. **Default Authentication Mode:** In local development and hackathon evaluation environments, permissive demo mode is enabled by default to allow jury testing without API key configuration. Production deployments require setting `LIBRA_ALLOW_DEMO=false` and enforcing `LIBRA_API_KEY` header verification.
 
 ---
@@ -233,8 +233,6 @@ The machine learning pipeline follows four design principles:
   - License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (`CC-BY-NC-SA-4.0`).
   - Permanent DOI: `10.48804/JUNNWW`.
 - **Normative Gait Kinematics:** Parametric pediatric reference corridor calibrated to Schwartz et al., 2008 ($\pm 1$ SD).
-- **Kazakhstan National Open Data (reference snapshot):**
-  - Bureau of National Statistics of the ASPR RK (`stat.gov.kz`) & Open Data Portal of the Republic of Kazakhstan (`data.egov.kz`).
 
 ### Third-party libraries and licenses (Rule 8.5)
 
@@ -261,5 +259,6 @@ The machine learning pipeline follows four design principles:
 | **Machine learning** | GroupKFold cross-validation grouped by subject, feature importances, and PCA anomaly detection. |
 | **Clinical presentation** | Doctor card, CDSS safety indicator, radar chart, and exportable report with ICF b770 and d450 codes. |
 | **Multilingual support (Rule 9.3)** | Complete localization in Kazakh and Russian. |
-| **Open data (Rule 9.3)** | Integrated datasets from stat.gov.kz and data.egov.kz covering Kazakhstan and Semey. |
+| **Open data (Rule 9.3)** | Built on the open KU Leuven Pediatric CP Gait Dataset (DOI: `10.48804/JUNNWW`, `CC-BY-NC-SA-4.0`) with live cohort aggregations. |
+| **Clinical export** | Downloadable A4 PDF reports with metric tables, hip kinematics curves, and WHO ICF `b770` / `d450` codes. |
 | **Safety and ethics (Rule 8.4)** | Operates strictly as a decision support tool without autonomous prescribing. Includes emergency disclaimers (103) and data protection compliance (Law of RK No. 94-V). |

@@ -2,13 +2,16 @@ import {
   Patient,
   PatientAnalysis,
   KinematicsResponse,
-  RegionalStats,
+  CohortAnalytics,
   MLMetrics,
   GaitDiffResponse,
   CsvUploadResponse
 } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL !== undefined
+    ? process.env.NEXT_PUBLIC_API_URL
+    : "http://127.0.0.1:8000";
 
 export function getApiBase(): string {
   return API_BASE;
@@ -44,8 +47,8 @@ export async function getPatientKinematics(code: string): Promise<KinematicsResp
   return fetchJson<KinematicsResponse>(`/api/v1/patients/${encodeURIComponent(code)}/kinematics`);
 }
 
-export async function getRegionalStats(): Promise<RegionalStats> {
-  return fetchJson<RegionalStats>("/api/v1/statistics/regional");
+export async function getCohortAnalytics(): Promise<CohortAnalytics> {
+  return fetchJson<CohortAnalytics>("/api/v1/analytics/cohort");
 }
 
 export async function getMLMetrics(): Promise<MLMetrics> {
@@ -99,23 +102,30 @@ export function getCsvTemplateUrl(format: "vicon" | "imu" | "kinematics"): strin
   return `${API_BASE}/api/v1/ingest/template?format=${format}`;
 }
 
-export function getFhirBundleUrl(code: string): string {
-  return `${API_BASE}/api/v1/patients/${encodeURIComponent(code)}/fhir`;
+export function getReportPdfUrl(
+  code: string,
+  lang: "ru" | "kz" | "en",
+  audience: "doctor" | "parent" = "doctor"
+): string {
+  return `${API_BASE}/api/v1/patients/${encodeURIComponent(code)}/report.pdf?lang=${lang}&audience=${audience}`;
 }
 
-export async function downloadFhirBundle(code: string): Promise<void> {
-  const url = getFhirBundleUrl(code);
+export async function downloadReportPdf(
+  code: string,
+  lang: "ru" | "kz" | "en",
+  audience: "doctor" | "parent" = "doctor"
+): Promise<void> {
+  const url = getReportPdfUrl(code, lang, audience);
   const res = await fetch(url);
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
-    throw new Error(`FHIR export failed [${res.status}]: ${errText}`);
+    throw new Error(`PDF export failed [${res.status}]: ${errText}`);
   }
-  const bundle = await res.json();
-  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/fhir+json;charset=utf-8" });
+  const blob = await res.blob();
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = objectUrl;
-  a.download = `libra-fhir-${code}.json`;
+  a.download = `libra-report-${code}-${lang}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();
