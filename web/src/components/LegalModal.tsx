@@ -38,7 +38,7 @@ export function LegalModal({ lang, onClose }: Props) {
         display: "flex",
         flexDirection: "column",
         background: "var(--white)",
-        boxShadow: "0 20px 40px rgba(0,0,0,0.2)"
+        boxShadow: "0 8px 24px rgba(28, 25, 23, 0.12)"
       }}>
         
         {/* Header */}

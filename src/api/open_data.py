@@ -5,6 +5,7 @@ Sources:
 - Clinical protocols of the Ministry of Healthcare of RK
 """
 
+import copy
 from typing import Dict, Any, List
 
 KAZAKHSTAN_OPEN_DATA: Dict[str, Any] = {
@@ -55,4 +56,4 @@ KAZAKHSTAN_OPEN_DATA: Dict[str, Any] = {
 
 def get_regional_statistics() -> Dict[str, Any]:
     """Returns official public health dataset for Kazakhstan and Abai Region."""
-    return KAZAKHSTAN_OPEN_DATA
+    return copy.deepcopy(KAZAKHSTAN_OPEN_DATA)

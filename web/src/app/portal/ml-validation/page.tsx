@@ -40,20 +40,35 @@ export default function MlValidationPage() {
           </p>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "4px", background: "var(--card-bg)", padding: "4px", borderRadius: "8px", border: "1px solid var(--border)" }}>
-          <button
-            onClick={() => setLang("ru")}
-            className={`btn-subtle ${lang === "ru" ? "active" : ""}`}
-            style={{ padding: "4px 8px", fontSize: "12px", background: lang === "ru" ? "var(--primary)" : "transparent", color: lang === "ru" ? "#fff" : "var(--foreground)", borderRadius: "4px", border: "none", cursor: "pointer" }}
-          >
-            РУС
-          </button>
+        <div style={{ display: "inline-flex", border: "1px solid var(--line)", borderRadius: "6px", overflow: "hidden", background: "var(--white)" }}>
           <button
             onClick={() => setLang("kz")}
-            className={`btn-subtle ${lang === "kz" ? "active" : ""}`}
-            style={{ padding: "4px 8px", fontSize: "12px", background: lang === "kz" ? "var(--primary)" : "transparent", color: lang === "kz" ? "#fff" : "var(--foreground)", borderRadius: "4px", border: "none", cursor: "pointer" }}
+            style={{
+              padding: "5px 12px",
+              fontSize: "12px",
+              fontWeight: 600,
+              border: "none",
+              background: lang === "kz" ? "var(--linen)" : "transparent",
+              color: "var(--ink)",
+              cursor: "pointer"
+            }}
           >
             ҚАЗ
+          </button>
+          <button
+            onClick={() => setLang("ru")}
+            style={{
+              padding: "5px 12px",
+              fontSize: "12px",
+              fontWeight: 600,
+              border: "none",
+              borderLeft: "1px solid var(--line)",
+              background: lang === "ru" ? "var(--linen)" : "transparent",
+              color: "var(--ink)",
+              cursor: "pointer"
+            }}
+          >
+            РУС
           </button>
         </div>
       </div>

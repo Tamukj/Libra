@@ -59,7 +59,8 @@ export function RadarGvs({ summary, lang }: RadarProps) {
   const maxGvs = 20.0;
 
   const getCoord = (angle: number, value: number) => {
-    const r = (Math.min(value, maxGvs) / maxGvs) * radius;
+    const val = typeof value === "number" && !isNaN(value) ? Math.max(0, value) : 0;
+    const r = (Math.min(val, maxGvs) / maxGvs) * radius;
     return {
       x: centerX + r * Math.cos(angle),
       y: centerY + r * Math.sin(angle)
@@ -164,7 +165,7 @@ export function RadarGvs({ summary, lang }: RadarProps) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
           <span style={{ width: "8px", height: "8px", background: "#d97706", borderRadius: "2px", display: "inline-block" }} />
-          <span>{lang === "kz" ? "Голос (Verbal)" : "Голос (Verbal)"}</span>
+          <span>{lang === "kz" ? "Дауыс (Verbal)" : "Голос (Verbal)"}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
           <span style={{ width: "8px", height: "8px", background: "var(--teal)", borderRadius: "2px", display: "inline-block" }} />

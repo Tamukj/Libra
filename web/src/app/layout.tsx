@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import { LanguageProvider } from "@/lib/LanguageContext";
 
 const sans = localFont({
   src: "../../public/fonts/manrope-latin.woff2",
@@ -31,7 +32,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" className={`${sans.variable} ${serif.variable}`}>
-      <body>{children}</body>
+      <body>
+        <LanguageProvider>{children}</LanguageProvider>
+      </body>
     </html>
   );
 }

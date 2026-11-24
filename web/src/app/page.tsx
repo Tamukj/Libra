@@ -101,7 +101,7 @@ export default function LandingPage() {
                   <div style={{ fontSize: "11px", color: "var(--muted)" }}>
                     {lang === "kz" ? "Пациенттер таңдамасы" : "Выборка пациентов"}
                   </div>
-                  <div style={{ fontSize: "18px", fontWeight: "750", marginTop: "2px" }}>
+                  <div className="tabular-nums" style={{ fontSize: "18px", fontWeight: "600", marginTop: "2px" }}>
                     {lang === "kz" ? "29 бала" : "29 детей"}
                   </div>
                 </div>
@@ -109,7 +109,7 @@ export default function LandingPage() {
                   <div style={{ fontSize: "11px", color: "var(--muted)" }}>
                     {lang === "kz" ? "Бағалау стандарты" : "Стандарт оценки"}
                   </div>
-                  <div style={{ fontSize: "18px", fontWeight: "750", marginTop: "2px" }}>
+                  <div style={{ fontSize: "18px", fontWeight: "600", marginTop: "2px" }}>
                     {lang === "kz" ? "Бейкер (GVS)" : "Бейкер (GVS)"}
                   </div>
                 </div>
@@ -117,7 +117,7 @@ export default function LandingPage() {
                   <div style={{ fontSize: "11px", color: "var(--muted)" }}>
                     {lang === "kz" ? "ДДҰ классификациясы" : "Классификация ВОЗ"}
                   </div>
-                  <div style={{ fontSize: "18px", fontWeight: "750", marginTop: "2px" }}>
+                  <div style={{ fontSize: "18px", fontWeight: "600", marginTop: "2px" }}>
                     {lang === "kz" ? "МКФ b770" : "МКФ b770"}
                   </div>
                 </div>
@@ -128,9 +128,9 @@ export default function LandingPage() {
             <div style={{
               background: "var(--white)",
               border: "1px solid var(--line)",
-              borderRadius: "10px",
+              borderRadius: "8px",
               overflow: "hidden",
-              boxShadow: "0 8px 24px rgba(28, 25, 23, 0.06)"
+              boxShadow: "0 1px 3px rgba(28, 25, 23, 0.04)"
             }}>
               <div style={{
                 background: "var(--linen)",
@@ -289,7 +289,7 @@ export default function LandingPage() {
                     <CheckCircle2 size={16} />
                     <span>{lang === "kz" ? "Физиологиялық қадам (TJE ≤ -1°)" : "Физиологический шаг (TJE ≤ -1°)"}</span>
                   </div>
-                  <div style={{ fontSize: "18px", fontWeight: 750, marginTop: "4px" }}>
+                  <div style={{ fontSize: "18px", fontWeight: 600, marginTop: "4px" }}>
                     {lang === "kz" ? "Шынайы буын жазылуы" : "Истинное разгибание сустава"}
                   </div>
                 </div>
@@ -326,7 +326,7 @@ export default function LandingPage() {
                     <AlertOctagon size={16} />
                     <span>{lang === "kz" ? "Патологиялық компенсация (PCR > 0.80)" : "Патологическая компенсация (PCR > 0.80)"}</span>
                   </div>
-                  <div style={{ fontSize: "18px", fontWeight: 750, marginTop: "4px" }}>
+                  <div style={{ fontSize: "18px", fontWeight: 600, marginTop: "4px" }}>
                     {lang === "kz" ? "Гиперлордоз қаупі" : "Угроза гиперлордоза"}
                   </div>
                 </div>
@@ -391,6 +391,11 @@ export default function LandingPage() {
 
       {/* 6. Legal & Regulatory Footer */}
       <footer style={{ padding: "32px 0", background: "var(--paper)", fontSize: "12px", color: "var(--muted)" }}>
+        <div className="container" style={{ textAlign: "center", marginBottom: "16px", fontSize: "11px", color: "var(--critical)" }}>
+          {lang === "kz"
+            ? "ШҰҒЫЛ ЖАҒДАЙДА: 103 нөміріне қоңырау шалыңыз. Libra диагноз қоймайды және дәрігерді алмастырмайды (СППР, 8.4-бап)."
+            : "ВНИМАНИЕ: В экстренных ситуациях вызывайте скорую помощь 103. Libra является СППР, не ставит диагноз и не заменяет очного приема врача (ст. 8.4)."}
+        </div>
         <div className="container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <LibraLogo size="sm" />

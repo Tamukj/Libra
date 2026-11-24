@@ -118,4 +118,37 @@ def test_compute_session_diff():
     assert diff["icf_improved"] is True
     assert "Положительная" in diff["verdict_ru"]
 
+def test_compare_modalities_with_none_values():
+    # Verify that partial or None sensor values in summary do not trigger TypeError
+    summary = {
+        "baseline_amin_sagh": -2.0,
+        "baseline_gvs_pelvis": 1.0,
+        "baseline_gvs_knee": None,
+        "baseline_gvs_ankle": None,
+        "has_vr": True,
+        "vr_amin_sagh": -5.0,
+        "vr_gvs_pelvis": None,
+        "vr_gvs_knee": None,
+        "vr_gvs_ankle": None,
+        "has_verbal": False,
+        "verbal_amin_sagh": None,
+    }
+    res = compare_modalities(summary)
+    assert "best_method" in res
+    assert res["best_method"] in ["VR", "Baseline"]
+
+def test_analyze_compensation_risk_nan_guards():
+    # If delta_pelvis_term is NaN, it should sanitize gracefully rather than producing nan TJE
+    res = analyze_compensation_risk(
+        delta_hip=-2.0,
+        delta_gvs_p=0.5,
+        delta_gvs_k=0.2,
+        delta_gvs_a=0.1,
+        delta_pelvis_term=float("nan")
+    )
+    assert res["status"] in ["green", "yellow", "red"]
+    assert not np.isnan(res["tje"])
+    assert not np.isnan(res["pcr"])
+
+
 

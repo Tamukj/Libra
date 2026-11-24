@@ -12,7 +12,7 @@ import { RadarGvs } from "@/components/RadarGvs";
 import { ReportModal } from "@/components/ReportModal";
 import { GaitDiffViewer } from "@/components/GaitDiffViewer";
 import { useLanguage } from "@/lib/LanguageContext";
-import { ArrowLeft, FileText, Sparkles, Activity, ShieldCheck, AlertCircle } from "lucide-react";
+import { ArrowLeft, FileText, Activity, ShieldCheck, AlertCircle } from "lucide-react";
 
 export default function PatientDossierPage() {
   const params = useParams();
@@ -45,6 +45,9 @@ export default function PatientDossierPage() {
     }
     loadData();
   }, [id]);
+
+  const fmt = (v?: number | null, fallback = "-") =>
+    typeof v === "number" && !isNaN(v) && isFinite(v) ? v.toFixed(1) : fallback;
 
   return (
     <div className="container" style={{ paddingBlock: "24px", display: "flex", flexDirection: "column", gap: "18px" }}>
@@ -147,15 +150,15 @@ export default function PatientDossierPage() {
             {/* Model 1: Clinical VR Responder Prediction */}
             <div className="card" style={{ padding: "16px", borderLeft: `4px solid ${analysis.ml?.responder_prediction?.is_predicted_responder ? "var(--teal)" : "var(--amber)"}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: "750" }}>
-                  <Sparkles size={16} color="var(--amber)" />
-                  <span>{lang === "kz" ? "ИИ-болжам: VR-терапияға клиникалық жауап (LOO)" : "ИИ-прогноз: Клинический отклик на VR (LOO)"}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600 }}>
+                  <Activity size={16} color="var(--amber)" />
+                  <span>{lang === "kz" ? "VR-терапияға клиникалық жауапты бағалау (LOO)" : "Предиктивная оценка отклика на VR (LOO)"}</span>
                 </div>
                 <span className={`badge ${analysis.ml?.responder_prediction?.is_predicted_responder ? "badge-green" : "badge-yellow"}`}>
                   {analysis.ml?.responder_prediction?.is_predicted_responder ? "True Responder" : "High Compensation Risk"}
                 </span>
               </div>
-              <div style={{ fontSize: "13px", color: "var(--ink)", fontWeight: "600", marginBottom: "4px" }}>
+              <div style={{ fontSize: "13px", color: "var(--ink)", fontWeight: 500, marginBottom: "4px" }}>
                 {lang === "kz"
                   ? analysis.ml?.responder_prediction?.clinical_status_kz
                   : analysis.ml?.responder_prediction?.clinical_status_ru}
@@ -169,8 +172,8 @@ export default function PatientDossierPage() {
               {/* XAI: Exact Closed-Form Linear Attributions */}
               {analysis.ml?.responder_prediction?.feature_attributions && analysis.ml.responder_prediction.feature_attributions.length > 0 && (
                 <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
-                  <div style={{ fontSize: "11px", fontWeight: 700, color: "var(--muted)", marginBottom: "6px" }}>
-                    {lang === "kz" ? "ИИ-түсіндірме (XAI биомеханикалық факторлар):" : "Факторы влияния модели (XAI Shapley Attribution):"}
+                  <div style={{ fontSize: "11px", fontWeight: 500, color: "var(--muted)", marginBottom: "6px" }}>
+                    {lang === "kz" ? "Модель факторлары (XAI Shapley Attribution):" : "Факторы модели (XAI Shapley Attribution):"}
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                     {analysis.ml.responder_prediction.feature_attributions.slice(0, 3).map((attr) => (
@@ -196,7 +199,7 @@ export default function PatientDossierPage() {
             {/* Model 2: PCA Gait Stability & Fatigue Monitor */}
             <div className="card" style={{ padding: "16px", borderLeft: `4px solid ${analysis.ml?.pca_stability?.is_stable ? "var(--teal)" : "var(--red)"}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: "750" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600 }}>
                   <Activity size={16} color="var(--teal)" />
                   <span>{lang === "kz" ? "PCA қадам тұрақтылығы және шаршау детекторы" : "PCA-детектор стабильности шагов и утомления"}</span>
                 </div>
@@ -206,8 +209,8 @@ export default function PatientDossierPage() {
               </div>
               <div style={{ fontSize: "13px", color: "var(--ink)", fontWeight: "600", marginBottom: "4px" }}>
                 {lang === "kz"
-                  ? `Аномальді циклдер: ${analysis.ml?.pca_stability?.n_anomalies || 0} / ${analysis.ml?.pca_stability?.n_cycles || 0} (${((analysis.ml?.pca_stability?.anomaly_rate || 0.05) * 100).toFixed(1)}%)`
-                  : `Нестабильных шагов: ${analysis.ml?.pca_stability?.n_anomalies || 0} из ${analysis.ml?.pca_stability?.n_cycles || 0} (${((analysis.ml?.pca_stability?.anomaly_rate || 0.05) * 100).toFixed(1)}%)`}
+                  ? `Аномальді циклдер: ${analysis.ml?.pca_stability?.n_anomalies || 0} / ${analysis.ml?.pca_stability?.n_cycles || 0} (${((analysis.ml?.pca_stability?.anomaly_rate ?? 0.0) * 100).toFixed(1)}%)`
+                  : `Нестабильных шагов: ${analysis.ml?.pca_stability?.n_anomalies || 0} из ${analysis.ml?.pca_stability?.n_cycles || 0} (${((analysis.ml?.pca_stability?.anomaly_rate ?? 0.0) * 100).toFixed(1)}%)`}
               </div>
               <div style={{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.5 }}>
                 {lang === "kz"
@@ -230,7 +233,7 @@ export default function PatientDossierPage() {
           {kinematics && <KinematicsChart data={kinematics} lang={lang} />}
 
           {/* 7. Balanced Integrated GVS Section: Radar on Left, Table on Right */}
-          <div className="grid-split-gvs" style={{ display: "grid", gridTemplateColumns: "350px 1fr", gap: "18px", alignItems: "stretch" }}>
+          <div className="grid-split-gvs" style={{ display: "grid", gap: "18px", alignItems: "stretch" }}>
             
             {/* Radar View */}
             <RadarGvs summary={analysis.summary} lang={lang} />
@@ -253,56 +256,63 @@ export default function PatientDossierPage() {
                   </thead>
                   <tbody>
                     <tr style={{ borderBottom: "1px solid var(--line)" }}>
-                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 650 }}>{lang === "kz" ? "Жамбас (Pelvis SagP)" : "Таз (Pelvis SagP)"}</th>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.baseline_gvs_pelvis.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.verbal_gvs_pelvis?.toFixed(1) || "-"}°</td>
-                      <td style={{ padding: "10px 12px", color: "var(--red)", fontWeight: 700 }}>{analysis.summary.vr_gvs_pelvis.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px", color: "var(--red)", fontWeight: 600 }}>
-                        +{analysis.summary.delta_gvs_pelvis.toFixed(1)}° {lang === "kz" ? "(Компенсация)" : "(Компенсация)"}
-                      </td>
+                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 500 }}>{lang === "kz" ? "Жамбас (Pelvis SagP)" : "Таз (Pelvis SagP)"}</th>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.baseline_gvs_pelvis)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_gvs_pelvis)}°</td>
+                      <td style={{ padding: "10px 12px", color: "var(--red)", fontWeight: 600 }}>{fmt(analysis.summary.vr_gvs_pelvis)}°</td>
+                      {(() => {
+                        const pDelta = analysis.summary.delta_gvs_pelvis || 0;
+                        const isComp = pDelta > 2.0;
+                        return (
+                          <td style={{ padding: "10px 12px", color: isComp ? "var(--red)" : "var(--ink)", fontWeight: isComp ? 600 : 400 }}>
+                            {pDelta > 0 ? `+${fmt(pDelta)}` : fmt(pDelta)}°
+                            {isComp ? ` ${lang === "kz" ? "(Компенсация)" : "(Компенсация)"}` : ""}
+                          </td>
+                        );
+                      })()}
                     </tr>
                     <tr style={{ borderBottom: "1px solid var(--line)" }}>
-                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 650 }}>{lang === "kz" ? "Сан (Hip SagH)" : "Бедро (Hip SagH)"}</th>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.baseline_gvs_hip.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.verbal_gvs_hip?.toFixed(1) || "-"}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.vr_gvs_hip.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.delta_gvs_hip.toFixed(1)}°</td>
+                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 500 }}>{lang === "kz" ? "Сан (Hip SagH)" : "Бедро (Hip SagH)"}</th>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.baseline_gvs_hip)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_gvs_hip)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.vr_gvs_hip)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.delta_gvs_hip)}°</td>
                     </tr>
                     <tr style={{ borderBottom: "1px solid var(--line)" }}>
-                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 650 }}>{lang === "kz" ? "Тізе (Knee SagK)" : "Колено (Knee SagK)"}</th>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.baseline_gvs_knee.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.verbal_gvs_knee?.toFixed(1) || "-"}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.vr_gvs_knee.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.delta_gvs_knee.toFixed(1)}°</td>
+                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 500 }}>{lang === "kz" ? "Тізе (Knee SagK)" : "Колено (Knee SagK)"}</th>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.baseline_gvs_knee)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_gvs_knee)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.vr_gvs_knee)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.delta_gvs_knee)}°</td>
                     </tr>
                     <tr>
-                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 650 }}>{lang === "kz" ? "Толарсақ (Ankle SagA)" : "Стопа (Ankle SagA)"}</th>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.baseline_gvs_ankle.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.verbal_gvs_ankle?.toFixed(1) || "-"}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.vr_gvs_ankle.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.delta_gvs_ankle.toFixed(1)}°</td>
+                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 500 }}>{lang === "kz" ? "Толарсақ (Ankle SagA)" : "Стопа (Ankle SagA)"}</th>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.baseline_gvs_ankle)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_gvs_ankle)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.vr_gvs_ankle)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.delta_gvs_ankle)}°</td>
                     </tr>
                     <tr style={{ borderTop: "2px solid var(--line)", background: "var(--linen)" }}>
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Сан разгибаниесі (aMinSagH)" : "Разгибание бедра (aMinSagH)"}</th>
-                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{analysis.summary.baseline_amin_sagh.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.verbal_amin_sagh?.toFixed(1) || "-"}°</td>
-                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "var(--teal)" }}>{analysis.summary.vr_amin_sagh.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px", fontWeight: 700, color: analysis.summary.delta_amin_sagh < 0 ? "var(--teal)" : "var(--ink)" }}>
-                        {analysis.summary.delta_amin_sagh.toFixed(1)}°
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmt(analysis.summary.baseline_amin_sagh)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_amin_sagh)}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "var(--teal)" }}>{fmt(analysis.summary.vr_amin_sagh)}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: (analysis.summary.delta_amin_sagh || 0) < 0 ? "var(--teal)" : "var(--ink)" }}>
+                        {fmt(analysis.summary.delta_amin_sagh)}°
                       </td>
                     </tr>
                     <tr style={{ background: "var(--linen)" }}>
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Бейкер индексі (GPS_a)" : "Индекс походки Бейкера (GPS_a)"}</th>
-                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{analysis.summary.baseline_gps.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.summary.verbal_gps?.toFixed(1) || "-"}°</td>
-                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{analysis.summary.vr_gps.toFixed(1)}°</td>
-                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{analysis.summary.delta_gps.toFixed(1)}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmt(analysis.summary.baseline_gps)}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_gps)}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmt(analysis.summary.vr_gps)}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmt(analysis.summary.delta_gps)}°</td>
                     </tr>
                     <tr style={{ background: "var(--paper)" }}>
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 700, color: "var(--ink)" }}>{lang === "kz" ? "Шынайы буын жазылуы (TJE)" : "Истинное суставное разгибание (TJE)"}</th>
                       <td style={{ padding: "10px 12px" }}>0.0° (Base)</td>
-                      <td style={{ padding: "10px 12px" }}>{analysis.modalities?.tje_verbal?.toFixed(1) || "-"}°</td>
-                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "var(--teal)" }}>{(analysis.cdss_risk || analysis.cdss)?.tje?.toFixed(1) || "-"}°</td>
+                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.modalities?.tje_verbal)}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "var(--teal)" }}>{fmt((analysis.cdss_risk || analysis.cdss)?.tje)}°</td>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: ((analysis.cdss_risk || analysis.cdss)?.tje || 0) < 0 ? "var(--teal)" : "var(--red)" }}>
                         {(analysis.cdss_risk || analysis.cdss)?.tje?.toFixed(1) || "-"}°
                       </td>

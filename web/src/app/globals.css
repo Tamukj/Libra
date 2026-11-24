@@ -10,6 +10,7 @@
   --amber: #a44d12;
   --amber-hover: #80380c;
   --amber-light: #fef3c7;
+  --amber-bg: #fef3c7;
   --amber-border: #fde68a;
 
   --teal: #0d9488;
@@ -21,6 +22,7 @@
   --red-hover: #991b1b;
   --red-bg: #fef2f2;
   --red-border: #fecaca;
+  --critical: #b91c1c;
 
   --blue: #2563eb;
   --blue-bg: #eff6ff;
@@ -31,7 +33,7 @@
   --serif: var(--font-source-serif), Georgia, serif;
   --sans: var(--font-manrope), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --gutter: clamp(16px, 4vw, 56px);
 }
 
@@ -86,7 +88,7 @@ a {
 .card {
   background: var(--white);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 20px;
   box-shadow: 0 1px 3px rgba(28, 25, 23, 0.04);
 }
@@ -94,16 +96,16 @@ a {
 .card-raised {
   background: var(--linen);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 18px;
+  border-radius: 12px;
+  padding: 20px;
 }
 
 /* Badges */
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
+  gap: 4px;
+  padding: 4px 8px;
   border-radius: 4px;
   font-size: 11px;
   font-weight: 600;
@@ -150,7 +152,7 @@ a {
   background: var(--white);
   color: var(--ink);
   cursor: pointer;
-  transition: background-color 160ms ease, transform 140ms var(--ease), border-color 160ms ease;
+  transition: background-color 160ms var(--ease), transform 140ms var(--ease), border-color 160ms var(--ease);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -205,7 +207,7 @@ select, input, textarea {
   background: var(--white);
   color: var(--ink);
   outline: none;
-  transition: border-color 150ms ease;
+  transition: border-color 150ms var(--ease);
   max-width: 100%;
 }
 
@@ -230,7 +232,7 @@ select:focus, input:focus, textarea:focus {
 .grid-kpi-4 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+  gap: 16px;
 }
 
 .grid-patient-split {
@@ -254,7 +256,7 @@ select:focus, input:focus, textarea:focus {
 .grid-split-gvs {
   display: grid;
   grid-template-columns: 350px 1fr;
-  gap: 18px;
+  gap: 20px;
 }
 
 /* Table container with smooth scroll and clean touch scrollbars */

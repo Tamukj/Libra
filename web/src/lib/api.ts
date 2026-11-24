@@ -290,7 +290,7 @@ export async function createReport(code: string, lang: "ru" | "kz" | "en", audie
     icf_b770: isCritical ? "b770.3" : "b770.2",
     icf_d450: "d450.1",
     narrative,
-    created_at: new Date().toLocaleDateString("ru-RU")
+    created_at: new Date().toISOString()
   };
 }
 
@@ -339,22 +339,11 @@ export async function getPatientDiff(
 }
 
 export async function uploadPatientCSV(file: File) {
-  try {
-    const formData = new FormData();
-    formData.append("file", file);
-    const url = `${API_BASE}/api/v1/patients/upload`;
-    const res = await fetch(url, { method: "POST", body: formData });
-    if (res.ok) return await res.json();
-  } catch (e) {
-    console.warn("Upload API unavailable, validating locally:", e);
-  }
-
-  return {
-    status: "ok",
-    code: "s61520_new",
-    rows: 40,
-    columns: 24,
-    message_ru: `Файл «${file.name}» успешно проверен и импортирован. Добавлено 40 циклов шага.`,
-    message_kz: `«${file.name}» файлы сәтті қабылданды. 40 жүріс циклі өңделді.`
-  };
+  const formData = new FormData();
+  formData.append("file", file);
+  const url = `${API_BASE}/api/v1/patients/upload`;
+  const res = await fetch(url, { method: "POST", body: formData });
+  if (res.ok) return await res.json();
+  const errText = await res.text().catch(() => "");
+  throw new Error(`Upload failed [${res.status}]: ${errText}`);
 }

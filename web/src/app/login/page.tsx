@@ -1,13 +1,18 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { LibraLogo } from "@/components/LibraLogo";
 import { Lock, Stethoscope, ShieldCheck, ArrowLeft, Globe } from "lucide-react";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const rawFrom = searchParams.get("from");
+  const targetUrl = (rawFrom && rawFrom.startsWith("/") && !rawFrom.startsWith("//") && !rawFrom.startsWith("/\\"))
+    ? rawFrom
+    : "/portal";
   const [lang, setLang] = useState<"ru" | "kz">("ru");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,12 +51,12 @@ export default function LoginPage() {
       }
       // Store session token in cookie for middleware authentication
       document.cookie = "libra_session=clinician_authorized; path=/; max-age=86400; SameSite=Lax";
-      router.push("/portal");
+      router.push(targetUrl);
     } catch (err) {
       console.error("Login verification error:", err);
       // Fallback local authorized session if offline dev
       document.cookie = "libra_session=clinician_authorized; path=/; max-age=86400; SameSite=Lax";
-      router.push("/portal");
+      router.push(targetUrl);
     } finally {
       setLoading(false);
     }
@@ -66,11 +71,11 @@ export default function LoginPage() {
         throw new Error("API server responded with error");
       }
       document.cookie = "libra_session=demo_jury_member; path=/; max-age=86400; SameSite=Lax";
-      router.push("/portal");
+      router.push(targetUrl);
     } catch (err) {
       console.error("Demo login error:", err);
       document.cookie = "libra_session=demo_jury_member; path=/; max-age=86400; SameSite=Lax";
-      router.push("/portal");
+      router.push(targetUrl);
     } finally {
       setLoading(false);
     }
@@ -134,16 +139,16 @@ export default function LoginPage() {
           maxWidth: "440px",
           background: "var(--white)",
           border: "1px solid var(--line)",
-          borderRadius: "10px",
+          borderRadius: "8px",
           padding: "32px 28px",
-          boxShadow: "0 4px 20px rgba(28, 25, 23, 0.05)"
+          boxShadow: "0 1px 3px rgba(28, 25, 23, 0.04)"
         }}>
           
           <div style={{ textAlign: "center", marginBottom: "24px" }}>
             <div style={{ display: "inline-flex", padding: "8px", borderRadius: "8px", background: "var(--linen)", marginBottom: "10px" }}>
               <Stethoscope size={22} color="var(--amber)" />
             </div>
-            <h1 style={{ fontSize: "22px", fontWeight: "650", letterSpacing: "-0.025em" }}>
+            <h1 style={{ fontSize: "22px", fontWeight: "600", letterSpacing: "-0.025em" }}>
               {lang === "kz" ? "Клиникалық порталға кіру" : "Вход в клинический портал"}
             </h1>
             <p style={{ fontSize: "13px", color: "var(--muted)", marginTop: "4px" }}>
@@ -300,11 +305,24 @@ export default function LoginPage() {
       </main>
 
       <footer style={{ padding: "16px", textAlign: "center", fontSize: "12px", color: "var(--muted)", borderTop: "1px solid var(--line)", background: "var(--paper)" }}>
+        <div style={{ marginBottom: "6px", fontSize: "11px", color: "var(--critical)" }}>
+          {lang === "kz"
+            ? "ШҰҒЫЛ ЖАҒДАЙДА: 103 нөміріне қоңырау шалыңыз (СППР, 8.4-бап)."
+            : "ВНИМАНИЕ: В экстренных ситуациях звоните 103 (СППР, ст. 8.4)."}
+        </div>
         {lang === "kz"
           ? "© 2026 Libra. Денсаулық сақтау мамандарына арналған клиникалық портал."
           : "© 2026 Libra. Портал для специалистов здравоохранения."}
       </footer>
 
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--paper)" }} />}>
+      <LoginContent />
+    </Suspense>
   );
 }

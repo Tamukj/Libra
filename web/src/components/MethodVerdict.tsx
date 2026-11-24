@@ -21,9 +21,12 @@ export function MethodVerdict({ modalities, summary, lang }: Props) {
   const verdictText = lang === "kz" ? modalities.verdict_kz : modalities.verdict_ru;
 
   // Recommended badge styling
-  const badgeColor = isVR ? "var(--teal)" : isVerbal ? "#d97706" : "var(--ink)";
+  const badgeColor = isVR ? "var(--teal)" : isVerbal ? "var(--amber)" : "var(--ink)";
   const badgeBg = isVR ? "var(--teal-bg)" : isVerbal ? "var(--amber-light)" : "var(--linen)";
   const badgeBorder = isVR ? "var(--teal-border)" : isVerbal ? "var(--amber-border)" : "var(--line)";
+
+  const fmt = (val: number | null | undefined, digits = 1) =>
+    typeof val === "number" && !isNaN(val) ? val.toFixed(digits) : "—";
 
   return (
     <div className="card-raised" style={{
@@ -68,13 +71,15 @@ export function MethodVerdict({ modalities, summary, lang }: Props) {
           background: badgeBg,
           border: `1px solid ${badgeBorder}`,
           color: badgeColor,
-          fontWeight: 700,
+          fontWeight: 600,
           fontSize: "13px"
         }}>
           {isVR ? <Glasses size={16} /> : isVerbal ? <Volume2 size={16} /> : <Footprints size={16} />}
           <span>
             {lang === "kz" ? "Ұсынылған: " : "Рекомендовано: "}
-            {isVR ? "VR Режим (Аватар)" : isVerbal ? "Verbal Режим (Голос)" : "Базовый режим (Baseline)"}
+            {lang === "kz"
+              ? (isVR ? "VR Режимі (Аватар)" : isVerbal ? "Verbal Режимі (Дауыс)" : "Базалық режим (Baseline)")
+              : (isVR ? "VR Режим (Аватар)" : isVerbal ? "Verbal Режим (Голос)" : "Базовый режим (Baseline)")}
           </span>
         </div>
       </div>
@@ -119,13 +124,13 @@ export function MethodVerdict({ modalities, summary, lang }: Props) {
             <div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жазылу" : "Разгибание"}</div>
               <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {summary ? `${summary.baseline_amin_sagh.toFixed(1)}°` : (lang === "kz" ? "База" : "База")}
+                {summary ? `${fmt(summary.baseline_amin_sagh)}°` : (lang === "kz" ? "База" : "База")}
               </div>
             </div>
             <div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жамбас еңкеюі" : "Наклон таза"}</div>
               <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {summary ? `${summary.baseline_gvs_pelvis.toFixed(1)}°` : (lang === "kz" ? "База" : "База")}
+                {summary ? `${fmt(summary.baseline_gvs_pelvis)}°` : (lang === "kz" ? "База" : "База")}
               </div>
             </div>
             <div>
@@ -159,25 +164,25 @@ export function MethodVerdict({ modalities, summary, lang }: Props) {
             <div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>TJE</div>
               <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {modalities.tje_verbal > 0 ? "+" : ""}{modalities.tje_verbal.toFixed(1)}°
+                {typeof modalities.tje_verbal === "number" && modalities.tje_verbal > 0 ? "+" : ""}{fmt(modalities.tje_verbal)}°
               </div>
             </div>
             <div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жазылу" : "Разгибание"}</div>
               <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {modalities.delta_hip_verbal > 0 ? "+" : ""}{modalities.delta_hip_verbal.toFixed(1)}°
+                {typeof modalities.delta_hip_verbal === "number" && modalities.delta_hip_verbal > 0 ? "+" : ""}{fmt(modalities.delta_hip_verbal)}°
               </div>
             </div>
             <div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жамбас еңкеюі" : "Наклон таза"}</div>
               <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {modalities.delta_pelvis_verbal > 0 ? "+" : ""}{modalities.delta_pelvis_verbal.toFixed(1)}°
+                {typeof modalities.delta_pelvis_verbal === "number" && modalities.delta_pelvis_verbal > 0 ? "+" : ""}{fmt(modalities.delta_pelvis_verbal)}°
               </div>
             </div>
             <div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>PCR</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px", color: modalities.pcr_verbal > 0.8 ? "var(--red)" : "var(--teal)" }}>
-                {modalities.pcr_verbal.toFixed(2)}
+              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px", color: (modalities.pcr_verbal ?? 0) > 0.8 ? "var(--red)" : (modalities.pcr_verbal ?? 0) >= 0.4 ? "var(--amber)" : "var(--teal)" }}>
+                {fmt(modalities.pcr_verbal, 2)}
               </div>
             </div>
           </div>
@@ -205,25 +210,25 @@ export function MethodVerdict({ modalities, summary, lang }: Props) {
             <div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>TJE</div>
               <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {modalities.tje_vr > 0 ? "+" : ""}{modalities.tje_vr.toFixed(1)}°
+                {typeof modalities.tje_vr === "number" && modalities.tje_vr > 0 ? "+" : ""}{fmt(modalities.tje_vr)}°
               </div>
             </div>
             <div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жазылу" : "Разгибание"}</div>
               <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {modalities.delta_hip_vr > 0 ? "+" : ""}{modalities.delta_hip_vr.toFixed(1)}°
+                {typeof modalities.delta_hip_vr === "number" && modalities.delta_hip_vr > 0 ? "+" : ""}{fmt(modalities.delta_hip_vr)}°
               </div>
             </div>
             <div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жамбас еңкеюі" : "Наклон таза"}</div>
               <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {modalities.delta_pelvis_vr > 0 ? "+" : ""}{modalities.delta_pelvis_vr.toFixed(1)}°
+                {typeof modalities.delta_pelvis_vr === "number" && modalities.delta_pelvis_vr > 0 ? "+" : ""}{fmt(modalities.delta_pelvis_vr)}°
               </div>
             </div>
             <div>
               <div style={{ fontSize: "11px", color: "var(--muted)" }}>PCR</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px", color: modalities.pcr_vr > 0.8 ? "var(--red)" : "var(--teal)" }}>
-                {modalities.pcr_vr.toFixed(2)}
+              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px", color: (modalities.pcr_vr ?? 0) > 0.8 ? "var(--red)" : (modalities.pcr_vr ?? 0) >= 0.4 ? "var(--amber)" : "var(--teal)" }}>
+                {fmt(modalities.pcr_vr, 2)}
               </div>
             </div>
           </div>

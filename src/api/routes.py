@@ -1,8 +1,10 @@
 """FastAPI Route Handlers for Libra."""
 
 import os
+import math
+import secrets
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 import pandas as pd
@@ -24,7 +26,7 @@ from src.core.biomechanics import (
 from src.core.normative_data import NORMATIVE_PROFILES
 from src.ml.vr_predictor import GaitConditionClassifier, VRResponderPredictor
 from src.ml.anomaly_detector import KinematicPCAAnomalyDetector
-from src.ml.local_reporter import generate_clinical_narrative, generate_parent_narrative
+from src.ml.local_reporter import generate_clinical_narrative, generate_parent_narrative, _safe_float
 from src.api.open_data import get_regional_statistics
 
 router = APIRouter(prefix="/api/v1")
@@ -54,16 +56,18 @@ if len(_HIP_COLS) > 0:
 # Security and clinician authentication
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-def require_clinician_auth(api_key: Optional[str] = Depends(API_KEY_HEADER)) -> Dict[str, Any]:
-    """
-    Validates clinician authentication for clinical data ingestion and report generation.
-    Supports secure API token and graceful demo mode for local jury evaluation.
-    """
+def require_clinician_auth(request: Request, api_key: Optional[str] = Depends(API_KEY_HEADER)) -> Dict[str, Any]:
     configured_key = os.getenv("LIBRA_API_KEY", os.getenv("GAITAI_API_KEY", "libra-doctor-secret-key-2026"))
     demo_mode = os.getenv("LIBRA_ALLOW_DEMO", os.getenv("GAITAI_ALLOW_DEMO", "1")) == "1"
 
-    if api_key and api_key.strip() == configured_key:
-        return {"authorized": True, "role": "clinician", "demo": False}
+    if "x-api-key" in request.headers:
+        raw_key = request.headers.get("x-api-key", "")
+        if raw_key and secrets.compare_digest(raw_key.strip(), configured_key):
+            return {"authorized": True, "role": "clinician", "demo": False}
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: Invalid API Key"
+        )
 
     if demo_mode:
         return {"authorized": True, "role": "clinician-demo", "demo": True}
@@ -89,85 +93,90 @@ def _compute_mean_pelvic_tilt(df_kin: pd.DataFrame, subject: str) -> Optional[fl
     return float(np.nanmean(vals))
 
 def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[str, Any]:
-    """Resolves patient summary from discrete CSV datasets or database sessions."""
-    try:
-        summary = get_patient_discrete_summary(_DF_BASE, _DF_VR, code, df_verbal=_DF_VB)
-    except Exception:
-        sessions = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).all()
-        if not sessions:
-            raise HTTPException(status_code=404, detail=f"No biomechanical gait sessions recorded for patient {code}")
-
+    """Resolves patient summary from database sessions or discrete CSV datasets."""
+    summary = None
+    sessions = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).all() if patient else []
+    if sessions:
         base_sess = next((s for s in sessions if s.condition == "Baseline"), None)
-        vr_sess = next((s for s in sessions if s.condition == "VR"), None)
-        vb_sess = next((s for s in sessions if s.condition == "Verbal"), None)
+        if base_sess:
+            vr_sess = next((s for s in sessions if s.condition == "VR"), None)
+            vb_sess = next((s for s in sessions if s.condition == "Verbal"), None)
 
-        if not base_sess:
-            raise HTTPException(status_code=422, detail=f"Baseline gait session missing for patient {code}")
+            b_gps = float(base_sess.avg_gps)
+            b_hip = float(base_sess.avg_amin_sagh)
+            b_p = float(base_sess.avg_gvs_pelvis)
+            b_h = float(base_sess.avg_gvs_hip)
+            b_k = float(base_sess.avg_gvs_knee)
+            b_a = float(base_sess.avg_gvs_ankle)
 
-        b_gps = float(base_sess.avg_gps)
-        vr_gps = float(vr_sess.avg_gps if vr_sess else b_gps)
-        vb_gps = float(vb_sess.avg_gps if vb_sess else b_gps)
+            vr_gps = float(vr_sess.avg_gps) if vr_sess and vr_sess.avg_gps is not None else None
+            vr_hip = float(vr_sess.avg_amin_sagh) if vr_sess and vr_sess.avg_amin_sagh is not None else None
+            vr_p = float(vr_sess.avg_gvs_pelvis) if vr_sess and vr_sess.avg_gvs_pelvis is not None else None
+            vr_h = float(vr_sess.avg_gvs_hip) if vr_sess and vr_sess.avg_gvs_hip is not None else None
+            vr_k = float(vr_sess.avg_gvs_knee) if vr_sess and vr_sess.avg_gvs_knee is not None else None
+            vr_a = float(vr_sess.avg_gvs_ankle) if vr_sess and vr_sess.avg_gvs_ankle is not None else None
 
-        b_hip = float(base_sess.avg_amin_sagh)
-        vr_hip = float(vr_sess.avg_amin_sagh if vr_sess else b_hip)
+            vb_gps = float(vb_sess.avg_gps) if vb_sess and vb_sess.avg_gps is not None else None
+            vb_hip = float(vb_sess.avg_amin_sagh) if vb_sess and vb_sess.avg_amin_sagh is not None else None
+            vb_p = float(vb_sess.avg_gvs_pelvis) if vb_sess and vb_sess.avg_gvs_pelvis is not None else None
+            vb_h = float(vb_sess.avg_gvs_hip) if vb_sess and vb_sess.avg_gvs_hip is not None else None
+            vb_k = float(vb_sess.avg_gvs_knee) if vb_sess and vb_sess.avg_gvs_knee is not None else None
+            vb_a = float(vb_sess.avg_gvs_ankle) if vb_sess and vb_sess.avg_gvs_ankle is not None else None
 
-        b_p = float(base_sess.avg_gvs_pelvis)
-        vr_p = float(vr_sess.avg_gvs_pelvis if vr_sess else b_p)
-        vb_p = float(vb_sess.avg_gvs_pelvis if vb_sess else b_p)
+            d_gps = (vr_gps - b_gps) if vr_gps is not None else 0.0
+            d_hip = (vr_hip - b_hip) if vr_hip is not None else 0.0
+            d_p = (vr_p - b_p) if vr_p is not None else 0.0
+            d_h = (vr_h - b_h) if vr_h is not None else 0.0
+            d_k = (vr_k - b_k) if vr_k is not None else 0.0
+            d_a = (vr_a - b_a) if vr_a is not None else 0.0
 
-        b_h = float(base_sess.avg_gvs_hip)
-        vr_h = float(vr_sess.avg_gvs_hip if vr_sess else b_h)
-        vb_h = float(vb_sess.avg_gvs_hip if vb_sess else b_h)
+            summary = {
+                "subject": code,
+                "side": patient.side if patient else "RIGHT",
+                "weight": patient.weight if patient else 40.0,
+                "height": patient.height if patient else 1.35,
+                "leg_length": patient.leg_length if patient else 0.70,
+                "baseline_gps": b_gps,
+                "vr_gps": vr_gps if vr_gps is not None else b_gps,
+                "verbal_gps": vb_gps if vb_gps is not None else b_gps,
+                "delta_gps": d_gps,
+                "baseline_amin_sagh": b_hip,
+                "vr_amin_sagh": vr_hip if vr_hip is not None else b_hip,
+                "verbal_amin_sagh": vb_hip,
+                "delta_amin_sagh": d_hip,
+                "baseline_gvs_pelvis": b_p,
+                "vr_gvs_pelvis": vr_p if vr_p is not None else b_p,
+                "verbal_gvs_pelvis": vb_p,
+                "delta_gvs_pelvis": d_p,
+                "baseline_gvs_hip": b_h,
+                "vr_gvs_hip": vr_h if vr_h is not None else b_h,
+                "verbal_gvs_hip": vb_h,
+                "delta_gvs_hip": d_h,
+                "baseline_gvs_knee": b_k,
+                "vr_gvs_knee": vr_k if vr_k is not None else b_k,
+                "verbal_gvs_knee": vb_k,
+                "delta_gvs_knee": d_k,
+                "baseline_gvs_ankle": b_a,
+                "vr_gvs_ankle": vr_a if vr_a is not None else b_a,
+                "verbal_gvs_ankle": vb_a,
+                "delta_gvs_ankle": d_a,
+                "cycles_baseline": base_sess.cycle_count,
+                "cycles_vr": vr_sess.cycle_count if vr_sess else 0,
+                "cycles_verbal": vb_sess.cycle_count if vb_sess else 0,
+                "baseline_cycles": base_sess.cycle_count,
+                "vr_cycles": vr_sess.cycle_count if vr_sess else 0,
+                "verbal_cycles": vb_sess.cycle_count if vb_sess else 0,
+                "has_vr": vr_sess is not None,
+                "has_verbal": vb_sess is not None,
+            }
 
-        b_k = float(base_sess.avg_gvs_knee)
-        vr_k = float(vr_sess.avg_gvs_knee if vr_sess else b_k)
-        vb_k = float(vb_sess.avg_gvs_knee if vb_sess else b_k)
-
-        b_a = float(base_sess.avg_gvs_ankle)
-        vr_a = float(vr_sess.avg_gvs_ankle if vr_sess else b_a)
-        vb_a = float(vb_sess.avg_gvs_ankle if vb_sess else b_a)
-
-        b_cycles = base_sess.cycle_count
-        vr_cycles = vr_sess.cycle_count if vr_sess else 0
-        vb_cycles = vb_sess.cycle_count if vb_sess else 0
-
-        summary = {
-            "subject": patient.code,
-            "side": patient.side,
-            "weight": patient.weight,
-            "height": patient.height,
-            "leg_length": patient.leg_length,
-            "baseline_gps": b_gps,
-            "baseline_amin_sagh": b_hip,
-            "vr_gps": vr_gps,
-            "vr_amin_sagh": vr_hip,
-            "verbal_gps": vb_gps,
-            "verbal_amin_sagh": float(vb_sess.avg_amin_sagh if vb_sess else b_hip),
-            "baseline_cycles": b_cycles,
-            "vr_cycles": vr_cycles,
-            "verbal_cycles": vb_cycles,
-            "cycles_baseline": b_cycles,
-            "cycles_vr": vr_cycles,
-            "cycles_verbal": vb_cycles,
-            "delta_gps": vr_gps - b_gps,
-            "delta_amin_sagh": vr_hip - b_hip,
-            "delta_gvs_pelvis": vr_p - b_p,
-            "delta_gvs_hip": vr_h - b_h,
-            "delta_gvs_knee": vr_k - b_k,
-            "delta_gvs_ankle": vr_a - b_a,
-            "baseline_gvs_pelvis": b_p,
-            "baseline_gvs_hip": b_h,
-            "baseline_gvs_knee": b_k,
-            "baseline_gvs_ankle": b_a,
-            "vr_gvs_pelvis": vr_p,
-            "vr_gvs_hip": vr_h,
-            "vr_gvs_knee": vr_k,
-            "vr_gvs_ankle": vr_a,
-            "verbal_gvs_pelvis": vb_p,
-            "verbal_gvs_hip": vb_h,
-            "verbal_gvs_knee": vb_k,
-            "verbal_gvs_ankle": vb_a,
-        }
+    if summary is None:
+        try:
+            summary = get_patient_discrete_summary(_DF_BASE, _DF_VR, code, df_verbal=_DF_VB)
+            summary["has_vr"] = True
+            summary["has_verbal"] = True
+        except Exception:
+            raise HTTPException(status_code=404, detail=f"No biomechanical gait sessions recorded for patient {code}")
 
     # Enrich with true kinematic pelvic tilt angles if available
     tilt_b = _compute_mean_pelvic_tilt(_DF_KIN, code)
@@ -177,6 +186,7 @@ def _resolve_patient_summary(code: str, patient: Patient, db: Session) -> Dict[s
     summary["vr_pelvis_tilt"] = round(tilt_vr, 2) if tilt_vr is not None else None
     summary["verbal_pelvis_tilt"] = round(tilt_vb, 2) if tilt_vb is not None else None
     summary["delta_pelvis_tilt"] = round(tilt_vr - tilt_b, 2) if (tilt_vr is not None and tilt_b is not None) else None
+    summary["verbal_delta_pelvis_tilt"] = round(tilt_vb - tilt_b, 2) if (tilt_vb is not None and tilt_b is not None) else None
     return summary
 
 @router.get("/patients")
@@ -292,11 +302,13 @@ def get_patient_kinematics(code: str, db: Session = Depends(get_db)):
     sub_vr = _DF_KIN_VR[_DF_KIN_VR["subject"] == code]
     sub_vb = _DF_KIN_VB[_DF_KIN_VB["subject"] == code]
 
+    is_surrogate = False
     if sub_base.empty:
         # Fallback to reference cohort patient s61520_1 so user-uploaded patients display curves smoothly
         sub_base = _DF_KIN[_DF_KIN["subject"] == "s61520_1"]
         sub_vr = _DF_KIN_VR[_DF_KIN_VR["subject"] == "s61520_1"]
         sub_vb = _DF_KIN_VB[_DF_KIN_VB["subject"] == "s61520_1"]
+        is_surrogate = True
 
     joints = ["aSagP", "aSagH", "aSagK", "aSagA"]
     if "mSagH_pct_GC_0" in _DF_KIN.columns:
@@ -309,25 +321,32 @@ def get_patient_kinematics(code: str, db: Session = Depends(get_db)):
     for joint in joints:
         cols = [f"{joint}_pct_GC_{i*20}" for i in range(51)]
         
-        # Baseline mean & std
-        b_curves = sub_base[cols].values
-        b_mean = np.nanmean(b_curves, axis=0).tolist()
-        b_std = np.nanstd(b_curves, axis=0).tolist()
-
-        # VR mean & std
-        vr_curves = sub_vr[cols].values if not sub_vr.empty else b_curves
-        vr_mean = np.nanmean(vr_curves, axis=0).tolist()
-        vr_std = np.nanstd(vr_curves, axis=0).tolist()
-
-        # Verbal mean & std
-        vb_curves = sub_vb[cols].values if not sub_vb.empty else b_curves
-        vb_mean = np.nanmean(vb_curves, axis=0).tolist()
-        vb_std = np.nanstd(vb_curves, axis=0).tolist()
-
         # Normative profile resampled to 51 points
         td_profile = NORMATIVE_PROFILES[joint]
         norm_mean = td_profile["mean"][::20].tolist()
         norm_std = td_profile["std"][::20].tolist()
+
+        # Baseline mean & std
+        b_curves = sub_base[cols].values if (not sub_base.empty and cols[0] in sub_base.columns) else np.array([])
+        if b_curves.size == 0 or np.isnan(b_curves).all():
+            surr = _DF_KIN[_DF_KIN["subject"] == "s61520_1"][cols].values if cols[0] in _DF_KIN.columns else np.array([])
+            b_curves = surr if (surr.size > 0 and not np.isnan(surr).all()) else np.array([norm_mean])
+        b_mean = np.nan_to_num(np.nanmean(b_curves, axis=0), nan=0.0).tolist()
+        b_std = np.nan_to_num(np.nanstd(b_curves, axis=0), nan=0.0).tolist()
+
+        # VR mean & std
+        vr_curves = sub_vr[cols].values if (not sub_vr.empty and cols[0] in sub_vr.columns) else b_curves
+        if vr_curves.size == 0 or np.isnan(vr_curves).all():
+            vr_curves = b_curves
+        vr_mean = np.nan_to_num(np.nanmean(vr_curves, axis=0), nan=0.0).tolist()
+        vr_std = np.nan_to_num(np.nanstd(vr_curves, axis=0), nan=0.0).tolist()
+
+        # Verbal mean & std
+        vb_curves = sub_vb[cols].values if (not sub_vb.empty and cols[0] in sub_vb.columns) else b_curves
+        if vb_curves.size == 0 or np.isnan(vb_curves).all():
+            vb_curves = b_curves
+        vb_mean = np.nan_to_num(np.nanmean(vb_curves, axis=0), nan=0.0).tolist()
+        vb_std = np.nan_to_num(np.nanstd(vb_curves, axis=0), nan=0.0).tolist()
 
         kinematics_data[joint] = {
             "name_ru": td_profile["name_ru"],
@@ -342,6 +361,8 @@ def get_patient_kinematics(code: str, db: Session = Depends(get_db)):
 
     return {
         "subject": code,
+        "is_surrogate": is_surrogate,
+        "is_fallback": is_surrogate,
         "joints": kinematics_data
     }
 
@@ -365,7 +386,7 @@ def get_ml_metrics():
 @router.post("/patients/{code}/report")
 def create_patient_report(
     code: str,
-    lang: str = Query("ru", pattern="^(ru|kz)$"),
+    lang: str = Query("ru", pattern="^(ru|kz|en)$"),
     audience: str = Query("doctor", pattern="^(doctor|parent)$"),
     auth: Dict[str, Any] = Depends(require_clinician_auth),
     db: Session = Depends(get_db)
@@ -412,7 +433,8 @@ def create_patient_report(
         pcr=risk["pcr"],
         status=risk["status"],
         narrative_ru=narrative_ru,
-        narrative_kz=narrative_kz
+        narrative_kz=narrative_kz,
+        audience=audience
     )
     db.add(report)
     db.commit()
@@ -431,6 +453,67 @@ def create_patient_report(
         "created_at": report.created_at.isoformat()
     }
 
+def _extract_session_metrics(summary: Dict[str, Any], condition: str) -> Dict[str, Any]:
+    c = condition.strip().lower()
+    base_gps = _safe_float(summary.get("baseline_gps"), 10.0)
+    base_hip = _safe_float(summary.get("baseline_amin_sagh"), 0.0)
+    base_p = _safe_float(summary.get("baseline_gvs_pelvis"), 0.0)
+    base_k = _safe_float(summary.get("baseline_gvs_knee"), 0.0)
+    base_a = _safe_float(summary.get("baseline_gvs_ankle"), 0.0)
+
+    if c == "baseline":
+        return {
+            "label": f"Сессия ({condition})",
+            "gps": base_gps,
+            "tje": 0.0,
+            "pcr": 0.0,
+        }
+    elif c == "vr":
+        if not summary.get("has_vr", True):
+            raise HTTPException(
+                status_code=404,
+                detail=f"VR gait session not recorded for patient {summary.get('subject')}"
+            )
+        vr_gps = _safe_float(summary.get("vr_gps"), base_gps)
+        d_hip = _safe_float(summary.get("vr_amin_sagh"), base_hip) - base_hip
+        d_p = _safe_float(summary.get("vr_gvs_pelvis"), base_p) - base_p
+        d_k = _safe_float(summary.get("vr_gvs_knee"), base_k) - base_k
+        d_a = _safe_float(summary.get("vr_gvs_ankle"), base_a) - base_a
+        d_pelvis_tilt = _safe_float(summary.get("delta_pelvis_tilt"), d_p)
+        tje = compute_true_joint_extension(d_hip, d_pelvis_tilt)
+        pcr = compute_pcr(d_p, d_k, d_a, d_hip)
+        return {
+            "label": "Условие VR (Зрительная обратная связь с аватаром)",
+            "gps": vr_gps,
+            "tje": tje,
+            "pcr": pcr,
+        }
+    elif c == "verbal":
+        if not summary.get("has_verbal", True):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Verbal gait session not recorded for patient {summary.get('subject')}"
+            )
+        vb_gps = _safe_float(summary.get("verbal_gps"), base_gps)
+        d_hip = _safe_float(summary.get("verbal_amin_sagh"), base_hip) - base_hip
+        d_p = _safe_float(summary.get("verbal_gvs_pelvis"), base_p) - base_p
+        d_k = _safe_float(summary.get("verbal_gvs_knee"), base_k) - base_k
+        d_a = _safe_float(summary.get("verbal_gvs_ankle"), base_a) - base_a
+        d_pelvis_tilt = _safe_float(summary.get("verbal_delta_pelvis_tilt"), d_p)
+        tje = compute_true_joint_extension(d_hip, d_pelvis_tilt)
+        pcr = compute_pcr(d_p, d_k, d_a, d_hip)
+        return {
+            "label": "Условие Verbal (Голосовая обратная связь)",
+            "gps": vb_gps,
+            "tje": tje,
+            "pcr": pcr,
+        }
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown session condition '{condition}'. Expected Baseline, VR, or Verbal."
+        )
+
 @router.get("/patients/{code}/diff")
 def get_patient_diff(
     code: str,
@@ -448,71 +531,8 @@ def get_patient_diff(
 
     summary = _resolve_patient_summary(code, patient, db)
 
-    if session_a.lower() == session_b.lower():
-        gps_val = float(summary.get("baseline_gps", 10.4))
-        return {
-            "patient": code,
-            "session_a": session_a,
-            "session_b": session_b,
-            "label_a": f"Сессия 1 ({session_a})",
-            "label_b": f"Сессия 2 ({session_b})",
-            "delta_gps": 0.0,
-            "delta_tje": 0.0,
-            "delta_pcr": 0.0,
-            "delta_gdi": 0.0,
-            "status": "stable",
-            "status_ru": "Стабильно (параметры без изменений)",
-            "status_kz": "Тұрақты (параметрлер өзгеріссіз)",
-            "icf_shift": "Тұрақты / Без изменений",
-            "summary_ru": "Сессии идентичны. Параметры походки стабильны.",
-            "summary_kz": "Сессиялар бірдей. Жүріс параметрлері тұрақты.",
-            "recommendations_ru": "Продолжить текущий реабилитационный курс.",
-            "recommendations_kz": "Ағымдағы оңалту бағытын жалғастыру."
-        }
-
-    base_gps = float(summary.get("baseline_gps", 0.0))
-    base_hip = float(summary.get("baseline_amin_sagh", 0.0))
-    base_p = float(summary.get("baseline_gvs_pelvis", 0.0))
-    base_k = float(summary.get("baseline_gvs_knee", 0.0))
-    base_a = float(summary.get("baseline_gvs_ankle", 0.0))
-
-    # Session A metrics (e.g. Baseline)
-    gps_a = base_gps
-    tje_a = 0.0
-    pcr_a = 0.0
-
-    # Session B metrics (e.g. VR or Verbal)
-    if session_b.lower() == "verbal":
-        gps_b = float(summary.get("verbal_gps", base_gps))
-        d_hip_b = float(summary.get("verbal_amin_sagh", base_hip)) - base_hip
-        d_p_b = float(summary.get("verbal_gvs_pelvis", base_p)) - base_p
-        d_k_b = float(summary.get("verbal_gvs_knee", base_k)) - base_k
-        d_a_b = float(summary.get("verbal_gvs_ankle", base_a)) - base_a
-        pcr_b = compute_pcr(d_p_b, d_k_b, d_a_b, d_hip_b)
-        tje_b = compute_true_joint_extension(d_hip_b, d_p_b)
-        label_b = "Условие Verbal (Голосовая обратная связь)"
-    else:
-        gps_b = float(summary.get("vr_gps", base_gps))
-        d_hip_b = float(summary.get("vr_amin_sagh", base_hip)) - base_hip
-        d_p_b = float(summary.get("vr_gvs_pelvis", base_p)) - base_p
-        d_k_b = float(summary.get("vr_gvs_knee", base_k)) - base_k
-        d_a_b = float(summary.get("vr_gvs_ankle", base_a)) - base_a
-        pcr_b = compute_pcr(d_p_b, d_k_b, d_a_b, d_hip_b)
-        tje_b = compute_true_joint_extension(d_hip_b, d_p_b)
-        label_b = "Условие VR (Зрительная обратная связь с аватаром)"
-
-    sess_a_data = {
-        "label": f"Сессия 1 ({session_a})",
-        "gps": float(gps_a),
-        "tje": float(tje_a),
-        "pcr": float(pcr_a),
-    }
-    sess_b_data = {
-        "label": label_b,
-        "gps": float(gps_b),
-        "tje": float(tje_b),
-        "pcr": float(pcr_b),
-    }
+    sess_a_data = _extract_session_metrics(summary, session_a)
+    sess_b_data = _extract_session_metrics(summary, session_b)
 
     diff_res = compute_session_diff(sess_a_data, sess_b_data)
     return {
@@ -552,21 +572,34 @@ async def upload_patient_csv(
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Invalid CSV file format: {str(e)}")
 
+    if len(df_upload) == 0:
+        raise HTTPException(status_code=400, detail="Invalid CSV: File contains no gait cycle data rows.")
+
     # Guard against non-finite values (inf, -inf)
     for col in df_upload.columns:
         str_col = df_upload[col].astype(str).str.lower().str.strip()
         if str_col.isin(["inf", "-inf", "+inf", "infinity", "-infinity"]).any():
             raise HTTPException(status_code=400, detail=f"Invalid non-finite value in column {col}")
 
+    import re
     subject_code = file.filename.replace(".csv", "").strip()
     if "subject" in df_upload.columns:
         valid_subs = df_upload["subject"].dropna().unique()
         if len(valid_subs) > 0:
             subject_code = str(valid_subs[0]).strip()
 
+    if not subject_code or not re.match(r"^[a-zA-Z0-9_\-]{1,64}$", subject_code):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid patient code. Allowed characters: alphanumeric, hyphens, and underscores (max 64 chars)."
+        )
+
     def _parse_val(series_name: str, default_val: float) -> float:
-        if series_name in df_upload.columns:
-            s = df_upload[series_name].dropna()
+        norm_target = series_name.lower().replace("_", "")
+        target_cols = [c for c in df_upload.columns if c.lower().replace("_", "") == norm_target]
+        col = target_cols[0] if target_cols else (series_name if series_name in df_upload.columns else None)
+        if col:
+            s = df_upload[col].dropna()
             if not s.empty:
                 s_clean = pd.to_numeric(s.astype(str).str.replace(",", ".").str.strip(), errors="coerce").dropna()
                 valid_nums = s_clean[np.isfinite(s_clean)]
@@ -574,26 +607,36 @@ async def upload_patient_csv(
                     return float(valid_nums.mean())
         return default_val
 
+    clinic = db.query(Clinic).first()
+    clinic_id = clinic.id if clinic else None
     patient = db.query(Patient).filter(Patient.code == subject_code).first()
-    if not patient:
-        patient = Patient(
-            code=subject_code,
-            side=str(df_upload["side"].dropna().iloc[0]).strip() if "side" in df_upload.columns and not df_upload["side"].dropna().empty else "RIGHT",
-            weight=_parse_val("weight", 42.0),
-            height=_parse_val("height", 1.38),
-            leg_length=_parse_val("leg_length", 0.71),
-            clinic_id=1
+    if patient:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Patient '{subject_code}' already exists in registry. Re-uploading requires explicit confirmation."
         )
-        db.add(patient)
-        db.commit()
-        db.refresh(patient)
 
-    # Register or update gait session in database
-    session_obj = db.query(GaitSession).filter(
-        GaitSession.patient_id == patient.id,
-        GaitSession.condition == "Baseline"
-    ).first()
-    if not session_obj:
+    parsed_weight = _parse_val("weight", 42.0)
+    parsed_height = _parse_val("height", 1.38)
+    parsed_leg = _parse_val("leg_length", 0.71)
+    if parsed_weight <= 0 or parsed_height <= 0 or parsed_leg <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid physiological measurements: weight, height, and leg length must be positive numbers."
+        )
+
+    patient = Patient(
+        code=subject_code,
+        side=str(df_upload["side"].dropna().iloc[0]).strip() if "side" in df_upload.columns and not df_upload["side"].dropna().empty else "RIGHT",
+        weight=parsed_weight,
+        height=parsed_height,
+        leg_length=parsed_leg,
+        clinic_id=clinic_id
+    )
+    try:
+        db.add(patient)
+        db.flush()
+
         calc_p = _parse_val("GVS_aSagP", 0.0)
         calc_h = _parse_val("GVS_aSagH", 0.0)
         calc_k = _parse_val("GVS_aSagK", 0.0)
@@ -613,15 +656,11 @@ async def upload_patient_csv(
             avg_gvs_ankle=calc_a
         )
         db.add(session_obj)
-    else:
-        session_obj.cycle_count = len(df_upload)
-        session_obj.avg_gps = _parse_val("GPS_a", session_obj.avg_gps)
-        session_obj.avg_amin_sagh = _parse_val("aMinSagH", session_obj.avg_amin_sagh)
-        session_obj.avg_gvs_pelvis = _parse_val("GVS_aSagP", session_obj.avg_gvs_pelvis)
-        session_obj.avg_gvs_hip = _parse_val("GVS_aSagH", session_obj.avg_gvs_hip)
-        session_obj.avg_gvs_knee = _parse_val("GVS_aSagK", session_obj.avg_gvs_knee)
-        session_obj.avg_gvs_ankle = _parse_val("GVS_aSagA", session_obj.avg_gvs_ankle)
-    db.commit()
+        db.commit()
+        db.refresh(patient)
+    except Exception:
+        db.rollback()
+        raise
 
     return {
         "status": "success",

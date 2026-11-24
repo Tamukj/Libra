@@ -71,7 +71,11 @@ def load_kinematics_dataset(path: Path) -> pd.DataFrame:
     for col in ts_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     if ts_cols:
-        df[ts_cols] = df[ts_cols].interpolate(method="linear", axis=1, limit_direction="both")
+        prefixes = set(c.split("_pct_GC_")[0] for c in ts_cols)
+        for pfx in sorted(prefixes):
+            pfx_cols = [c for c in ts_cols if c.startswith(f"{pfx}_pct_GC_")]
+            pfx_cols_sorted = sorted(pfx_cols, key=lambda x: int(x.split("_pct_GC_")[1]))
+            df[pfx_cols_sorted] = df[pfx_cols_sorted].interpolate(method="linear", axis=1, limit_direction="both")
 
     return df
 
@@ -90,20 +94,26 @@ def get_patient_discrete_summary(
     if sub_base.empty:
         raise ValueError(f"Subject {subject_id} not found in Baseline dataset")
 
+    def _mean_col(df: pd.DataFrame, col: str, fallback: float = 0.0) -> float:
+        if col not in df.columns or df[col].dropna().empty:
+            return float(fallback)
+        val = df[col].dropna().mean()
+        return float(fallback) if (np.isnan(val) or pd.isna(val)) else float(val)
+
     # Patient metadata
-    side = sub_base["side"].iloc[0]
-    weight = float(sub_base["weight"].dropna().mean() if not sub_base["weight"].dropna().empty else 0.0)
-    height = float(sub_base["height"].dropna().mean() if not sub_base["height"].dropna().empty else 0.0)
-    leg_length = float(sub_base["LegLength"].dropna().mean() if not sub_base["LegLength"].dropna().empty else 0.0)
+    side = sub_base["side"].iloc[0] if "side" in sub_base.columns and not sub_base["side"].empty else "RIGHT"
+    weight = _mean_col(sub_base, "weight", 0.0)
+    height = _mean_col(sub_base, "height", 0.0)
+    leg_length = _mean_col(sub_base, "LegLength", 0.0)
 
     # Baseline averages
-    b_gps = float(sub_base["GPS_a"].dropna().mean())
-    b_amin_sagh = float(sub_base["aMinSagH"].dropna().mean())
-    b_gvs_p = float(sub_base["GVS_aSagP"].dropna().mean())
-    b_gvs_h = float(sub_base["GVS_aSagH"].dropna().mean())
-    b_gvs_k = float(sub_base["GVS_aSagK"].dropna().mean())
-    b_gvs_a = float(sub_base["GVS_aSagA"].dropna().mean())
-    b_pctm = float(sub_base["pctmZeroStSagH"].dropna().mean() if not sub_base["pctmZeroStSagH"].dropna().empty else 0.0)
+    b_gps = _mean_col(sub_base, "GPS_a", 10.0)
+    b_amin_sagh = _mean_col(sub_base, "aMinSagH", 0.0)
+    b_gvs_p = _mean_col(sub_base, "GVS_aSagP", 0.0)
+    b_gvs_h = _mean_col(sub_base, "GVS_aSagH", 0.0)
+    b_gvs_k = _mean_col(sub_base, "GVS_aSagK", 0.0)
+    b_gvs_a = _mean_col(sub_base, "GVS_aSagA", 0.0)
+    b_pctm = _mean_col(sub_base, "pctmZeroStSagH", 0.0)
 
     def _mean_or(series: pd.Series, fallback: float) -> float:
         clean = series.dropna()
@@ -119,7 +129,7 @@ def get_patient_discrete_summary(
     vr_gvs_h = _mean_or(sub_vr["GVS_aSagH"], b_gvs_h) if not sub_vr.empty else b_gvs_h
     vr_gvs_k = _mean_or(sub_vr["GVS_aSagK"], b_gvs_k) if not sub_vr.empty else b_gvs_k
     vr_gvs_a = _mean_or(sub_vr["GVS_aSagA"], b_gvs_a) if not sub_vr.empty else b_gvs_a
-    vr_pctm = _mean_or(sub_vr["pctmZeroStSagH"], b_pctm) if not sub_vr.empty else b_pctm
+    vr_pctm = _mean_or(sub_vr["pctmZeroStSagH"], b_pctm) if (not sub_vr.empty and "pctmZeroStSagH" in sub_vr.columns) else b_pctm
 
     res = {
         "subject": subject_id,
@@ -157,18 +167,21 @@ def get_patient_discrete_summary(
         "delta_gvs_knee": vr_gvs_k - b_gvs_k,
         "delta_gvs_ankle": vr_gvs_a - b_gvs_a,
         "delta_pctm_zero": vr_pctm - b_pctm,
+        "has_vr": not sub_vr.empty,
+        "has_verbal": False,
     }
 
     if df_verbal is not None and not df_verbal.empty:
         sub_vb = df_verbal[df_verbal["subject"] == subject_id]
         if not sub_vb.empty:
+            res["has_verbal"] = True
             res["cycles_verbal"] = len(sub_vb)
             res["verbal_cycles"] = len(sub_vb)
-            res["verbal_gps"] = float(sub_vb["GPS_a"].dropna().mean())
-            res["verbal_amin_sagh"] = float(sub_vb["aMinSagH"].dropna().mean())
-            res["verbal_gvs_pelvis"] = float(sub_vb["GVS_aSagP"].dropna().mean())
-            res["verbal_gvs_hip"] = float(sub_vb["GVS_aSagH"].dropna().mean())
-            res["verbal_gvs_knee"] = float(sub_vb["GVS_aSagK"].dropna().mean())
-            res["verbal_gvs_ankle"] = float(sub_vb["GVS_aSagA"].dropna().mean())
+            res["verbal_gps"] = _mean_col(sub_vb, "GPS_a", b_gps)
+            res["verbal_amin_sagh"] = _mean_col(sub_vb, "aMinSagH", b_amin_sagh)
+            res["verbal_gvs_pelvis"] = _mean_col(sub_vb, "GVS_aSagP", b_gvs_p)
+            res["verbal_gvs_hip"] = _mean_col(sub_vb, "GVS_aSagH", b_gvs_h)
+            res["verbal_gvs_knee"] = _mean_col(sub_vb, "GVS_aSagK", b_gvs_k)
+            res["verbal_gvs_ankle"] = _mean_col(sub_vb, "GVS_aSagA", b_gvs_a)
 
     return res

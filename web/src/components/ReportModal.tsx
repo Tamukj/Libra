@@ -61,7 +61,7 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
         display: "flex",
         flexDirection: "column",
         background: "var(--white)",
-        boxShadow: "0 20px 40px rgba(0,0,0,0.2)"
+        boxShadow: "0 8px 24px rgba(28, 25, 23, 0.12)"
       }}>
         
         {/* Header with Audience Switcher and Language Switcher */}
@@ -84,7 +84,7 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
                 style={{
                   padding: "4px 9px",
                   fontSize: "11px",
-                  fontWeight: 650,
+                  fontWeight: 500,
                   border: "none",
                   borderRadius: "4px",
                   background: audience === "doctor" ? "var(--ink)" : "transparent",
@@ -99,7 +99,7 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
                 style={{
                   padding: "4px 9px",
                   fontSize: "11px",
-                  fontWeight: 650,
+                  fontWeight: 500,
                   border: "none",
                   borderRadius: "4px",
                   background: audience === "parent" ? "var(--ink)" : "transparent",
@@ -161,7 +161,10 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
               
               <div style={{ background: "var(--linen)", padding: "12px", borderRadius: "6px", fontSize: "12px", color: "var(--muted)", display: "flex", justifyContent: "space-between" }}>
                 <span>{modalLang === "kz" ? "Орталық: Семей қ. Балаларды оңалту орталығы" : "Центр: Реабилитационный центр детей г. Семей"}</span>
-                <span>{modalLang === "kz" ? "Уақыты: " : "Время: "}{new Date(report.created_at).toLocaleString()}</span>
+                <span>{modalLang === "kz" ? "Уақыты: " : "Время: "}{(() => {
+                  const d = new Date(report.created_at);
+                  return isNaN(d.getTime()) ? report.created_at : d.toLocaleString();
+                })()}</span>
               </div>
 
               {/* Mandatory Section 8.4 Alert Banner: Emergency 103 Call */}

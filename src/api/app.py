@@ -2,7 +2,7 @@
 
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
@@ -43,14 +43,15 @@ app.add_middleware(
 app.include_router(router)
 
 @app.get("/health")
-def healthcheck():
+def healthcheck(response: Response):
     """Health check endpoint verifying application and database connectivity."""
     db_status = "connected"
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-    except Exception as e:
-        db_status = f"unhealthy: {str(e)}"
+    except Exception:
+        db_status = "unhealthy"
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
     return {
         "status": "healthy" if db_status == "connected" else "degraded",

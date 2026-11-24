@@ -32,8 +32,8 @@ export function LibraLogo({ size = "md", href = "/", showSub = false }: LogoProp
         style={{
           fontFamily: "var(--sans)",
           fontSize: textSize,
-          fontWeight: 800,
-          letterSpacing: "0.04em",
+          fontWeight: 600,
+          letterSpacing: "0.02em",
           color: "#164478",
           lineHeight: 1,
           textTransform: "uppercase"
