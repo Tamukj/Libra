@@ -157,7 +157,7 @@ export function MethodVerdict({ modalities, summary, lang }: Props) {
               <Volume2 size={14} color="#d97706" />
               <span>{lang === "kz" ? "2. Дауыс (Verbal)" : "2. Голос (Verbal)"}</span>
             </span>
-            {isVerbal && <span className="badge badge-amber" style={{ fontSize: "10px" }}>{lang === "kz" ? "Басымдық" : "Приоритет"}</span>}
+            {isVerbal && <span className="badge badge-yellow" style={{ fontSize: "10px" }}>{lang === "kz" ? "Басымдық" : "Приоритет"}</span>}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px", paddingTop: "6px", borderTop: "1px solid var(--line)" }}>

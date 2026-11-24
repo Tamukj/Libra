@@ -78,13 +78,13 @@ export default function AnalyticsPage() {
 
       {loading ? (
         <div style={{ padding: "60px", textAlign: "center", color: "var(--muted)" }}>
-          Загрузка статистических данных...
+          {lang === "kz" ? "Статистикалық деректер жүктелуде..." : "Загрузка статистических данных..."}
         </div>
       ) : stats ? (
         <RegionalStats stats={stats} lang={lang} />
       ) : (
         <div className="card" style={{ padding: "40px", textAlign: "center" }}>
-          Ошибка загрузки статистических сведений.
+          {lang === "kz" ? "Статистикалық мәліметтерді жүктеу қатесі." : "Ошибка загрузки статистических сведений."}
         </div>
       )}
 

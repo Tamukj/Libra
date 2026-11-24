@@ -46,8 +46,14 @@ export default function PatientDossierPage() {
     loadData();
   }, [id]);
 
-  const fmt = (v?: number | null, fallback = "-") =>
+  const fmt = (v?: number | null, fallback = "—") =>
     typeof v === "number" && !isNaN(v) && isFinite(v) ? v.toFixed(1) : fallback;
+
+  const fmtUnit = (v?: number | null, unit = "°", signed = false) => {
+    if (typeof v !== "number" || isNaN(v) || !isFinite(v)) return "—";
+    const prefix = signed && v > 0 ? "+" : "";
+    return `${prefix}${v.toFixed(1)}${unit}`;
+  };
 
   return (
     <div className="container" style={{ paddingBlock: "24px", display: "flex", flexDirection: "column", gap: "18px" }}>
@@ -148,53 +154,111 @@ export default function PatientDossierPage() {
             gap: "14px"
           }}>
             {/* Model 1: Clinical VR Responder Prediction */}
-            <div className="card" style={{ padding: "16px", borderLeft: `4px solid ${analysis.ml?.responder_prediction?.is_predicted_responder ? "var(--teal)" : "var(--amber)"}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600 }}>
-                  <Activity size={16} color="var(--amber)" />
-                  <span>{lang === "kz" ? "VR-терапияға клиникалық жауапты бағалау (LOO)" : "Предиктивная оценка отклика на VR (LOO)"}</span>
-                </div>
-                <span className={`badge ${analysis.ml?.responder_prediction?.is_predicted_responder ? "badge-green" : "badge-yellow"}`}>
-                  {analysis.ml?.responder_prediction?.is_predicted_responder ? "True Responder" : "High Compensation Risk"}
-                </span>
-              </div>
-              <div style={{ fontSize: "13px", color: "var(--ink)", fontWeight: 500, marginBottom: "4px" }}>
-                {lang === "kz"
-                  ? analysis.ml?.responder_prediction?.clinical_status_kz
-                  : analysis.ml?.responder_prediction?.clinical_status_ru}
-              </div>
-              <div style={{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.5 }}>
-                {lang === "kz"
-                  ? analysis.ml?.responder_prediction?.recommendation_kz
-                  : analysis.ml?.responder_prediction?.recommendation_ru}
-              </div>
+            {(() => {
+              const resp = analysis.ml?.responder_prediction;
+              const isReliable = resp?.model_reliable !== false;
+              const aucVal =
+                typeof resp?.loo_roc_auc === "number" && isFinite(resp.loo_roc_auc)
+                  ? resp.loo_roc_auc.toFixed(2)
+                  : "—";
+              const balAccVal =
+                typeof resp?.loo_balanced_accuracy === "number" && isFinite(resp.loo_balanced_accuracy)
+                  ? `${(resp.loo_balanced_accuracy * 100).toFixed(0)}%`
+                  : null;
+              const borderColor = !resp
+                ? "var(--line)"
+                : !isReliable
+                ? "var(--amber)"
+                : resp.is_predicted_responder
+                ? "var(--teal)"
+                : "var(--amber)";
 
-              {/* XAI: Exact Closed-Form Linear Attributions */}
-              {analysis.ml?.responder_prediction?.feature_attributions && analysis.ml.responder_prediction.feature_attributions.length > 0 && (
-                <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
-                  <div style={{ fontSize: "11px", fontWeight: 500, color: "var(--muted)", marginBottom: "6px" }}>
-                    {lang === "kz" ? "Модель факторлары (XAI Shapley Attribution):" : "Факторы модели (XAI Shapley Attribution):"}
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                    {analysis.ml.responder_prediction.feature_attributions.slice(0, 3).map((attr) => (
-                      <span
-                        key={attr.feature}
-                        className="badge"
-                        style={{
-                          fontSize: "10px",
-                          padding: "2px 6px",
-                          background: attr.attribution >= 0 ? "var(--teal-bg)" : "var(--red-bg)",
-                          color: attr.attribution >= 0 ? "var(--teal)" : "var(--red)",
-                          borderColor: attr.attribution >= 0 ? "var(--teal-border)" : "var(--red-border)"
-                        }}
-                      >
-                        {attr.feature}: {attr.attribution > 0 ? `+${attr.attribution}` : attr.attribution}
+              return (
+                <div className="card" style={{ padding: "16px", borderLeft: `4px solid ${borderColor}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", gap: "8px", flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600 }}>
+                      <Activity size={16} color="var(--amber)" />
+                      <span>{lang === "kz" ? "VR-терапияға клиникалық жауапты бағалау (LOO)" : "Предиктивная оценка отклика на VR (LOO)"}</span>
+                    </div>
+                    {!resp ? (
+                      <span className="badge badge-neutral">
+                        {lang === "kz" ? "Деректер жоқ" : "Нет данных"}
                       </span>
-                    ))}
+                    ) : !isReliable ? (
+                      <span className="badge badge-yellow">
+                        {lang === "kz" ? "Эксперименттік (N=29)" : "Экспериментально (N=29)"}
+                      </span>
+                    ) : (
+                      <span className={`badge ${resp.is_predicted_responder ? "badge-green" : "badge-yellow"}`}>
+                        {resp.is_predicted_responder ? "True Responder" : "High Compensation Risk"}
+                      </span>
+                    )}
                   </div>
+
+                  {!resp ? (
+                    <div style={{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.5 }}>
+                      {lang === "kz"
+                        ? "Бұл жазба үшін предиктивті ML-бағалау жоқ. Төмендегі нақты CDSS көрсеткіштеріне сүйеніңіз."
+                        : "Предиктивная ML-оценка для данной записи отсутствует. Опирайтесь на фактические показатели CDSS ниже."}
+                    </div>
+                  ) : !isReliable ? (
+                    <>
+                      <div style={{ fontSize: "13px", color: "var(--ink)", fontWeight: 500, marginBottom: "4px" }}>
+                        {lang === "kz"
+                          ? `Терапияға дейінгі болжам үлкенірек когортаны қажет етеді (LOO ROC-AUC = ${aucVal}${balAccVal ? `, Bal. Acc = ${balAccVal}` : ""}).`
+                          : `Дотерапевтический прогноз отклика требует расширения когорты (LOO ROC-AUC = ${aucVal}${balAccVal ? `, Bal. Acc = ${balAccVal}` : ""}).`}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.5 }}>
+                        {lang === "kz"
+                          ? "Клиникалық шешімдер осы болжамға емес, төмендегі нақты CDSS бағдаршамы мен TJE / PCR индекстеріне сүйенеді."
+                          : "Клинические решения опираются не на этот экспериментальный прогноз, а на фактический светофор CDSS и индексы TJE / PCR ниже."}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: "13px", color: "var(--ink)", fontWeight: 500, marginBottom: "4px" }}>
+                        {lang === "kz" ? resp.clinical_status_kz : resp.clinical_status_ru}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.5 }}>
+                        {lang === "kz" ? resp.recommendation_kz : resp.recommendation_ru}
+                      </div>
+                    </>
+                  )}
+
+                  {/* XAI: Exact Closed-Form Linear Attributions */}
+                  {resp?.feature_attributions && resp.feature_attributions.length > 0 && (
+                    <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 500, color: "var(--muted)", marginBottom: "6px" }}>
+                        {!isReliable
+                          ? (lang === "kz"
+                              ? "Зерттеу факторлары (XAI Shapley, клиникалық шешімге емес):"
+                              : "Исследовательские факторы (XAI Shapley, не для клинических решений):")
+                          : (lang === "kz"
+                              ? "Модель факторлары (XAI Shapley Attribution):"
+                              : "Факторы модели (XAI Shapley Attribution):")}
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                        {resp.feature_attributions.slice(0, 3).map((attr) => (
+                          <span
+                            key={attr.feature}
+                            className="badge"
+                            style={{
+                              fontSize: "10px",
+                              padding: "2px 6px",
+                              background: attr.attribution >= 0 ? "var(--teal-bg)" : "var(--red-bg)",
+                              color: attr.attribution >= 0 ? "var(--teal)" : "var(--red)",
+                              borderColor: attr.attribution >= 0 ? "var(--teal-border)" : "var(--red-border)"
+                            }}
+                          >
+                            {attr.feature}: {attr.attribution > 0 ? `+${attr.attribution}` : attr.attribution}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* Model 2: PCA Gait Stability & Fatigue Monitor */}
             <div className="card" style={{ padding: "16px", borderLeft: `4px solid ${analysis.ml?.pca_stability?.is_stable ? "var(--teal)" : "var(--red)"}` }}>
@@ -303,10 +367,33 @@ export default function PatientDossierPage() {
                     </tr>
                     <tr style={{ background: "var(--linen)" }}>
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 700 }}>{lang === "kz" ? "Бейкер индексі (GPS_a)" : "Индекс походки Бейкера (GPS_a)"}</th>
-                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmt(analysis.summary.baseline_gps)}°</td>
-                      <td style={{ padding: "10px 12px" }}>{fmt(analysis.summary.verbal_gps)}°</td>
-                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmt(analysis.summary.vr_gps)}°</td>
-                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmt(analysis.summary.delta_gps)}°</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmtUnit(analysis.summary.baseline_gps)}</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtUnit(analysis.summary.verbal_gps)}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmtUnit(analysis.summary.vr_gps)}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmtUnit(analysis.summary.delta_gps)}</td>
+                    </tr>
+                    <tr style={{ background: "var(--paper)" }}>
+                      <th scope="row" style={{ padding: "10px 12px", fontWeight: 600 }}>
+                        {lang === "kz" ? "Сан моментінің ауысуы (pctmZeroStSagH, %)" : "Переход момента бедра (pctmZeroStSagH, %)"}
+                      </th>
+                      <td style={{ padding: "10px 12px" }}>{fmtUnit(analysis.summary.baseline_pctm_zero, "%")}</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtUnit(analysis.summary.verbal_pctm_zero, "%")}</td>
+                      <td style={{ padding: "10px 12px" }}>{fmtUnit(analysis.summary.vr_pctm_zero, "%")}</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        {(() => {
+                          const s = analysis.summary;
+                          const delta =
+                            typeof s.delta_pctm_zero === "number" && isFinite(s.delta_pctm_zero)
+                              ? s.delta_pctm_zero
+                              : typeof s.vr_pctm_zero === "number" &&
+                                isFinite(s.vr_pctm_zero) &&
+                                typeof s.baseline_pctm_zero === "number" &&
+                                isFinite(s.baseline_pctm_zero)
+                              ? s.vr_pctm_zero - s.baseline_pctm_zero
+                              : null;
+                          return fmtUnit(delta, "%", true);
+                        })()}
+                      </td>
                     </tr>
                     <tr style={{ background: "var(--paper)" }}>
                       <th scope="row" style={{ padding: "10px 12px", fontWeight: 700, color: "var(--ink)" }}>{lang === "kz" ? "Шынайы буын жазылуы (TJE)" : "Истинное суставное разгибание (TJE)"}</th>

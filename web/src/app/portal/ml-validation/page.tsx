@@ -75,13 +75,13 @@ export default function MlValidationPage() {
 
       {loading ? (
         <div style={{ padding: "60px", textAlign: "center", color: "var(--muted)" }}>
-          Загрузка метрик валидации...
+          {lang === "kz" ? "Валидация метрикалары жүктелуде..." : "Загрузка метрик валидации..."}
         </div>
       ) : metrics ? (
         <MlValidation metrics={metrics} lang={lang} />
       ) : (
         <div className="card" style={{ padding: "40px", textAlign: "center" }}>
-          Ошибка загрузки метрик.
+          {lang === "kz" ? "Метрикаларды жүктеу қатесі." : "Ошибка загрузки метрик."}
         </div>
       )}
 

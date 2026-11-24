@@ -219,21 +219,21 @@ export default function LandingPage() {
             
             <div className="card-raised">
               <div style={{ fontFamily: "var(--serif)", fontSize: "40px", fontWeight: "500", color: "var(--ink)", lineHeight: 1 }}>
-                122 000
+                122 400
               </div>
               <div style={{ fontWeight: "700", marginTop: "10px", fontSize: "14px" }}>
                 {lang === "kz" ? "ҚР-дағы мүгедектігі бар балалар" : "Детей с инвалидностью в РК"}
               </div>
               <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
                 {lang === "kz"
-                  ? "Ұлттық статистика бюросының мәліметтері бойынша 22 000-нан астам балада БЦП диагнозы бар және қозғалыс бұзылыстарын мониторингтеуді қажет етеді."
-                  : "По данным Бюро национальной статистики, более 22 000 детей имеют диагноз ДЦП и нуждаются в мониторинге двигательных нарушений."}
+                  ? "Ұлттық статистика бюросының мәліметтері бойынша 22 150 балада БЦП диагнозы бар және қозғалыс бұзылыстарын мониторингтеуді қажет етеді."
+                  : "По данным Бюро национальной статистики, 22 150 детей имеют диагноз ДЦП и нуждаются в мониторинге двигательных нарушений."}
               </p>
             </div>
 
             <div className="card-raised">
               <div style={{ fontFamily: "var(--serif)", fontSize: "40px", fontWeight: "500", color: "var(--amber)", lineHeight: 1 }}>
-                2 800
+                2 840
               </div>
               <div style={{ fontWeight: "700", marginTop: "10px", fontSize: "14px" }}>
                 {lang === "kz" ? "Абай облысында есепте тұрған балалар" : "Детей на учете в области Абай"}

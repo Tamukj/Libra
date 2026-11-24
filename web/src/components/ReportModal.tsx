@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { FileText, Printer, X, Check, Shield } from "lucide-react";
-import { createReport } from "@/lib/api";
+import { FileText, Printer, X, Shield, Download } from "lucide-react";
+import { createReport, downloadFhirBundle } from "@/lib/api";
 
 interface Props {
   patientCode: string;
@@ -14,6 +14,8 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
   const [modalLang, setModalLang] = React.useState<"ru" | "kz" | "en">(initialLang);
   const [audience, setAudience] = useState<"doctor" | "parent">("doctor");
   const [loading, setLoading] = useState(false);
+  const [fhirLoading, setFhirLoading] = useState(false);
+  const [fhirError, setFhirError] = useState<string | null>(null);
   const [report, setReport] = useState<{ narrative: string; created_at: string; pcr: number; tje: number; icf_b770: string } | null>(null);
 
   React.useEffect(() => {
@@ -216,9 +218,45 @@ export function ReportModal({ patientCode, lang: initialLang, onClose }: Props) 
         </div>
 
         {/* Actions */}
-        <div style={{ borderTop: "1px solid var(--line)", paddingTop: "14px", marginTop: "16px", display: "flex", justifyContent: "flex-end", gap: "10px" }} className="no-print">
+        {fhirError && (
+          <div style={{ marginTop: "10px", fontSize: "12px", color: "var(--red)", fontWeight: 600 }} className="no-print">
+            {fhirError}
+          </div>
+        )}
+        <div style={{ borderTop: "1px solid var(--line)", paddingTop: "14px", marginTop: "16px", display: "flex", justifyContent: "flex-end", gap: "10px", flexWrap: "wrap" }} className="no-print">
           <button onClick={onClose} className="btn">
             {modalLang === "kz" ? "Жабу" : "Закрыть"}
+          </button>
+          <button
+            onClick={async () => {
+              setFhirLoading(true);
+              setFhirError(null);
+              try {
+                await downloadFhirBundle(patientCode);
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                setFhirError(
+                  modalLang === "kz"
+                    ? `HL7 FHIR жүктеу қатесі: ${msg}`
+                    : `Ошибка экспорта HL7 FHIR: ${msg}`
+                );
+              } finally {
+                setFhirLoading(false);
+              }
+            }}
+            disabled={fhirLoading}
+            className="btn btn-teal"
+          >
+            <Download size={16} />
+            <span>
+              {fhirLoading
+                ? modalLang === "kz"
+                  ? "Жүктелуде..."
+                  : "Экспорт..."
+                : modalLang === "kz"
+                ? "HL7 FHIR (Damumed JSON) жүктеу"
+                : "Экспорт HL7 FHIR (Damumed JSON)"}
+            </span>
           </button>
           <button onClick={() => window.print()} className="btn btn-primary">
             <Printer size={16} />

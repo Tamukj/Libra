@@ -24,9 +24,49 @@ export function RegionalStats({ stats, lang }: Props) {
         </h2>
         <div style={{ fontSize: "13px", color: "var(--muted)" }}>
           {lang === "kz" ? (
-            <>Дереккөздер: <strong>stat.gov.kz</strong> (ҚР СЖРА Ұлттық статистика бюросы) және <strong>data.egov.kz</strong> (ҚР Ашық деректер порталы).</>
+            <>
+              Дереккөздер:{" "}
+              <a
+                href="https://stat.gov.kz"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontWeight: 700, textDecoration: "underline", color: "var(--ink)" }}
+              >
+                stat.gov.kz
+              </a>{" "}
+              (ҚР СЖРА Ұлттық статистика бюросы) және{" "}
+              <a
+                href="https://data.egov.kz"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontWeight: 700, textDecoration: "underline", color: "var(--ink)" }}
+              >
+                data.egov.kz
+              </a>{" "}
+              (ҚР Ашық деректер порталы).
+            </>
           ) : (
-            <>Источники: <strong>stat.gov.kz</strong> (Бюро национальной статистики АСПиР РК) и <strong>data.egov.kz</strong> (Портал открытых данных РК).</>
+            <>
+              Источники:{" "}
+              <a
+                href="https://stat.gov.kz"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontWeight: 700, textDecoration: "underline", color: "var(--ink)" }}
+              >
+                stat.gov.kz
+              </a>{" "}
+              (Бюро национальной статистики АСПиР РК) и{" "}
+              <a
+                href="https://data.egov.kz"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontWeight: 700, textDecoration: "underline", color: "var(--ink)" }}
+              >
+                data.egov.kz
+              </a>{" "}
+              (Портал открытых данных РК).
+            </>
           )}
         </div>
       </div>
@@ -103,23 +143,30 @@ export function RegionalStats({ stats, lang }: Props) {
             </h3>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "13px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
               <span style={{ color: "var(--muted)" }}>
                 {lang === "kz" ? "Семейдегі қозғалыс зертханалары:" : "Лабораторий анализа движения в Семее:"}
               </span>
-              <strong style={{ color: "var(--red)" }}>0 (Дефицит аппаратуры)</strong>
+              <strong style={{ color: "var(--red)", textAlign: "right" }}>
+                {region_abai.labs_3d_grail_count}{" "}
+                {lang === "kz" ? "(Аппаратура тапшылығы)" : "(Дефицит аппаратуры)"}
+              </strong>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
               <span style={{ color: "var(--muted)" }}>
                 {lang === "kz" ? "Талдау уақыты:" : "Время формирования паспорта:"}
               </span>
-              <strong style={{ color: "var(--teal)" }}>30 сек вместо 40 мин</strong>
+              <strong style={{ color: "var(--teal)", textAlign: "right" }}>
+                {lang === "kz" ? "40 мин орнына 30 сек" : "30 сек вместо 40 мин"}
+              </strong>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
               <span style={{ color: "var(--muted)" }}>
                 {lang === "kz" ? "Консилиум хаттамасы:" : "Протокол консилиума:"}
               </span>
-              <strong>Автоматически в Damumed</strong>
+              <strong style={{ textAlign: "right" }}>
+                {lang === "kz" ? "Damumed-ке автоматты түрде" : "Автоматически в Damumed"}
+              </strong>
             </div>
           </div>
         </div>
@@ -129,16 +176,32 @@ export function RegionalStats({ stats, lang }: Props) {
       {/* Rehabilitation centers in Semey */}
       <div className="card">
         <h3 style={{ fontSize: "14px", fontWeight: "700", marginBottom: "12px" }}>
-          {lang === "kz"
-            ? "Абай облысының бейінді балалар оңалту ұйымдары (data.egov.kz)"
-            : "Действующие профильные реабилитационные организации области Абай (data.egov.kz)"}
+          {lang === "kz" ? (
+            <>
+              Абай облысының бейінді балалар оңалту ұйымдары (
+              <a href="https://data.egov.kz" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "underline" }}>
+                data.egov.kz
+              </a>
+              )
+            </>
+          ) : (
+            <>
+              Действующие профильные реабилитационные организации области Абай (
+              <a href="https://data.egov.kz" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "underline" }}>
+                data.egov.kz
+              </a>
+              )
+            </>
+          )}
         </h3>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "12px" }}>
           {region_abai.rehab_centers.map((c, i) => (
             <div key={i} style={{ border: "1px solid var(--line)", borderRadius: "6px", padding: "12px", background: "var(--paper)" }}>
               <div style={{ fontWeight: "600", fontSize: "13px" }}>{c.name}</div>
               <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "4px" }}>
-                {c.city} · Мощность: {c.annual_capacity} детей в год
+                {lang === "kz"
+                  ? `${c.city} · Қуаты: жылына ${c.annual_capacity} бала`
+                  : `${c.city} · Мощность: ${c.annual_capacity} детей в год`}
               </div>
             </div>
           ))}

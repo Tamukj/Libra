@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import { KinematicsResponse } from "@/lib/types";
 
 interface KinematicsProps {
@@ -116,6 +117,37 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
         </div>
 
       </div>
+
+      {/* Surrogate / Fallback Curves Warning Banner */}
+      {(data.is_surrogate || data.is_fallback) && (
+        <div
+          role="alert"
+          style={{
+            background: "var(--amber-light)",
+            border: "1px solid var(--amber-border)",
+            borderRadius: "8px",
+            padding: "10px 14px",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "10px",
+            color: "var(--amber)",
+            fontSize: "12.5px",
+            lineHeight: 1.5
+          }}
+        >
+          <AlertTriangle size={17} style={{ flexShrink: 0, marginTop: "2px" }} />
+          <div>
+            <strong>
+              {lang === "kz"
+                ? "Схемалық қисықтар (эталондық s61520_1):"
+                : "Схематические кривые (эталон s61520_1):"}
+            </strong>{" "}
+            {lang === "kz"
+              ? "Жүктелген дискретті CSV файлында 51 нүктелі кинематикалық қисықтар жоқ, сондықтан бұл пациенттің нақты өлшенген қисықтары емес, когортаның эталондық қисықтары көрсетілген."
+              : "В загруженном дискретном CSV отсутствуют 51-точечные кинематические кривые, поэтому на графике схематично показаны референсные кривые когорты (s61520_1), а не измеренные кривые этого пациента."}
+          </div>
+        </div>
+      )}
 
       {/* Clean Clinical Guide Strip (Zero AI Emoji Slop) */}
       <div style={{

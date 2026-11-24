@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LibraLogo } from "@/components/LibraLogo";
-import { Users, BarChart2, LogOut, Upload, Stethoscope, HelpCircle, Scale, AlertTriangle } from "lucide-react";
+import { Users, BarChart2, LogOut, Upload, Stethoscope, HelpCircle, Scale, AlertTriangle, Eye } from "lucide-react";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { LegalModal } from "@/components/LegalModal";
-import { uploadPatientCSV } from "@/lib/api";
-import { LanguageProvider, useLanguage } from "@/lib/LanguageContext";
+import { UploadCsvModal } from "@/components/UploadCsvModal";
+import { CsvUploadResponse } from "@/lib/types";
+import { useLanguage } from "@/lib/LanguageContext";
 
 function PortalHeader() {
   const pathname = usePathname();
@@ -16,31 +17,46 @@ function PortalHeader() {
   const { lang, setLang, t } = useLanguage();
   const [guideOpen, setGuideOpen] = useState(false);
   const [legalOpen, setLegalOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [largeFont, setLargeFont] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try {
+      const enabled = localStorage.getItem("libra_a11y_large") === "1";
+      setLargeFont(enabled);
+      document.documentElement.classList.toggle("a11y-large", enabled);
+    } catch {}
+  }, []);
+
+  const toggleLargeFont = () => {
+    const next = !largeFont;
+    setLargeFont(next);
+    document.documentElement.classList.toggle("a11y-large", next);
+    try {
+      localStorage.setItem("libra_a11y_large", next ? "1" : "0");
+    } catch {}
+  };
 
   const handleLogout = () => {
     document.cookie = "libra_session=; path=/; max-age=0";
     router.push("/login");
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      setUploadNotice(lang === "kz" ? "Файл импортталуда..." : "Импорт CSV файла...");
-      const res = await uploadPatientCSV(file);
-      setUploadNotice(lang === "kz" ? res.message_kz : res.message_ru);
-      e.target.value = "";
-      router.refresh();
-      setTimeout(() => {
-        setUploadNotice(null);
-      }, 3000);
-    } catch {
-      e.target.value = "";
-      setUploadNotice(lang === "kz" ? "Жүктеу қатесі: CSV форматын тексеріңіз" : "Ошибка загрузки: проверьте формат CSV файла");
-      setTimeout(() => setUploadNotice(null), 4000);
+  const handleUploadSuccess = (res: CsvUploadResponse) => {
+    setUploadOpen(false);
+    const fallbackMsg =
+      lang === "kz"
+        ? `Файл сәтті импортталды (${res.code}).`
+        : `CSV успешно импортирован (${res.code}).`;
+    setUploadNotice((lang === "kz" ? res.message_kz : res.message_ru) || fallbackMsg);
+    if (res.code) {
+      router.push(`/portal/patients/${encodeURIComponent(res.code)}`);
     }
+    router.refresh();
+    setTimeout(() => {
+      setUploadNotice(null);
+    }, 4500);
   };
 
   const navLinks = [
@@ -51,10 +67,10 @@ function PortalHeader() {
   return (
     <>
       <header style={{ borderBottom: "1px solid var(--line)", background: "var(--white)", position: "sticky", top: 0, zIndex: 40 }} className="no-print">
-        <div className="container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", height: "64px", gap: "16px", flexWrap: "nowrap" }}>
+        <div className="container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", minHeight: "64px", paddingBlock: "8px", gap: "12px", flexWrap: "wrap" }}>
           
           {/* Left: Brand & Primary Doctor Navigation */}
-          <div style={{ display: "flex", alignItems: "center", gap: "16px", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
             <LibraLogo size="md" href="/portal" />
 
             <nav style={{ display: "flex", alignItems: "center", gap: "6px" }} className="portal-nav-links">
@@ -84,25 +100,31 @@ function PortalHeader() {
             </nav>
           </div>
 
-          {/* Right: Actions, Language Switcher & Doctor Profile */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0, marginLeft: "auto" }}>
+          {/* Right: Actions, Accessibility, Language Switcher & Doctor Profile */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginLeft: "auto" }}>
             
-            {/* CSV File Upload Input */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept=".csv"
-              style={{ display: "none" }}
-              onChange={handleFileUpload}
-            />
+            {/* Multi-condition CSV Upload Modal Trigger */}
             <button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => setUploadOpen(true)}
               className="btn btn-amber"
               style={{ fontSize: "12px", padding: "6px 12px" }}
-              title="Импорт CSV файла обследования"
+              title={lang === "kz" ? "Тексеру CSV файлын импорттау" : "Импорт CSV файла обследования"}
             >
               <Upload size={14} />
-              <span className="hide-on-mobile">{t.btn_upload || "Загрузить CSV"}</span>
+              <span className="hide-on-mobile">{t.btn_upload || (lang === "kz" ? "CSV жүктеу" : "Загрузить CSV")}</span>
+            </button>
+
+            {/* Accessibility / Patient & Elderly Mode Toggle */}
+            <button
+              onClick={toggleLargeFont}
+              className={`btn ${largeFont ? "btn-primary" : ""}`}
+              style={{ fontSize: "12px", padding: "6px 10px" }}
+              aria-pressed={largeFont}
+              title={lang === "kz" ? "Пациенттер мен қарт адамдарға арналған үлкен қаріп режимі" : "Режим крупного шрифта и повышенного контраста"}
+              aria-label={lang === "kz" ? "Үлкен қаріп" : "Крупный шрифт"}
+            >
+              <Eye size={15} />
+              <span className="hide-on-mobile">{lang === "kz" ? "Үлкен қаріп" : "Крупный шрифт"}</span>
             </button>
 
             {/* Clinical Help Sheet */}
@@ -110,8 +132,8 @@ function PortalHeader() {
               onClick={() => setGuideOpen(true)}
               className="btn"
               style={{ fontSize: "12px", padding: "6px 10px" }}
-              title="Клинический справочник показателей"
-              aria-label="Справка по биомеханике"
+              title={lang === "kz" ? "Көрсеткіштер бойынша клиникалық анықтамалық" : "Клинический справочник показателей"}
+              aria-label={lang === "kz" ? "Биомеханика бойынша анықтама" : "Справка по биомеханике"}
             >
               <HelpCircle size={15} color="var(--teal)" />
               <span className="hide-on-mobile">{lang === "kz" ? "Жаднама" : "Справка"}</span>
@@ -122,8 +144,8 @@ function PortalHeader() {
               onClick={() => setLegalOpen(true)}
               className="btn"
               style={{ fontSize: "12px", padding: "6px 10px" }}
-              title="Правовая база и стандарты безопасности (ст. 8.4 Положения)"
-              aria-label="Правовые стандарты и скорая помощь 103"
+              title={lang === "kz" ? "Құқықтық негіз және қауіпсіздік стандарттары (8.4-бап)" : "Правовая база и стандарты безопасности (ст. 8.4 Положения)"}
+              aria-label={lang === "kz" ? "Құқықтық стандарттар және 103 жедел жәрдем" : "Правовые стандарты и скорая помощь 103"}
             >
               <Scale size={15} color="var(--amber)" />
               <span className="hide-on-mobile">{lang === "kz" ? "Құқық (103)" : "Право (103)"}</span>
@@ -176,8 +198,10 @@ function PortalHeader() {
             }}>
               <Stethoscope size={14} color="var(--amber)" />
               <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                <span style={{ fontWeight: 700 }}>Д-р Аманжолов К.</span>
-                <span style={{ fontSize: "10px", color: "var(--muted)" }} className="hide-on-mobile">ОДБ г. Семей</span>
+                <span style={{ fontWeight: 700 }}>{lang === "kz" ? "Дәр. Аманжолов Қ." : "Д-р Аманжолов К."}</span>
+                <span style={{ fontSize: "10px", color: "var(--muted)" }} className="hide-on-mobile">
+                  {lang === "kz" ? "Семей қ. ОБА" : "ОДБ г. Семей"}
+                </span>
               </div>
             </div>
 
@@ -186,8 +210,8 @@ function PortalHeader() {
               onClick={handleLogout}
               className="btn"
               style={{ padding: "6px 8px", color: "var(--muted)", background: "transparent", border: "none", cursor: "pointer" }}
-              title="Выход из портала"
-              aria-label="Выход"
+              title={lang === "kz" ? "Порталдан шығу" : "Выход из портала"}
+              aria-label={lang === "kz" ? "Шығу" : "Выход"}
             >
               <LogOut size={15} />
             </button>
@@ -233,6 +257,14 @@ function PortalHeader() {
             : "Скорая медицинская помощь: 103 · Libra является СППР и не ставит диагноз (ст. 8.4 Положения)"}
         </span>
       </div>
+
+      {uploadOpen && (
+        <UploadCsvModal
+          lang={lang}
+          onClose={() => setUploadOpen(false)}
+          onSuccess={handleUploadSuccess}
+        />
+      )}
 
       {guideOpen && (
         <OnboardingModal
