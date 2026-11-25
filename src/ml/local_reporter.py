@@ -151,23 +151,23 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
             else "Бағаланбады (51 нүктелі кинематикалық қисықтар жоқ)"
         )
         return (
-            f"КЛИНИКАЛЫҚ БИОМЕХАНИКАЛЫҚ ҚОРЫТЫНДЫ (Libra СППР)\n"
-            f"Пациент: {subject} · Зерттелген аяқ: {side_txt} · {visit_seg}Белсенді сынама: {mode}\n"
-            f"1. ДДҰ ХҚЖ (МКФ) БОЙЫНША СТАТУС:\n"
+            f"Клиникалық биомеханикалық қорытынды (Libra СППР)\n"
+            f"Пациент: {subject} · Зерттелген аяқ: {side_txt} · {visit_seg}Белсенді сынама: {mode}\n\n"
+            f"1. ДДҰ ХҚЖ (МКФ) бойынша статус:\n"
             f"   • b770 (Жүріс стереотипі): {icf_pre_desc} → {icf_post_desc}\n"
             f"   • d450 (Жүру тұрақтылығы): {icf_d_desc}\n\n"
-            f"2. БИОМЕХАНИКА ЖӘНЕ БЕЙІМДЕЛУ ТАЛДАУЫ:\n"
+            f"2. Биомеханика және бейімделу талдауы:\n"
             f"   • Санның жазылу бұрышының өзгерісі (aMinSagH): {d_hip:+.2f}°\n"
             f"   • Шынайы буындық жазылу (TJE): {tje:+.2f}°\n"
             f"   • Жамбас компенсациясы коэффициенті (PCR): {pcr:.2f}\n"
             f"   • Жамбастың ауытқу өзгерісі (GVS Таз): {d_pelvis:+.2f}°\n\n"
-            f"3. ОҢАЛТУ ӘДІСІН ТАҢДАУ (Ауызша нұсқау / VR):\n"
+            f"3. Оңалту әдісін таңдау (Ауызша нұсқау / VR):\n"
             f"   • Ұсынылған әдіс: {best_method_label}\n"
             f"   • Негіздеме: {modalities['verdict_kz']}\n\n"
-            f"4. ОҢАЛТУ ДӘРІГЕРІНЕ АРНАЛҒАН ҰСЫНЫМ:\n"
+            f"4. Оңалту дәрігеріне арналған ұсыным:\n"
             f"   Мәртебе: {risk['label_kz']}\n"
             f"   Тактика: {risk['recommendation_kz']}\n\n"
-            f"5. ШЕШІМНІҢ ШЕКТЕУЛЕРІ ЖӘНЕ ЖАУАПКЕРШІЛІК (Ереже 8.2-т.):\n"
+            f"5. Ескерту және шектеулер:\n"
             f"   {limitations}"
         )
 
@@ -180,22 +180,22 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
         )
         return (
             f"CLINICAL BIOMECHANICAL REPORT (Libra CDSS)\n"
-            f"Patient: {subject} · Side: {side_txt} · {visit_seg}Evaluated trial: {mode}\n"
-            f"1. WHO ICF FUNCTIONAL STATUS:\n"
+            f"Patient: {subject} · Side: {side_txt} · {visit_seg}Evaluated trial: {mode}\n\n"
+            f"1. WHO ICF functional status:\n"
             f"   • b770 (Gait pattern functions): {icf_pre_desc} → {icf_post_desc}\n"
             f"   • d450 (Walking stability): {icf_d_desc}\n\n"
-            f"2. BIOMECHANICS & COMPENSATION ANALYSIS:\n"
+            f"2. Biomechanics & compensation analysis:\n"
             f"   • Hip extension delta (aMinSagH): {d_hip:+.2f}°\n"
             f"   • True Joint Extension (TJE): {tje:+.2f}°\n"
             f"   • Pathological Compensation Ratio (PCR): {pcr:.2f}\n"
             f"   • Pelvic deviation delta (GVS Pelvis): {d_pelvis:+.2f}°\n\n"
-            f"3. REHABILITATION TACTICS (Verbal / VR):\n"
+            f"3. Rehabilitation tactics (Verbal / VR):\n"
             f"   • Optimal mode: {best_method_label}\n"
             f"   • Rationale: {modalities['verdict_en']}\n\n"
-            f"4. CLINICAL GUIDANCE FOR PHYSICIAN:\n"
+            f"4. Clinical guidance for physician:\n"
             f"   Status: {risk['label_en']}\n"
             f"   Guidance: {risk['recommendation_en']}\n\n"
-            f"5. SOLUTION LIMITATIONS & SAFETY NOTICE (Rule 8.2):\n"
+            f"5. Safety notice:\n"
             f"   {limitations}"
         )
 
@@ -206,23 +206,23 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
         else "Не оценивался (отсутствуют 51-точечные кривые кинематики)"
     )
     return (
-        f"КЛИНИЧЕСКИЙ БИОМЕХАНИЧЕСКИЙ ПРОТОКОЛ (Libra СППР)\n"
-        f"Пациент: {subject} · Исследуемая сторона: {side_txt} · {visit_seg}Активная проба: {mode}\n"
-        f"1. СТАТУС ПО МКФ ВОЗ:\n"
+        f"Клинический биомеханический протокол (Libra СППР)\n"
+        f"Пациент: {subject} · Исследуемая сторона: {side_txt} · {visit_seg}Активная проба: {mode}\n\n"
+        f"1. Статус по МКФ ВОЗ:\n"
         f"   • b770 (Стереотип походки): {icf_pre_desc} → {icf_post_desc}\n"
         f"   • d450 (Стабильность ходьбы): {icf_d_desc}\n\n"
-        f"2. АНАЛИЗ БИОМЕХАНИКИ И КОМПЕНСАЦИЙ:\n"
+        f"2. Анализ биомеханики и компенсаций:\n"
         f"   • Изменение угла разгибания бедра (aMinSagH): {d_hip:+.2f}°\n"
         f"   • Истинное суставное разгибание (TJE): {tje:+.2f}°\n"
         f"   • Коэффициент компенсации таза (PCR): {pcr:.2f}\n"
         f"   • Отклонение наклона таза (GVS Таза): {d_pelvis:+.2f}°\n\n"
-        f"3. ВЫБОР ТАКТИКИ РЕАБИЛИТАЦИИ (Голосовые инструкции / VR):\n"
+        f"3. Выбор тактики реабилитации (Голосовые инструкции / VR):\n"
         f"   • Рекомендованный режим: {best_method_label}\n"
         f"   • Клиническое обоснование: {modalities['verdict_ru']}\n\n"
-        f"4. РЕКОМЕНДАЦИЯ ДЛЯ ВРАЧА-РЕАБИЛИТОЛОГА:\n"
+        f"4. Рекомендация для врача-реабилитолога:\n"
         f"   Статус: {risk['label_ru']}\n"
         f"   Тактика: {risk['recommendation_ru']}\n\n"
-        f"5. ОГРАНИЧЕНИЯ РЕШЕНИЯ И БЕЗОПАСНОСТЬ (п. 8.2 Положения):\n"
+        f"5. Примечание и ограничения:\n"
         f"   {limitations}"
     )
 
@@ -258,12 +258,12 @@ def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
         )
         return (
             f"БАЛАНЫҢ ЖҮРІС ТӨЛҚҰЖАТЫ (Ата-аналарға арналған ақпараттық анықтама)\n"
-            f"Пациент коды: {subject} · {visit_seg}Зерттеу түрі: {mode}\n"
-            f"1. ҚИМЫЛ-ҚОЗҒАЛЫС БАЙҚАУЫ:\n"
+            f"Пациент коды: {subject} · {visit_seg}Зерттеу түрі: {mode}\n\n"
+            f"1. Қимыл-қозғалыс байқауы:\n"
             f"   • {progress_text}\n"
             f"   • Жамбас пен бел қалпы: {posture_text}.\n"
             f"   • Жүрістің үйлесімділік көрсеткіші (GDI): {gdi_txt} / 100 балл.\n\n"
-            f"2. ҚАУІПСІЗДІК ПЕН ШЕКТЕУЛЕР (Ереже 8.2-т.):\n"
+            f"2. Қауіпсіздік ескертпесі:\n"
             f"   • {limitations}\n"
             f"   • Жаттығулар жиынтығы мен емдік жүктемені тек емдеуші дәрігер-реабилитолог тағайындайды."
         )
@@ -281,12 +281,12 @@ def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
         )
         return (
             f"CHILD GAIT PASSPORT (Parent Information Summary)\n"
-            f"Patient code: {subject} · {visit_seg}Session: {mode}\n"
-            f"1. MOVEMENT OBSERVATIONS:\n"
+            f"Patient code: {subject} · {visit_seg}Session: {mode}\n\n"
+            f"1. Movement observations:\n"
             f"   • {progress_text}\n"
             f"   • Pelvis & posture: {posture_text}.\n"
             f"   • Gait Deviation Index (GDI): {gdi_txt} / 100.\n\n"
-            f"2. SAFETY & LIMITATIONS (Rule 8.2):\n"
+            f"2. Important notice:\n"
             f"   • {limitations}\n"
             f"   • Only the attending physician prescribes exercises or rehabilitation loads."
         )
@@ -303,12 +303,12 @@ def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
     )
     return (
         f"ПАСПОРТ ПОХОДКИ РЕБЕНКА (Информационная справка для родителей)\n"
-        f"Код пациента: {subject} · {visit_seg}Тип исследования: {mode}\n"
-        f"1. НАБЛЮДЕНИЯ ЗА ДВИЖЕНИЕМ:\n"
+        f"Код пациента: {subject} · {visit_seg}Тип исследования: {mode}\n\n"
+        f"1. Наблюдения за движением:\n"
         f"   • {progress_text}\n"
         f"   • Положение таза и спины: {posture_text}.\n"
         f"   • Индекс гармоничности походки (GDI): {gdi_txt} из 100 баллов.\n\n"
-        f"2. ВАЖНЫЕ ОГРАНИЧЕНИЯ И БЕЗОПАСНОСТЬ (п. 8.2 Положения):\n"
+        f"2. Важное примечание:\n"
         f"   • {limitations}\n"
         f"   • Двигательный режим и лечебную гимнастику назначает исключительно лечащий врач-реабилитолог."
     )

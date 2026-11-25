@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -19,6 +19,8 @@ import {
   PhoneCall,
 } from "lucide-react";
 import { LibraLogo } from "@/components/LibraLogo";
+import { ModalDialog } from "@/components/ModalDialog";
+import { LanguageSwitch, useLargeFontPreference } from "@/components/PageControls";
 import { useLanguage } from "@/lib/LanguageContext";
 
 interface SidebarProps {
@@ -33,17 +35,9 @@ function SidebarContent({
 }: SidebarProps & { onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { lang, setLang, t } = useLanguage();
-  const [largeFont, setLargeFont] = useState(false);
+  const { lang, t } = useLanguage();
+  const { largeFont, toggleLargeFont } = useLargeFontPreference();
   const [activePatient, setActivePatient] = useState("s61520_1");
-
-  useEffect(() => {
-    try {
-      const enabled = localStorage.getItem("libra_a11y_large") === "1";
-      setLargeFont(enabled);
-      document.documentElement.classList.toggle("a11y-large", enabled);
-    } catch {}
-  }, []);
 
   useEffect(() => {
     const match = pathname.match(/^\/portal\/patients\/([^/]+)/);
@@ -51,24 +45,15 @@ function SidebarContent({
       const code = decodeURIComponent(match[1]);
       setActivePatient(code);
       try {
-        localStorage.setItem("libra_last_patient", code);
+        sessionStorage.setItem("libra_last_patient", code);
       } catch {}
     } else {
       try {
-        const saved = localStorage.getItem("libra_last_patient");
+        const saved = sessionStorage.getItem("libra_last_patient");
         if (saved) setActivePatient(saved);
       } catch {}
     }
   }, [pathname]);
-
-  const toggleLargeFont = () => {
-    const next = !largeFont;
-    setLargeFont(next);
-    document.documentElement.classList.toggle("a11y-large", next);
-    try {
-      localStorage.setItem("libra_a11y_large", next ? "1" : "0");
-    } catch {}
-  };
 
   const handleLogout = () => {
     document.cookie = "libra_session=; path=/; max-age=0";
@@ -113,17 +98,16 @@ function SidebarContent({
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "20px" }}>
-      <div style={{ paddingInline: "4px" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: "var(--sp-5)" }}>
+      <div style={{ paddingInline: "var(--sp-1)" }}>
         <LibraLogo size="md" href="/portal" subtitle={t.brand_sub} />
       </div>
 
-      {/* Primary clinical navigation */}
       <nav aria-label={lang === "kz" ? "Негізгі мәзір" : "Основная навигация"}>
-        <div style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)", paddingInline: "12px", marginBottom: "8px" }}>
+        <div className="sidebar-section-label">
           {lang === "kz" ? "Клиникалық бөлімдер" : "Клиническая работа"}
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+        <div className="stack-xs">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -136,9 +120,10 @@ function SidebarContent({
               >
                 <Icon
                   size={16}
-                  strokeWidth={1.6}
+                  strokeWidth={1.5}
                   color={item.active ? "var(--teal)" : "var(--muted)"}
                   style={{ flexShrink: 0 }}
+                  aria-hidden="true"
                 />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {item.label}
@@ -149,12 +134,11 @@ function SidebarContent({
         </div>
       </nav>
 
-      {/* Workspace tools */}
       <div>
-        <div style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)", paddingInline: "12px", marginBottom: "8px" }}>
+        <div className="sidebar-section-label">
           {lang === "kz" ? "Құралдар" : "Инструменты"}
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+        <div className="stack-xs">
           <button
             type="button"
             onClick={() => {
@@ -163,7 +147,7 @@ function SidebarContent({
             }}
             className="sidebar-nav-row"
           >
-            <Upload size={16} strokeWidth={1.6} color="var(--amber)" style={{ flexShrink: 0 }} />
+            <Upload size={16} strokeWidth={1.5} color="var(--amber)" style={{ flexShrink: 0 }} aria-hidden="true" />
             <span>{t.btn_upload}</span>
           </button>
 
@@ -175,21 +159,18 @@ function SidebarContent({
             }}
             className="sidebar-nav-row"
           >
-            <BookOpen size={16} strokeWidth={1.6} color="var(--muted)" style={{ flexShrink: 0 }} />
+            <BookOpen size={16} strokeWidth={1.5} color="var(--muted)" style={{ flexShrink: 0 }} aria-hidden="true" />
             <span>{lang === "kz" ? "Дәрігер жаднамасы" : "Памятка врача"}</span>
           </button>
         </div>
       </div>
 
-      {/* Bottom utilities: Accessibility, Language, Clinician & Logout */}
       <div
+        className="stack-sm"
         style={{
           marginTop: "auto",
-          paddingTop: "16px",
-          borderTop: "1px solid var(--line)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "10px",
+          paddingBlockStart: "var(--sp-4)",
+          borderBlockStart: "1px solid var(--line)",
         }}
       >
         <button
@@ -198,56 +179,18 @@ function SidebarContent({
           aria-pressed={largeFont}
           className={`sidebar-nav-row ${largeFont ? "is-active" : ""}`}
         >
-          <Eye size={16} strokeWidth={1.6} color={largeFont ? "var(--teal)" : "var(--muted)"} style={{ flexShrink: 0 }} />
+          <Eye
+            size={16}
+            strokeWidth={1.5}
+            color={largeFont ? "var(--teal)" : "var(--muted)"}
+            style={{ flexShrink: 0 }}
+            aria-hidden="true"
+          />
           <span>{lang === "kz" ? "Үлкен қаріп" : "Крупный шрифт"}</span>
         </button>
 
-        {/* Single unified RU / KZ switcher */}
-        <div
-          role="group"
-          aria-label={lang === "kz" ? "Тілді таңдау" : "Выбор языка"}
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            border: "1px solid var(--line-strong)",
-            borderRadius: "8px",
-            overflow: "hidden",
-            background: "var(--white)",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setLang("ru")}
-            aria-pressed={lang === "ru"}
-            style={{
-              padding: "7px 10px",
-              fontSize: "12px",
-              fontWeight: lang === "ru" ? 600 : 500,
-              border: "none",
-              background: lang === "ru" ? "var(--ink)" : "transparent",
-              color: lang === "ru" ? "var(--white)" : "var(--secondary)",
-              cursor: "pointer",
-            }}
-          >
-            Русский
-          </button>
-          <button
-            type="button"
-            onClick={() => setLang("kz")}
-            aria-pressed={lang === "kz"}
-            style={{
-              padding: "7px 10px",
-              fontSize: "12px",
-              fontWeight: lang === "kz" ? 600 : 500,
-              border: "none",
-              borderInlineStart: "1px solid var(--line)",
-              background: lang === "kz" ? "var(--ink)" : "transparent",
-              color: lang === "kz" ? "var(--white)" : "var(--secondary)",
-              cursor: "pointer",
-            }}
-          >
-            Қазақша
-          </button>
+        <div style={{ display: "grid" }}>
+          <LanguageSwitch />
         </div>
 
         <div
@@ -255,20 +198,20 @@ function SidebarContent({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            gap: "8px",
-            padding: "8px 10px",
+            gap: "var(--sp-2)",
+            padding: "var(--sp-2) var(--sp-3)",
             background: "var(--white)",
             border: "1px solid var(--line)",
-            borderRadius: "8px",
+            borderRadius: "var(--r-md)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
-            <Stethoscope size={16} strokeWidth={1.6} color="var(--teal)" style={{ flexShrink: 0 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", minWidth: 0 }}>
+            <Stethoscope size={16} strokeWidth={1.5} color="var(--teal)" style={{ flexShrink: 0 }} aria-hidden="true" />
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {lang === "kz" ? "Оңалту дәрігері" : "Врач-реабилитолог"}
               </div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
                 {lang === "kz" ? "СППР кабинеті" : "Кабинет СППР"}
               </div>
             </div>
@@ -276,21 +219,10 @@ function SidebarContent({
           <button
             type="button"
             onClick={handleLogout}
-            title={lang === "kz" ? "Порталдан шығу" : "Выйти из портала"}
-            aria-label={lang === "kz" ? "Шығу" : "Выйти"}
-            style={{
-              background: "transparent",
-              border: "none",
-              padding: "6px",
-              borderRadius: "6px",
-              color: "var(--muted)",
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
+            aria-label={lang === "kz" ? "Порталдан шығу" : "Выйти из портала"}
+            className="btn-icon"
           >
-            <LogOut size={16} strokeWidth={1.6} />
+            <LogOut size={16} strokeWidth={1.5} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -300,87 +232,61 @@ function SidebarContent({
 
 export function PortalSidebar({ onOpenUpload, onOpenGuide }: SidebarProps) {
   const { lang, t } = useLanguage();
-  const drawerRef = useRef<HTMLDialogElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-
-  const openDrawer = () => {
-    setDrawerOpen(true);
-    drawerRef.current?.showModal();
-  };
-
-  const closeDrawer = () => {
-    drawerRef.current?.close();
-    setDrawerOpen(false);
-  };
 
   return (
     <>
-      {/* Desktop persistent sidebar */}
       <aside className="portal-sidebar no-print" aria-label={lang === "kz" ? "Бүйірлік тақта" : "Боковая панель"}>
         <SidebarContent onOpenUpload={onOpenUpload} onOpenGuide={onOpenGuide} />
       </aside>
 
-      {/* Mobile top bar */}
       <div className="portal-mobile-bar no-print">
         <LibraLogo size="sm" href="/portal" />
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <button type="button" onClick={onOpenUpload} className="btn" style={{ padding: "6px 10px", fontSize: "12px" }}>
-            <Upload size={14} />
+        <div className="cluster">
+          <button type="button" onClick={onOpenUpload} className="btn btn-sm">
+            <Upload size={14} strokeWidth={1.5} aria-hidden="true" />
             <span>{t.btn_upload}</span>
           </button>
           <button
             type="button"
-            onClick={openDrawer}
-            className="btn"
+            onClick={() => setDrawerOpen(true)}
+            className="btn btn-sm"
             aria-label={lang === "kz" ? "Мәзірді ашу" : "Открыть меню"}
             aria-expanded={drawerOpen}
-            style={{ padding: "6px 10px" }}
           >
-            <Menu size={18} />
+            <Menu size={16} strokeWidth={1.5} aria-hidden="true" />
           </button>
         </div>
       </div>
 
-      {/* Mobile navigation dialog drawer */}
-      <dialog
-        ref={drawerRef}
-        className="libra-dialog dialog-narrow no-print"
-        aria-label={lang === "kz" ? "Навигация мәзірі" : "Меню навигации"}
+      <ModalDialog
+        open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        style={{
-          margin: 0,
-          marginInlineEnd: "auto",
-          blockSize: "100dvh",
-          maxBlockSize: "100dvh",
-          inlineSize: "min(300px, 86vw)",
-          borderRadius: "0 14px 14px 0",
-          padding: "20px 16px",
-          background: "var(--sidebar)",
-          overflowX: "hidden",
-        }}
+        labelledBy="mobile-drawer-title"
+        narrow
+        className="no-print"
       >
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+        <div className="dialog-header">
+          <h1 id="mobile-drawer-title" className="section-title">
+            {lang === "kz" ? "Бөлімдер" : "Навигация"}
+          </h1>
           <button
             type="button"
-            onClick={closeDrawer}
+            onClick={() => setDrawerOpen(false)}
             aria-label={lang === "kz" ? "Жабу" : "Закрыть"}
-            style={{
-              background: "transparent",
-              border: "none",
-              padding: "6px",
-              color: "var(--muted)",
-              cursor: "pointer",
-            }}
+            className="btn-icon"
           >
-            <X size={18} />
+            <X size={18} strokeWidth={1.5} aria-hidden="true" />
           </button>
         </div>
-        <SidebarContent
-          onOpenUpload={onOpenUpload}
-          onOpenGuide={onOpenGuide}
-          onNavigate={closeDrawer}
-        />
-      </dialog>
+        <div className="dialog-body" style={{ background: "var(--sidebar)" }}>
+          <SidebarContent
+            onOpenUpload={onOpenUpload}
+            onOpenGuide={onOpenGuide}
+            onNavigate={() => setDrawerOpen(false)}
+          />
+        </div>
+      </ModalDialog>
     </>
   );
 }
@@ -396,9 +302,9 @@ export function PortalTopBar() {
   } else if (pathname.startsWith("/portal/analytics")) {
     pageLabel = lang === "kz" ? "Когорта талдауы" : "Аналитика когорты";
   } else if (pathname.startsWith("/portal/ml-validation")) {
-    pageLabel = lang === "kz" ? "ЖИ және валидация" : "Модели ИИ и валидация";
+    pageLabel = lang === "kz" ? "Модельдерді тексеру" : "Валидация моделей";
   } else if (pathname.startsWith("/portal/safety")) {
-    pageLabel = lang === "kz" ? "Этика, 103 және шектеулер" : "Этика, 103 и ограничения";
+    pageLabel = lang === "kz" ? "Қауіпсіздік және шектеулер" : "Безопасность и ограничения";
   }
 
   return (
@@ -417,11 +323,11 @@ export function PortalTopBar() {
           fontWeight: 500,
         }}
       >
-        <PhoneCall size={14} strokeWidth={1.6} />
+        <PhoneCall size={14} strokeWidth={1.5} aria-hidden="true" />
         <span>
           {lang === "kz"
-            ? "Жедел көмек: 103 · СППР (8.2-т.)"
-            : "Экстренная помощь: 103 · СППР (п. 8.2)"}
+            ? "Кеңестік СППР · Жедел жәрдем: 103"
+            : "Консультативная СППР · Экстренная помощь: 103"}
         </span>
       </Link>
     </header>

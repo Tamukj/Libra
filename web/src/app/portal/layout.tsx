@@ -60,9 +60,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           detail: { code: res.code, visit_key: res.visit_key },
         })
       );
-      const visitQuery = res.visit_key
-        ? `?visit=${encodeURIComponent(res.visit_key)}`
-        : "";
+      const visitQuery = res.visit_key ? `?visit=${encodeURIComponent(res.visit_key)}` : "";
       router.push(`/portal/patients/${encodeURIComponent(res.code)}${visitQuery}`);
     }
     router.refresh();
@@ -98,9 +96,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             aria-live="polite"
             style={{
               background: "var(--teal-bg)",
-              borderBottom: "1px solid var(--teal-border)",
+              borderBlockEnd: "1px solid var(--teal-border)",
               color: "var(--teal)",
-              padding: "10px 32px",
+              padding: "var(--sp-3) var(--sp-8)",
               fontSize: "13px",
               fontWeight: 500,
             }}
@@ -113,28 +111,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           {children}
         </main>
 
-        <footer
-          className="no-print"
-          style={{
-            borderTop: "1px solid var(--line)",
-            background: "var(--white)",
-            padding: "14px 32px",
-            fontSize: "12px",
-            color: "var(--muted)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "12px",
-          }}
-        >
+        <footer className="portal-footer no-print">
           <span>
             Libra ·{" "}
             {lang === "kz"
               ? "БЦП кезіндегі жүрісті талдау жүйесі (СППР)"
               : "Система поддержки врачебных решений при ДЦП"}
           </span>
-          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+          <div className="cluster" style={{ gap: "var(--sp-4)" }}>
             <Link href="/privacy" style={{ textDecoration: "underline" }}>
               {lang === "kz" ? "Құпиялылық (ҚР № 94-V)" : "Конфиденциальность (Закон РК № 94-V)"}
             </Link>

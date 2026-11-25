@@ -6,39 +6,14 @@ import { Search, AlertTriangle, CheckCircle2, ArrowRight, RotateCcw } from "luci
 import { getPatients, getCohortAnalytics } from "@/lib/api";
 import { Patient, CohortAnalytics } from "@/lib/types";
 import { useLanguage } from "@/lib/LanguageContext";
+import { fmtFixed, fmtSigned, fmtPcr, fmtCm, fmtVisitCount, isFiniteNum } from "@/lib/format";
 
 type RiskFilter = "all" | "red" | "yellow" | "green";
 type SideFilter = "ALL" | "LEFT" | "RIGHT";
 
-function fmtSigned(value: number | null | undefined, digits = 2, unit = "°"): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
-  if (Math.abs(value) < 0.005) return `0.00${unit}`;
-  const sign = value > 0 ? "+" : "−";
-  return `${sign}${Math.abs(value).toFixed(digits)}${unit}`;
-}
-
-function fmtNum(value: number | null | undefined, digits = 1, unit = "°"): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
-  return `${value.toFixed(digits)}${unit}`;
-}
-
-function fmtCm(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value) || value <= 0) return "—";
-  const cm = value < 3.0 ? value * 100 : value;
-  return `${Math.round(cm)}`;
-}
-
-function formatVisitCount(count: number, lang: "ru" | "kz"): string {
-  if (lang === "kz") return `${count} визит`;
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return `${count} визит`;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} визита`;
-  return `${count} визитов`;
-}
-
 export default function PortalRegistryPage() {
   const { lang, t } = useLanguage();
+  const isKz = lang === "kz";
   const [patients, setPatients] = useState<Patient[]>([]);
   const [stats, setStats] = useState<CohortAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,32 +32,21 @@ export default function PortalRegistryPage() {
       setStats(cohort);
     } catch {
       setError(
-        lang === "kz"
+        isKz
           ? "Сервермен байланыс орнату мүмкін болмады. API қызметінің күйін тексеріңіз."
-          : "Не удалось загрузить реестр пациентов. Проверьте доступность клинического API."
+          : "Не удалось загрузить реестр пациентов. Проверьте доступность клинического сервера."
       );
     } finally {
       setLoading(false);
     }
-  }, [lang]);
+  }, [isKz]);
 
   useEffect(() => {
     loadData();
-    const onUpdate = () => {
-      loadData();
-    };
+    const onUpdate = () => loadData();
     window.addEventListener("libra:patient-updated", onUpdate);
     return () => window.removeEventListener("libra:patient-updated", onUpdate);
   }, [loadData]);
-
-  const formatClinicName = (name?: string | null) => {
-    if (!name) return t.clinic_cohort_label;
-    const parts = name.split(" / ");
-    if (parts.length === 2) {
-      return lang === "kz" ? parts[1] : parts[0];
-    }
-    return name;
-  };
 
   const formatSide = (side?: Patient["side"] | null) => {
     if (side === "LEFT") return t.side_left;
@@ -91,15 +55,18 @@ export default function PortalRegistryPage() {
   };
 
   const formatAnthro = (p: Patient) => {
-    const weightStr =
-      typeof p.weight === "number" && Number.isFinite(p.weight)
-        ? `${p.weight.toFixed(1)} кг`
-        : "—";
-    const heightCm = fmtCm(p.height);
-    const legCm = fmtCm(p.leg_length);
+    const weightStr = isFiniteNum(p.weight) ? `${p.weight.toFixed(1)} кг` : "—";
+    const heightCm = fmtCm(p.height, false);
+    const legCm = fmtCm(p.leg_length, false);
     const lengthStr = heightCm === "—" && legCm === "—" ? "—" : `${heightCm}/${legCm} см`;
     if (weightStr === "—" && lengthStr === "—") return "—";
     return `${weightStr} · ${lengthStr}`;
+  };
+
+  const formatCustomClinic = (name?: string | null) => {
+    if (!name || name.includes("KU Leuven")) return null;
+    const parts = name.split(" / ");
+    return parts.length === 2 ? (isKz ? parts[1] : parts[0]) : name;
   };
 
   const filteredPatients = useMemo(() => {
@@ -131,134 +98,106 @@ export default function PortalRegistryPage() {
     if (status === "red") {
       return (
         <span className="badge badge-red">
-          <AlertTriangle size={12} strokeWidth={1.8} />
-          {lang === "kz" ? "Жамбас шамадан тыс еңкеюі" : "Компенсация тазом"}
+          <AlertTriangle size={12} strokeWidth={1.6} aria-hidden="true" />
+          <span>{isKz ? "Жамбас компенсациясы" : "Компенсация тазом"}</span>
         </span>
       );
     }
     if (status === "yellow") {
       return (
         <span className="badge badge-yellow">
-          {lang === "kz" ? "Бейтарап / бақылау" : "Нейтрально / наблюдение"}
+          {isKz ? "Бейтарап / бақылау" : "Нейтрально / наблюдение"}
         </span>
       );
     }
     if (status !== "green") {
       return (
         <span className="badge badge-neutral">
-          {lang === "kz" ? "Толық дерек жоқ" : "Неполные пробы"}
+          {isKz ? "Толық дерек жоқ" : "Неполные пробы"}
         </span>
       );
     }
     return (
       <span className="badge badge-green">
-        <CheckCircle2 size={12} strokeWidth={1.8} />
-        {lang === "kz" ? "Шынайы оң нәтиже" : "Без перегрузки таза"}
+        <CheckCircle2 size={12} strokeWidth={1.6} aria-hidden="true" />
+        <span>{isKz ? "Шынайы оң нәтиже" : "Без перегрузки таза"}</span>
       </span>
     );
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-      {/* Editorial Page Header */}
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-          flexWrap: "wrap",
-          gap: "16px",
-        }}
-      >
+    <div className="stack-lg">
+      <header className="row-end">
         <div>
-          <h1
-            className="font-display"
-            style={{ fontSize: "clamp(24px, 2.5vw, 32px)", lineHeight: 1.15 }}
-          >
-            {t.portal_title}
-          </h1>
-          <p style={{ color: "var(--secondary)", fontSize: "14px", marginTop: "6px", maxWidth: "68ch" }}>
-            {t.portal_sub}
-          </p>
+          <h1 className="page-title">{t.portal_title}</h1>
+          <p className="page-subtitle">{t.portal_sub}</p>
         </div>
 
         <Link href="/portal/analytics" className="btn">
           <span>{t.nav_cohort}</span>
-          <ArrowRight size={14} strokeWidth={1.6} />
+          <ArrowRight size={16} strokeWidth={1.5} aria-hidden="true" />
         </Link>
       </header>
 
-      {/* 4 Single-Metric KPI Cells */}
-      <section aria-label={lang === "kz" ? "Когорта көрсеткіштері" : "Сводка по когорте"} className="grid-kpi-4">
-        <div className="surface" style={{ padding: "16px 18px" }}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+      <section aria-label={isKz ? "Когорта көрсеткіштері" : "Сводка по когорте"} className="grid-kpi-4">
+        <div className="surface-compact">
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
             {t.kpi_cohort_title}
           </div>
-          <div className="tabular-nums" style={{ fontSize: "26px", fontWeight: 600, color: "var(--ink)" }}>
+          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, lineHeight: 1.1, color: "var(--ink)" }}>
             {stats?.total_patients ?? patients.length}
           </div>
-          <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "4px" }}>
+          <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "var(--sp-1)" }}>
             {t.kpi_limbs_desc}
-            {stats ? ` · ${stats.cycles.total} ${lang === "kz" ? "қадам" : "циклов"}` : ""}
+            {stats ? ` · ${stats.cycles.total} ${isKz ? "қадам" : "циклов"}` : ""}
           </div>
         </div>
 
-        <div className="surface" style={{ padding: "16px 18px" }}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+        <div className="surface-compact">
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
             {t.kpi_risk_title}
           </div>
-          <div className="tabular-nums" style={{ fontSize: "26px", fontWeight: 600, color: "var(--red)" }}>
+          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, lineHeight: 1.1, color: "var(--red)" }}>
             {stats?.cdss_distribution.red ?? summaryCounts.red}
           </div>
-          <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "4px" }}>
+          <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "var(--sp-1)" }}>
             {t.kpi_risk_desc}
           </div>
         </div>
 
-        <div className="surface" style={{ padding: "16px 18px" }}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+        <div className="surface-compact">
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
             {t.kpi_true_title}
           </div>
-          <div className="tabular-nums" style={{ fontSize: "26px", fontWeight: 600, color: "var(--teal)" }}>
+          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, lineHeight: 1.1, color: "var(--teal)" }}>
             {stats?.cdss_distribution.green ?? summaryCounts.green}
           </div>
-          <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "4px" }}>
+          <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "var(--sp-1)" }}>
             {t.kpi_true_desc}
           </div>
         </div>
 
-        <div className="surface" style={{ padding: "16px 18px" }}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+        <div className="surface-compact">
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
             {t.kpi_gps_title}
           </div>
-          <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: "var(--ink)" }}>
-            {fmtNum(stats?.averages.baseline_gps, 1)} {"→"} {fmtNum(stats?.averages.vr_gps, 1)}
+          <div className="tabular-nums" style={{ fontSize: "24px", fontWeight: 600, lineHeight: 1.2, color: "var(--ink)" }}>
+            {fmtFixed(stats?.averages.baseline_gps, 1, "°")} → {fmtFixed(stats?.averages.vr_gps, 1, "°")}
           </div>
-          <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "4px" }}>
+          <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "var(--sp-1)" }}>
             {t.kpi_gps_desc}
           </div>
         </div>
       </section>
 
-      {/* Filter & Search Toolbar */}
-      <section
-        className="surface"
-        style={{
-          padding: "14px 16px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: "12px",
-        }}
-      >
+      <section className="surface-compact row-between">
         <div style={{ position: "relative", flex: "1 1 260px", maxWidth: "360px" }}>
           <label htmlFor="patient-search" className="visually-hidden">
-            {lang === "kz" ? "Пациент коды бойынша іздеу" : "Поиск по коду пациента"}
+            {isKz ? "Пациент коды бойынша іздеу" : "Поиск по коду пациента"}
           </label>
           <Search
-            size={15}
-            strokeWidth={1.6}
+            size={16}
+            strokeWidth={1.5}
             color="var(--muted)"
             aria-hidden="true"
             style={{
@@ -274,18 +213,17 @@ export default function PortalRegistryPage() {
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={
-              lang === "kz" ? "Пациент коды (мыс. s61520_1)..." : "Поиск по коду (например, s61520_1)..."
-            }
+            placeholder={isKz ? "Пациент коды, мысалы s61520_1" : "Код пациента, например s61520_1"}
             style={{ width: "100%", paddingLeft: "36px" }}
           />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+        <div className="cluster">
           <div
             role="group"
-            aria-label={lang === "kz" ? "Клиникалық мәртебе бойынша сүзгі" : "Фильтр по оценке риска"}
-            style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}
+            aria-label={isKz ? "Клиникалық мәртебе бойынша сүзгі" : "Фильтр по оценке риска"}
+            className="cluster"
+            style={{ gap: "var(--sp-1)" }}
           >
             {(
               [
@@ -299,8 +237,7 @@ export default function PortalRegistryPage() {
                 type="button"
                 aria-pressed={riskFilter === f.key}
                 onClick={() => setRiskFilter(f.key)}
-                className={`btn ${riskFilter === f.key ? "btn-primary" : ""}`}
-                style={{ minBlockSize: "34px", padding: "6px 12px", fontSize: "12px" }}
+                className={`btn btn-sm ${riskFilter === f.key ? "btn-primary" : ""}`}
               >
                 {f.label}
               </button>
@@ -308,56 +245,41 @@ export default function PortalRegistryPage() {
           </div>
 
           <select
-            aria-label={lang === "kz" ? "Зерттелген аяқ бойынша сүзгі" : "Фильтр по стороне"}
+            aria-label={isKz ? "Зерттелген аяқ бойынша сүзгі" : "Фильтр по стороне"}
             value={sideFilter}
             onChange={(e) => setSideFilter(e.target.value as SideFilter)}
-            style={{ minBlockSize: "34px", padding: "6px 10px", fontSize: "12px" }}
+            style={{ minBlockSize: "32px", padding: "var(--sp-1) var(--sp-3)", fontSize: "12px" }}
           >
-            <option value="ALL">{lang === "kz" ? "Барлық жақ" : "Обе стороны"}</option>
+            <option value="ALL">{isKz ? "Барлық жақ" : "Обе стороны"}</option>
             <option value="LEFT">{t.side_left}</option>
             <option value="RIGHT">{t.side_right}</option>
           </select>
 
-          <span className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginLeft: "4px" }}>
+          <span className="tabular-nums mono" style={{ fontSize: "12px", color: "var(--muted)", marginLeft: "var(--sp-1)" }}>
             {filteredPatients.length} / {patients.length}
           </span>
         </div>
       </section>
 
-      {/* Error State */}
       {error && (
-        <div
-          role="alert"
-          className="surface"
-          style={{
-            borderColor: "var(--red-border)",
-            background: "var(--red-bg)",
-            color: "var(--red)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "12px",
-            flexWrap: "wrap",
-          }}
-        >
+        <div role="alert" className="callout callout-red row-between" style={{ color: "var(--red)" }}>
           <span>{error}</span>
-          <button type="button" onClick={loadData} className="btn">
-            <RotateCcw size={14} strokeWidth={1.6} />
-            {lang === "kz" ? "Қайта жүктеу" : "Повторить"}
+          <button type="button" onClick={loadData} className="btn btn-sm">
+            <RotateCcw size={14} strokeWidth={1.5} aria-hidden="true" />
+            <span>{isKz ? "Қайта жүктеу" : "Повторить"}</span>
           </button>
         </div>
       )}
 
-      {/* Registry Table */}
-      <div className="surface" style={{ padding: 0, overflow: "hidden" }}>
+      <div className="surface-flush">
         {loading ? (
-          <div style={{ padding: "40px 24px", textAlign: "center", color: "var(--muted)" }}>
-            {lang === "kz" ? "Пациенттер тізілімі жүктелуде..." : "Загрузка клинического реестра..."}
+          <div style={{ padding: "var(--sp-12) var(--sp-6)", textAlign: "center", color: "var(--muted)" }}>
+            {isKz ? "Пациенттер тізілімі жүктелуде..." : "Загрузка клинического реестра..."}
           </div>
         ) : filteredPatients.length === 0 ? (
-          <div style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
+          <div className="stack-sm" style={{ padding: "var(--sp-12) var(--sp-6)", textAlign: "center", alignItems: "center" }}>
             <p style={{ color: "var(--secondary)" }}>
-              {lang === "kz"
+              {isKz
                 ? "Таңдалған сүзгілер бойынша пациенттер табылмады."
                 : "По заданным фильтрам пациенты не найдены."}
             </p>
@@ -370,103 +292,94 @@ export default function PortalRegistryPage() {
               }}
               className="btn"
             >
-              {lang === "kz" ? "Сүзгілерді тазарту" : "Сбросить фильтры"}
+              {isKz ? "Сүзгілерді тазарту" : "Сбросить фильтры"}
             </button>
           </div>
         ) : (
-          <div className="table-responsive">
+          <div tabIndex={0} role="region" aria-labelledby="registry-table-caption" className="table-responsive">
             <table className="clinical-table">
+              <caption id="registry-table-caption" className="visually-hidden">
+                {t.portal_title}
+              </caption>
               <thead>
                 <tr>
-                  <th scope="col">{lang === "kz" ? "Пациент" : "Пациент"}</th>
+                  <th scope="col">{isKz ? "Пациент" : "Пациент"}</th>
                   <th scope="col">{t.col_side_label}</th>
-                  <th scope="col">{lang === "kz" ? "Салмақ · бой / аяқ" : "Вес · рост / нога"}</th>
-                  <th scope="col">GPS ({lang === "kz" ? "Қал. → VR" : "База → VR"})</th>
-                  <th scope="col">{lang === "kz" ? "Δ Сан" : "Δ Бедра"}</th>
+                  <th scope="col">{isKz ? "Салмақ · бой / аяқ" : "Вес · рост / нога"}</th>
+                  <th scope="col">GPS ({isKz ? "Қал. → VR" : "База → VR"})</th>
+                  <th scope="col">{isKz ? "Δ Сан жазылуы" : "Δ Бедра"}</th>
                   <th scope="col">PCR</th>
-                  <th scope="col">{lang === "kz" ? "Жамбас бағасы" : "Оценка таза"}</th>
+                  <th scope="col">{isKz ? "Жамбас бағасы" : "Оценка таза"}</th>
                   <th scope="col" style={{ textAlign: "right" }}>
                     {t.col_action_label}
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredPatients.map((p) => (
-                  <tr key={p.code}>
-                    <td>
-                      <Link
-                        href={`/portal/patients/${encodeURIComponent(p.code)}`}
+                {filteredPatients.map((p) => {
+                  const customClinic = formatCustomClinic(p.clinic_name);
+                  const hasExtraVisits = (p.visit_count ?? 1) > 1;
+                  return (
+                    <tr key={p.code}>
+                      <td>
+                        <Link
+                          href={`/portal/patients/${encodeURIComponent(p.code)}`}
+                          className="mono"
+                          style={{ fontWeight: 600, color: "var(--ink)", display: "inline-block" }}
+                        >
+                          {p.code}
+                        </Link>
+                        {(customClinic || hasExtraVisits) && (
+                          <div className="cluster" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px", gap: "var(--sp-2)" }}>
+                            {customClinic && <span>{customClinic}</span>}
+                            {hasExtraVisits && (
+                              <span className="badge badge-neutral tabular-nums">
+                                {fmtVisitCount(p.visit_count!, lang)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>{formatSide(p.side)}</td>
+                      <td className="tabular-nums" style={{ color: "var(--secondary)", whiteSpace: "nowrap" }}>
+                        {formatAnthro(p)}
+                      </td>
+                      <td className="tabular-nums" style={{ whiteSpace: "nowrap" }}>
+                        {fmtFixed(p.baseline_gps, 1, "°")} → {fmtFixed(p.vr_gps, 1, "°")}
+                      </td>
+                      <td
+                        className="tabular-nums"
                         style={{
                           fontWeight: 600,
-                          fontFamily: "var(--mono)",
-                          color: "var(--ink)",
-                          display: "inline-block",
+                          color:
+                            isFiniteNum(p.delta_amin_sagh) && p.delta_amin_sagh <= -1.0
+                              ? "var(--teal)"
+                              : "var(--ink)",
                         }}
                       >
-                        {p.code}
-                      </Link>
-                      <div
+                        {fmtSigned(p.delta_amin_sagh, 2, "°")}
+                      </td>
+                      <td
+                        className="tabular-nums"
                         style={{
-                          fontSize: "11px",
-                          color: "var(--muted)",
-                          marginTop: "2px",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          flexWrap: "wrap",
+                          fontWeight: 600,
+                          color: isFiniteNum(p.pcr) && p.pcr > 0.8 ? "var(--red)" : "var(--ink)",
                         }}
                       >
-                        <span>{formatClinicName(p.clinic_name)}</span>
-                        {(p.visit_count ?? 1) > 1 && (
-                          <span
-                            className="badge badge-neutral tabular-nums"
-                            style={{ fontSize: "11px", padding: "1px 7px" }}
-                          >
-                            {formatVisitCount(p.visit_count!, lang)}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ whiteSpace: "nowrap" }}>{formatSide(p.side)}</td>
-                    <td className="tabular-nums" style={{ color: "var(--secondary)", whiteSpace: "nowrap" }}>
-                      {formatAnthro(p)}
-                    </td>
-                    <td className="tabular-nums" style={{ whiteSpace: "nowrap" }}>
-                      {fmtNum(p.baseline_gps, 1)} {"→"} {fmtNum(p.vr_gps, 1)}
-                    </td>
-                    <td
-                      className="tabular-nums"
-                      style={{
-                        fontWeight: 600,
-                        color:
-                          p.delta_amin_sagh !== null && p.delta_amin_sagh !== undefined && p.delta_amin_sagh <= -1.0
-                            ? "var(--teal)"
-                            : "var(--ink)",
-                      }}
-                    >
-                      {fmtSigned(p.delta_amin_sagh)}
-                    </td>
-                    <td
-                      className="tabular-nums"
-                      style={{
-                        fontWeight: 600,
-                        color: p.pcr !== null && p.pcr !== undefined && p.pcr > 0.8 ? "var(--red)" : "var(--ink)",
-                      }}
-                    >
-                      {p.pcr !== null && p.pcr !== undefined ? p.pcr.toFixed(2) : "—"}
-                    </td>
-                    <td>{riskBadge(p.status)}</td>
-                    <td style={{ textAlign: "right" }}>
-                      <Link
-                        href={`/portal/patients/${encodeURIComponent(p.code)}`}
-                        className="btn"
-                        style={{ minBlockSize: "32px", padding: "5px 12px", fontSize: "12px" }}
-                      >
-                        {t.btn_open_card}
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                        {fmtPcr(p.pcr)}
+                      </td>
+                      <td>{riskBadge(p.status)}</td>
+                      <td style={{ textAlign: "right" }}>
+                        <Link
+                          href={`/portal/patients/${encodeURIComponent(p.code)}`}
+                          className="btn btn-sm"
+                        >
+                          {t.btn_open_card}
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
