@@ -439,6 +439,122 @@ function PatientDossierContent() {
         </button>
       </section>
 
+      {/* Longitudinal Course Overview across all recorded visits */}
+      {visits.length >= 2 && (
+        <section
+          className="surface"
+          aria-label={lang === "kz" ? "Барлық визиттер бойынша жиынтық" : "Обобщение по всем визитам"}
+          style={{ padding: 0, overflow: "hidden" }}
+        >
+          <div
+            style={{
+              padding: "14px 18px",
+              borderBottom: "1px solid var(--line)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "8px",
+            }}
+          >
+            <div>
+              <h2 style={{ fontSize: "15px", fontWeight: 600 }}>
+                {lang === "kz" ? "Курс бойынша жиынтық нәтиже (барлық визиттер)" : "Обобщение результатов по всем визитам"}
+              </h2>
+              <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>
+                {lang === "kz"
+                  ? `Жалпы визит: ${visits.length} · Жиынтық қадам циклі: ${visits.reduce((acc, v) => acc + v.cycles.total, 0)}`
+                  : `Всего визитов: ${visits.length} · Суммарно циклов шага: ${visits.reduce((acc, v) => acc + v.cycles.total, 0)}`}
+              </p>
+            </div>
+          </div>
+          <div className="table-responsive">
+            <table className="clinical-table">
+              <thead>
+                <tr>
+                  <th scope="col">{lang === "kz" ? "Визит" : "Визит"}</th>
+                  <th scope="col">{lang === "kz" ? "Күні" : "Дата"}</th>
+                  <th scope="col">{lang === "kz" ? "Сынамалар" : "Пробы"}</th>
+                  <th scope="col">{lang === "kz" ? "Циклдер" : "Циклы"}</th>
+                  <th scope="col">GPS ({lang === "kz" ? "База → Акт." : "База → Акт."})</th>
+                  <th scope="col">TJE</th>
+                  <th scope="col">PCR</th>
+                  <th scope="col">{lang === "kz" ? "Ұсыныс" : "Метод"}</th>
+                  <th scope="col">{lang === "kz" ? "СППР" : "Статус"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visits.map((v) => {
+                  const isSel = selectedVisit === v.visit_key;
+                  const vLabel = lang === "kz" && v.visit_label_kz ? v.visit_label_kz : v.visit_label;
+                  const postGps = isFiniteNum(v.vr_gps) ? v.vr_gps : isFiniteNum(v.verbal_gps) ? v.verbal_gps : null;
+                  const badgeCls =
+                    v.status === "green"
+                      ? "badge-green"
+                      : v.status === "red"
+                      ? "badge-red"
+                      : v.status === "yellow"
+                      ? "badge-yellow"
+                      : "badge-neutral";
+                  const statusTxt =
+                    v.status === "green"
+                      ? lang === "kz"
+                        ? "Прогресс"
+                        : "Прогресс"
+                      : v.status === "red"
+                      ? lang === "kz"
+                        ? "Компенсация"
+                        : "Компенсация"
+                      : v.status === "yellow"
+                      ? lang === "kz"
+                        ? "Бақылау"
+                        : "Наблюдение"
+                      : lang === "kz"
+                      ? "База"
+                      : "Тол. проба";
+                  return (
+                    <tr
+                      key={v.visit_key}
+                      onClick={() =>
+                        router.push(
+                          `/portal/patients/${encodeURIComponent(patientCode)}?visit=${encodeURIComponent(v.visit_key)}`
+                        )
+                      }
+                      style={{
+                        cursor: "pointer",
+                        background: isSel ? "var(--sidebar)" : undefined,
+                      }}
+                    >
+                      <td style={{ fontWeight: 600 }}>{vLabel}</td>
+                      <td className="tabular-nums" style={{ color: "var(--muted)" }}>
+                        {v.visit_date || "—"}
+                      </td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: "12px" }}>
+                        {v.conditions.map(shortConditionLabel).join(" · ") || "—"}
+                      </td>
+                      <td className="tabular-nums">{v.cycles.total}</td>
+                      <td className="tabular-nums">
+                        {fmtScalar(v.baseline_gps, 1)} {"→"} {fmtScalar(postGps, 1)}
+                      </td>
+                      <td className="tabular-nums" style={{ fontWeight: 600 }}>
+                        {isFiniteNum(v.tje) ? fmtSigned(v.tje, 1) : "—"}
+                      </td>
+                      <td className="tabular-nums" style={{ fontWeight: 600 }}>
+                        {isFiniteNum(v.pcr) ? v.pcr.toFixed(2) : "—"}
+                      </td>
+                      <td>{v.best_method}</td>
+                      <td>
+                        <span className={`badge ${badgeCls}`}>{statusTxt}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {/* Patient Demographic Header */}
       <section className="surface" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         <div

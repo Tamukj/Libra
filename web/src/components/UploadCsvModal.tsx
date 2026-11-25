@@ -80,6 +80,7 @@ export function UploadCsvModal({
 
   const [condition, setCondition] = useState<GaitCondition>("Baseline");
   const [subjectCode, setSubjectCode] = useState("");
+  const [detectedSubject, setDetectedSubject] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -178,6 +179,7 @@ export function UploadCsvModal({
     if (!open) return;
     const trimmed = initialSubjectCode.trim();
     setSubjectCode(trimmed);
+    setDetectedSubject("");
     setFile(null);
     setError(null);
     setVisitDate(getTodayIsoDate());
@@ -202,7 +204,7 @@ export function UploadCsvModal({
 
   useEffect(() => {
     if (!open) return;
-    const trimmed = subjectCode.trim();
+    const trimmed = subjectCode.trim() || detectedSubject.trim();
     if (!trimmed) {
       fetchSeqRef.current += 1;
       setExistingVisits([]);
@@ -226,6 +228,7 @@ export function UploadCsvModal({
   }, [
     open,
     subjectCode,
+    detectedSubject,
     condition,
     modeManuallyChosen,
     initialSubjectCode,
@@ -617,8 +620,13 @@ export function UploadCsvModal({
               const chosen = e.target.files?.[0] || null;
               setFile(chosen);
               setError(null);
-              if (chosen && !subjectCode.trim()) {
+              if (!chosen) {
+                setDetectedSubject("");
+                return;
+              }
+              if (!subjectCode.trim()) {
                 detectSingleSubjectFromCsv(chosen).then((detected) => {
+                  setDetectedSubject(detected || "");
                   if (detected) {
                     fetchVisitsForCode(detected, condition, modeManuallyChosen);
                   }

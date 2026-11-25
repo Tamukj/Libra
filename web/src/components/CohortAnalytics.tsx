@@ -90,7 +90,7 @@ export function CohortAnalytics({ stats, lang }: Props) {
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
             <ShieldCheck size={16} strokeWidth={1.6} color="var(--amber)" />
             <h3 style={{ fontSize: "14px", fontWeight: 600 }}>
-              {isKz ? "Қауіпсіздік стратификациясы (VR)" : "Распределение рисков в VR"}
+              {isKz ? "Қауіпсіздік стратификациясы (VR / Ауызша)" : "Распределение рисков (VR / Голос)"}
             </h3>
           </div>
 
