@@ -28,6 +28,15 @@ function fmtCm(value: number | null | undefined): string {
   return `${Math.round(cm)}`;
 }
 
+function formatVisitCount(count: number, lang: "ru" | "kz"): string {
+  if (lang === "kz") return `${count} визит`;
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count} визит`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} визита`;
+  return `${count} визитов`;
+}
+
 export default function PortalRegistryPage() {
   const { lang, t } = useLanguage();
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -73,6 +82,24 @@ export default function PortalRegistryPage() {
       return lang === "kz" ? parts[1] : parts[0];
     }
     return name;
+  };
+
+  const formatSide = (side?: Patient["side"] | null) => {
+    if (side === "LEFT") return t.side_left;
+    if (side === "RIGHT") return t.side_right;
+    return t.side_unspecified;
+  };
+
+  const formatAnthro = (p: Patient) => {
+    const weightStr =
+      typeof p.weight === "number" && Number.isFinite(p.weight)
+        ? `${p.weight.toFixed(1)} кг`
+        : "—";
+    const heightCm = fmtCm(p.height);
+    const legCm = fmtCm(p.leg_length);
+    const lengthStr = heightCm === "—" && legCm === "—" ? "—" : `${heightCm}/${legCm} см`;
+    if (weightStr === "—" && lengthStr === "—") return "—";
+    return `${weightStr} · ${lengthStr}`;
   };
 
   const filteredPatients = useMemo(() => {
@@ -270,6 +297,7 @@ export default function PortalRegistryPage() {
               <button
                 key={f.key}
                 type="button"
+                aria-pressed={riskFilter === f.key}
                 onClick={() => setRiskFilter(f.key)}
                 className={`btn ${riskFilter === f.key ? "btn-primary" : ""}`}
                 style={{ minBlockSize: "34px", padding: "6px 12px", fontSize: "12px" }}
@@ -377,13 +405,31 @@ export default function PortalRegistryPage() {
                       >
                         {p.code}
                       </Link>
-                      <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>
-                        {formatClinicName(p.clinic_name)}
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: "var(--muted)",
+                          marginTop: "2px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span>{formatClinicName(p.clinic_name)}</span>
+                        {(p.visit_count ?? 1) > 1 && (
+                          <span
+                            className="badge badge-neutral tabular-nums"
+                            style={{ fontSize: "11px", padding: "1px 7px" }}
+                          >
+                            {formatVisitCount(p.visit_count!, lang)}
+                          </span>
+                        )}
                       </div>
                     </td>
-                    <td style={{ whiteSpace: "nowrap" }}>{p.side === "LEFT" ? t.side_left : t.side_right}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{formatSide(p.side)}</td>
                     <td className="tabular-nums" style={{ color: "var(--secondary)", whiteSpace: "nowrap" }}>
-                      {typeof p.weight === "number" && Number.isFinite(p.weight) ? `${p.weight.toFixed(1)} кг` : "—"} · {fmtCm(p.height)}/{fmtCm(p.leg_length)} см
+                      {formatAnthro(p)}
                     </td>
                     <td className="tabular-nums" style={{ whiteSpace: "nowrap" }}>
                       {fmtNum(p.baseline_gps, 1)} {"→"} {fmtNum(p.vr_gps, 1)}

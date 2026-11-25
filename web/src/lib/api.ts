@@ -6,6 +6,7 @@ import {
   MLMetrics,
   GaitDiffResponse,
   CsvUploadResponse,
+  VisitSummary,
 } from "./types";
 
 const API_BASE =
@@ -26,6 +27,17 @@ function getAuthHeaders(): Record<string, string> {
     }
   } catch {}
   return {};
+}
+
+function buildQuery(params: Record<string, string | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") {
+      sp.set(k, v);
+    }
+  }
+  const qs = sp.toString();
+  return qs ? `?${qs}` : "";
 }
 
 async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -51,12 +63,32 @@ export async function getPatients(): Promise<Patient[]> {
   return fetchJson<Patient[]>("/api/v1/patients");
 }
 
-export async function getPatientAnalysis(code: string): Promise<PatientAnalysis> {
-  return fetchJson<PatientAnalysis>(`/api/v1/patients/${encodeURIComponent(code)}/analysis`);
+export async function getPatientVisits(
+  code: string
+): Promise<{ code: string; visits: VisitSummary[] }> {
+  return fetchJson<{ code: string; visits: VisitSummary[] }>(
+    `/api/v1/patients/${encodeURIComponent(code)}/visits`
+  );
 }
 
-export async function getPatientKinematics(code: string): Promise<KinematicsResponse> {
-  return fetchJson<KinematicsResponse>(`/api/v1/patients/${encodeURIComponent(code)}/kinematics`);
+export async function getPatientAnalysis(
+  code: string,
+  visit?: string
+): Promise<PatientAnalysis> {
+  const qs = buildQuery({ visit });
+  return fetchJson<PatientAnalysis>(
+    `/api/v1/patients/${encodeURIComponent(code)}/analysis${qs}`
+  );
+}
+
+export async function getPatientKinematics(
+  code: string,
+  visit?: string
+): Promise<KinematicsResponse> {
+  const qs = buildQuery({ visit });
+  return fetchJson<KinematicsResponse>(
+    `/api/v1/patients/${encodeURIComponent(code)}/kinematics${qs}`
+  );
 }
 
 export async function getCohortAnalytics(): Promise<CohortAnalytics> {
@@ -70,9 +102,11 @@ export async function getMLMetrics(): Promise<MLMetrics> {
 export async function createReport(
   code: string,
   lang: "ru" | "kz",
-  audience: "doctor" | "parent" = "doctor"
+  audience: "doctor" | "parent" = "doctor",
+  visit?: string
 ) {
-  const url = `${API_BASE}/api/v1/patients/${encodeURIComponent(code)}/report?lang=${lang}&audience=${audience}`;
+  const qs = buildQuery({ lang, audience, visit });
+  const url = `${API_BASE}/api/v1/patients/${encodeURIComponent(code)}/report${qs}`;
   const res = await fetch(url, { method: "POST", headers: getAuthHeaders() });
   if (!res.ok) {
     const errorBody = await res.text().catch(() => "");
@@ -85,16 +119,27 @@ export async function getPatientDiff(
   code: string,
   sessionA: string = "Baseline",
   sessionB: string = "VR",
-  lang: "ru" | "kz" = "ru"
+  lang: "ru" | "kz" = "ru",
+  visitA?: string,
+  visitB?: string
 ): Promise<GaitDiffResponse> {
-  const endpoint = `/api/v1/patients/${encodeURIComponent(code)}/diff?session_a=${encodeURIComponent(sessionA)}&session_b=${encodeURIComponent(sessionB)}&lang=${lang}`;
-  return fetchJson<GaitDiffResponse>(endpoint);
+  const qs = buildQuery({
+    session_a: sessionA,
+    session_b: sessionB,
+    lang,
+    visit_a: visitA,
+    visit_b: visitB,
+  });
+  return fetchJson<GaitDiffResponse>(
+    `/api/v1/patients/${encodeURIComponent(code)}/diff${qs}`
+  );
 }
 
 export async function uploadPatientCSV(
   file: File,
   condition?: "Baseline" | "Verbal" | "VR",
-  subjectCode?: string
+  subjectCode?: string,
+  visitOptions?: { visitKey?: string; visitLabel?: string; visitDate?: string }
 ): Promise<CsvUploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
@@ -103,6 +148,15 @@ export async function uploadPatientCSV(
   }
   if (subjectCode && subjectCode.trim()) {
     formData.append("subject_code", subjectCode.trim());
+  }
+  if (visitOptions?.visitKey && visitOptions.visitKey.trim()) {
+    formData.append("visit_key", visitOptions.visitKey.trim());
+  }
+  if (visitOptions?.visitLabel && visitOptions.visitLabel.trim()) {
+    formData.append("visit_label", visitOptions.visitLabel.trim());
+  }
+  if (visitOptions?.visitDate && visitOptions.visitDate.trim()) {
+    formData.append("visit_date", visitOptions.visitDate.trim());
   }
   const url = `${API_BASE}/api/v1/patients/upload`;
   const res = await fetch(url, {
@@ -122,17 +176,20 @@ export function getCsvTemplateUrl(format: "vicon" | "imu" | "kinematics"): strin
 export function getReportPdfUrl(
   code: string,
   lang: "ru" | "kz",
-  audience: "doctor" | "parent" = "doctor"
+  audience: "doctor" | "parent" = "doctor",
+  visit?: string
 ): string {
-  return `${API_BASE}/api/v1/patients/${encodeURIComponent(code)}/report.pdf?lang=${lang}&audience=${audience}`;
+  const qs = buildQuery({ lang, audience, visit });
+  return `${API_BASE}/api/v1/patients/${encodeURIComponent(code)}/report.pdf${qs}`;
 }
 
 export async function downloadReportPdf(
   code: string,
   lang: "ru" | "kz",
-  audience: "doctor" | "parent" = "doctor"
+  audience: "doctor" | "parent" = "doctor",
+  visit?: string
 ): Promise<void> {
-  const url = getReportPdfUrl(code, lang, audience);
+  const url = getReportPdfUrl(code, lang, audience, visit);
   const res = await fetch(url, { headers: getAuthHeaders() });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
@@ -142,7 +199,7 @@ export async function downloadReportPdf(
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = objectUrl;
-  a.download = `libra-report-${code}-${lang}.pdf`;
+  a.download = `libra-report-${code}${visit ? `-${visit}` : ""}-${lang}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();

@@ -1,14 +1,43 @@
+export type PatientSide = "LEFT" | "RIGHT" | "UNSPECIFIED";
+export type GaitCondition = "Baseline" | "Verbal" | "VR";
+export type CdssStatus = "green" | "yellow" | "red" | "unassessed";
+
+export interface VisitSummary {
+  visit_key: string;
+  visit_label: string;
+  visit_label_kz?: string;
+  visit_date: string;
+  conditions: string[];
+  cycles: { baseline: number; verbal: number; vr: number; total: number };
+  status: CdssStatus;
+  tje: number | null;
+  pcr: number | null;
+  best_method: GaitCondition;
+  baseline_gps: number | null;
+  verbal_gps: number | null;
+  vr_gps: number | null;
+  source: string;
+  recorded_at?: string;
+  is_latest: boolean;
+}
+
 export interface Patient {
   id: number;
   code: string;
-  side: "LEFT" | "RIGHT";
-  weight: number;
-  height: number;
-  leg_length: number;
+  side: PatientSide;
+  weight: number | null;
+  height: number | null;
+  leg_length: number | null;
   clinic_name: string | null;
+  anthropometry_estimated?: boolean;
+  side_estimated?: boolean;
+  visit_count?: number;
+  latest_visit_key?: string;
+  latest_visit_label?: string;
+  latest_visit_date?: string;
   pcr?: number | null;
   tje?: number | null;
-  status?: "green" | "yellow" | "red" | "unassessed";
+  status?: CdssStatus;
   baseline_gps?: number | null;
   vr_gps?: number | null;
   delta_amin_sagh?: number | null;
@@ -18,10 +47,18 @@ export interface Patient {
 
 export interface DiscreteSummary {
   subject: string;
-  side: string;
-  weight: number;
-  height: number;
-  leg_length: number;
+  side: PatientSide | string;
+  weight: number | null;
+  height: number | null;
+  leg_length: number | null;
+  visit_key?: string;
+  visit_label?: string;
+  visit_date?: string;
+  anthropometry_estimated?: boolean;
+  side_estimated?: boolean;
+  active_modality?: GaitCondition;
+  active_delta_amin_sagh?: number | null;
+  active_post_amin_sagh?: number | null;
   cycles_baseline: number;
   cycles_vr: number;
   cycles_verbal?: number;
@@ -97,18 +134,24 @@ export interface ModalitiesComparison {
 
 export interface PatientAnalysis {
   summary: DiscreteSummary;
+  active_visit?: VisitSummary;
+  visits?: VisitSummary[];
   cdss_risk: CdssRisk;
   cdss?: CdssRisk;
   modalities?: ModalitiesComparison;
   icf: {
     b770_baseline: string;
     b770_vr: string;
+    b770_post?: string;
+    b770_post_condition?: string | null;
     d450: string;
   };
   ml: {
-    vr_gait_signature_confidence: number;
+    vr_gait_signature_confidence: number | null;
     binary_roc_auc?: number;
     is_vr_discriminative: boolean;
+    active_condition_evaluated?: GaitCondition;
+    predicted_condition?: "VR" | "Baseline" | null;
     responder_prediction?: {
       responder_probability: number;
       is_predicted_responder: boolean;
@@ -155,6 +198,7 @@ export interface JointKinematics {
 
 export interface KinematicsResponse {
   subject: string;
+  visit_key?: string;
   is_surrogate?: boolean;
   is_fallback?: boolean;
   has_curves?: boolean;
@@ -226,6 +270,8 @@ export interface GaitDiffResponse {
   patient: string;
   session_a: string;
   session_b: string;
+  visit_a?: string;
+  visit_b?: string;
   status: "improved" | "stable" | "regressed";
   session_a_label: string;
   session_b_label: string;
@@ -300,6 +346,11 @@ export interface CsvUploadResponse {
   codes?: string[];
   patients_updated?: number;
   condition?: "Baseline" | "Verbal" | "VR";
+  visit_key?: string;
+  visit_label?: string;
+  visit_date?: string;
+  visit_created?: boolean;
+  anthropometry_estimated?: boolean;
   has_kinematics?: boolean;
   rows?: number;
   columns?: number;

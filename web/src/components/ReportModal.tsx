@@ -7,11 +7,12 @@ import { createReport, downloadReportPdf } from "@/lib/api";
 interface Props {
   open: boolean;
   patientCode: string;
+  visitKey?: string;
   lang: "ru" | "kz";
   onClose: () => void;
 }
 
-export function ReportModal({ open, patientCode, lang: initialLang, onClose }: Props) {
+export function ReportModal({ open, patientCode, visitKey, lang: initialLang, onClose }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [modalLang, setModalLang] = useState<"ru" | "kz">(initialLang);
   const [audience, setAudience] = useState<"doctor" | "parent">("doctor");
@@ -48,7 +49,7 @@ export function ReportModal({ open, patientCode, lang: initialLang, onClose }: P
       setLoading(true);
       setReportError(null);
       try {
-        const res = await createReport(patientCode, modalLang, audience);
+        const res = await createReport(patientCode, modalLang, audience, visitKey);
         if (active) setReport(res);
       } catch (e) {
         if (active) {
@@ -63,7 +64,7 @@ export function ReportModal({ open, patientCode, lang: initialLang, onClose }: P
     return () => {
       active = false;
     };
-  }, [open, patientCode, modalLang, audience]);
+  }, [open, patientCode, modalLang, audience, visitKey]);
 
   const formattedDate = (() => {
     if (!report?.created_at) return "";
@@ -117,6 +118,7 @@ export function ReportModal({ open, patientCode, lang: initialLang, onClose }: P
             <button
               type="button"
               onClick={() => setAudience("doctor")}
+              aria-pressed={audience === "doctor"}
               style={{
                 padding: "4px 10px",
                 fontSize: "12px",
@@ -133,6 +135,7 @@ export function ReportModal({ open, patientCode, lang: initialLang, onClose }: P
             <button
               type="button"
               onClick={() => setAudience("parent")}
+              aria-pressed={audience === "parent"}
               style={{
                 padding: "4px 10px",
                 fontSize: "12px",
@@ -152,6 +155,7 @@ export function ReportModal({ open, patientCode, lang: initialLang, onClose }: P
             <button
               type="button"
               onClick={() => setModalLang("ru")}
+              aria-pressed={modalLang === "ru"}
               style={{
                 padding: "4px 10px",
                 fontSize: "12px",
@@ -167,6 +171,7 @@ export function ReportModal({ open, patientCode, lang: initialLang, onClose }: P
             <button
               type="button"
               onClick={() => setModalLang("kz")}
+              aria-pressed={modalLang === "kz"}
               style={{
                 padding: "4px 10px",
                 fontSize: "12px",
@@ -250,7 +255,7 @@ export function ReportModal({ open, patientCode, lang: initialLang, onClose }: P
               setPdfLoading(true);
               setPdfError(null);
               try {
-                await downloadReportPdf(patientCode, modalLang, audience);
+                await downloadReportPdf(patientCode, modalLang, audience, visitKey);
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
                 setPdfError(modalLang === "kz" ? `PDF жүктеу қатесі: ${msg}` : `Ошибка выгрузки PDF: ${msg}`);

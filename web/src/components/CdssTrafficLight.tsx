@@ -2,7 +2,7 @@
 
 import React from "react";
 import { AlertTriangle, CheckCircle2, AlertOctagon } from "lucide-react";
-import { PatientAnalysis } from "@/lib/types";
+import { PatientAnalysis, GaitCondition } from "@/lib/types";
 import { translations } from "@/lib/translations";
 
 interface CdssProps {
@@ -10,12 +10,16 @@ interface CdssProps {
   lang: "ru" | "kz";
 }
 
+function isFiniteNum(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 export function CdssTrafficLight({ analysis, lang }: CdssProps) {
   const t = translations[lang];
   const cdss_risk = analysis.cdss_risk || analysis.cdss || {
     status: "yellow" as const,
-    pcr: 0.0,
-    tje: 0.0,
+    pcr: null,
+    tje: null,
     label_ru: "Оценка данных",
     label_kz: "Деректерді бағалау",
     recommendation_ru: "Ожидание результатов биомеханического анализа.",
@@ -23,8 +27,58 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
   };
 
   const { summary, icf } = analysis;
-  const safeTje = typeof cdss_risk.tje === "number" && isFinite(cdss_risk.tje) ? cdss_risk.tje : 0.0;
-  const safePcr = typeof cdss_risk.pcr === "number" && isFinite(cdss_risk.pcr) ? cdss_risk.pcr : 0.0;
+  const tjeVal = isFiniteNum(cdss_risk.tje) ? cdss_risk.tje : null;
+  const pcrVal = isFiniteNum(cdss_risk.pcr) ? cdss_risk.pcr : null;
+
+  const hasVr = Boolean(
+    summary.has_vr ||
+      (summary.vr_cycles ?? summary.cycles_vr ?? 0) > 0 ||
+      isFiniteNum(summary.vr_amin_sagh)
+  );
+  const hasVerbal = Boolean(
+    summary.has_verbal ||
+      (summary.verbal_cycles ?? summary.cycles_verbal ?? 0) > 0 ||
+      isFiniteNum(summary.verbal_amin_sagh)
+  );
+  const activeModality: GaitCondition =
+    summary.active_modality ?? (hasVr ? "VR" : hasVerbal ? "Verbal" : "Baseline");
+
+  const activePostHip = isFiniteNum(summary.active_post_amin_sagh)
+    ? summary.active_post_amin_sagh
+    : activeModality === "VR"
+    ? summary.vr_amin_sagh ?? null
+    : activeModality === "Verbal"
+    ? summary.verbal_amin_sagh ?? null
+    : null;
+
+  const activeDeltaHip = isFiniteNum(summary.active_delta_amin_sagh)
+    ? summary.active_delta_amin_sagh
+    : activeModality === "VR"
+    ? summary.delta_amin_sagh ?? null
+    : activeModality === "Verbal" &&
+      isFiniteNum(summary.verbal_amin_sagh) &&
+      isFiniteNum(summary.baseline_amin_sagh)
+    ? summary.verbal_amin_sagh - summary.baseline_amin_sagh
+    : null;
+
+  const activeDeltaPelvis =
+    activeModality === "VR"
+      ? summary.delta_gvs_pelvis ?? null
+      : activeModality === "Verbal" &&
+        isFiniteNum(summary.verbal_gvs_pelvis) &&
+        isFiniteNum(summary.baseline_gvs_pelvis)
+      ? summary.verbal_gvs_pelvis - summary.baseline_gvs_pelvis
+      : null;
+
+  const activePostGps =
+    activeModality === "VR"
+      ? summary.vr_gps ?? null
+      : activeModality === "Verbal"
+      ? summary.verbal_gps ?? null
+      : null;
+
+  const postB770 = icf.b770_post || icf.b770_vr;
+  const comparisonArrowLabel = activeModality === "Verbal" ? "Base → Verbal" : "Base → VR";
 
   const statusConfig = {
     green: {
@@ -71,8 +125,40 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
   const StatusIcon = statusConfig.icon;
   const recommendationText = lang === "kz" ? cdss_risk.recommendation_kz : cdss_risk.recommendation_ru;
 
+  const baseHipStr = isFiniteNum(summary.baseline_amin_sagh)
+    ? `${summary.baseline_amin_sagh.toFixed(1)}°`
+    : "—";
+  const postHipStr = isFiniteNum(activePostHip) ? `${activePostHip.toFixed(1)}°` : "—";
+
+  const hipSubtext = (() => {
+    if (activeModality === "Baseline") {
+      return `${baseHipStr} · ${lang === "kz" ? "Тек базалық сынама" : "Только базовая проба"}`;
+    }
+    if (!isFiniteNum(activeDeltaHip)) {
+      return `${baseHipStr} → ${postHipStr} (${comparisonArrowLabel}) · ${
+        lang === "kz" ? "Салыстыру дерегі жоқ" : "Нет пары для сравнения"
+      }`;
+    }
+    const impact =
+      activeDeltaHip <= -2.0
+        ? lang === "kz"
+          ? "Айқын оң нәтиже"
+          : "Клинически значимо"
+        : activeDeltaHip <= -1.0
+        ? lang === "kz"
+          ? "Орташа жақсару"
+          : "Умеренный отклик"
+        : lang === "kz"
+        ? "Динамикасыз"
+        : "Без динамики";
+    return `${baseHipStr} → ${postHipStr} (${comparisonArrowLabel}) · ${impact}`;
+  })();
+
   return (
-    <section aria-label={lang === "kz" ? "Қауіпсіздік бағдаршамы" : "Клинический светофор"} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+    <section
+      aria-label={lang === "kz" ? "Қауіпсіздік бағдаршамы" : "Клинический светофор"}
+      style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+    >
       {/* Top Status Banner */}
       <div
         style={{
@@ -94,7 +180,7 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
               {statusConfig.title}
             </span>
             <span className={`badge ${statusConfig.badgeClass} tabular-nums`}>
-              PCR = {safePcr.toFixed(2)}
+              PCR = {pcrVal !== null ? pcrVal.toFixed(2) : "—"}
             </span>
           </div>
           <p style={{ fontSize: "13px", color: "var(--ink)", lineHeight: 1.55 }}>
@@ -122,31 +208,15 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
               fontSize: "24px",
               fontWeight: 600,
               lineHeight: 1.15,
-              color: typeof summary.delta_amin_sagh === "number" && summary.delta_amin_sagh <= -1.0 ? "var(--teal)" : "var(--ink)",
+              color: isFiniteNum(activeDeltaHip) && activeDeltaHip <= -1.0 ? "var(--teal)" : "var(--ink)",
             }}
           >
-            {typeof summary.delta_amin_sagh === "number" && isFinite(summary.delta_amin_sagh)
-              ? `${summary.delta_amin_sagh > 0 ? `+${summary.delta_amin_sagh.toFixed(1)}` : summary.delta_amin_sagh.toFixed(1)}°`
+            {isFiniteNum(activeDeltaHip)
+              ? `${activeDeltaHip > 0 ? `+${activeDeltaHip.toFixed(1)}` : activeDeltaHip.toFixed(1)}°`
               : "—"}
           </div>
           <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            {typeof summary.baseline_amin_sagh === "number" ? `${summary.baseline_amin_sagh.toFixed(1)}°` : "—"} →{" "}
-            {typeof summary.vr_amin_sagh === "number" ? `${summary.vr_amin_sagh.toFixed(1)}°` : "—"} ·{" "}
-            {typeof summary.delta_amin_sagh !== "number" || !isFinite(summary.delta_amin_sagh)
-              ? lang === "kz"
-                ? "VR сынамасы жоқ"
-                : "Нет VR-пробы"
-              : summary.delta_amin_sagh <= -2.0
-              ? lang === "kz"
-                ? "Айқын оң нәтиже"
-                : "Клинически значимо"
-              : summary.delta_amin_sagh <= -1.0
-              ? lang === "kz"
-                ? "Орташа жақсару"
-                : "Умеренный отклик"
-              : lang === "kz"
-              ? "Динамикасыз"
-              : "Без динамики"}
+            {hipSubtext}
           </div>
         </div>
 
@@ -160,10 +230,17 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
               fontSize: "24px",
               fontWeight: 600,
               lineHeight: 1.15,
-              color: safeTje <= -1.0 ? "var(--teal)" : safeTje > 0.5 ? "var(--red)" : "var(--amber)",
+              color:
+                tjeVal === null
+                  ? "var(--ink)"
+                  : tjeVal <= -1.0
+                  ? "var(--teal)"
+                  : tjeVal > 0.5
+                  ? "var(--red)"
+                  : "var(--amber)",
             }}
           >
-            {safeTje > 0 ? `+${safeTje.toFixed(1)}` : safeTje.toFixed(1)}°
+            {tjeVal !== null ? `${tjeVal > 0 ? `+${tjeVal.toFixed(1)}` : tjeVal.toFixed(1)}°` : "—"}
           </div>
           <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
             {t.tje_desc}
@@ -181,30 +258,39 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
                 fontSize: "24px",
                 fontWeight: 600,
                 lineHeight: 1.15,
-                color: safePcr > 0.8 ? "var(--red)" : safePcr >= 0.4 ? "var(--amber)" : "var(--teal)",
+                color:
+                  pcrVal === null
+                    ? "var(--ink)"
+                    : pcrVal > 0.8
+                    ? "var(--red)"
+                    : pcrVal >= 0.4
+                    ? "var(--amber)"
+                    : "var(--teal)",
               }}
             >
-              {safePcr.toFixed(2)}
+              {pcrVal !== null ? pcrVal.toFixed(2) : "—"}
             </span>
-            <span style={{ fontSize: "12px", color: "var(--muted)" }}>
-              {safePcr > 0.8
-                ? lang === "kz"
-                  ? "Жоғары"
-                  : "Высокий риск"
-                : safePcr >= 0.4
-                ? lang === "kz"
-                  ? "Орташа"
-                  : "Умеренно"
-                : lang === "kz"
-                ? "Қалыпты"
-                : "В норме"}
-            </span>
+            {pcrVal !== null && (
+              <span style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {pcrVal > 0.8
+                  ? lang === "kz"
+                    ? "Жоғары"
+                    : "Высокий риск"
+                  : pcrVal >= 0.4
+                  ? lang === "kz"
+                    ? "Орташа"
+                    : "Умеренно"
+                  : lang === "kz"
+                  ? "Қалыпты"
+                  : "В норме"}
+              </span>
+            )}
           </div>
           <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            {typeof summary.delta_gvs_pelvis === "number" && isFinite(summary.delta_gvs_pelvis)
+            {isFiniteNum(activeDeltaPelvis)
               ? lang === "kz"
-                ? `Жамбас ауытқуы: ${summary.delta_gvs_pelvis > 0 ? `+${summary.delta_gvs_pelvis.toFixed(1)}` : summary.delta_gvs_pelvis.toFixed(1)}°`
-                : `Отклонение таза: ${summary.delta_gvs_pelvis > 0 ? `+${summary.delta_gvs_pelvis.toFixed(1)}` : summary.delta_gvs_pelvis.toFixed(1)}°`
+                ? `Жамбас ауытқуы: ${activeDeltaPelvis > 0 ? `+${activeDeltaPelvis.toFixed(1)}` : activeDeltaPelvis.toFixed(1)}°`
+                : `Отклонение таза: ${activeDeltaPelvis > 0 ? `+${activeDeltaPelvis.toFixed(1)}` : activeDeltaPelvis.toFixed(1)}°`
               : lang === "kz"
               ? "Жамбас ауытқуы: —"
               : "Отклонение таза: —"}
@@ -219,7 +305,8 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ color: "var(--muted)" }}>b770</span>
               <span className="tabular-nums" style={{ fontFamily: "var(--mono)", fontWeight: 500 }}>
-                {icf.b770_baseline} → {icf.b770_vr}
+                {icf.b770_baseline}
+                {postB770 && postB770 !== "N/A" ? ` → ${postB770}` : ""}
               </span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -233,19 +320,23 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
             style={{
               fontSize: "12px",
               color:
-                typeof summary.vr_gps === "number" &&
-                typeof summary.baseline_gps === "number" &&
-                summary.vr_gps < summary.baseline_gps
+                isFiniteNum(activePostGps) &&
+                isFiniteNum(summary.baseline_gps) &&
+                activePostGps < summary.baseline_gps
                   ? "var(--teal)"
                   : "var(--muted)",
               marginTop: "6px",
             }}
           >
-            {typeof summary.vr_gps !== "number" || typeof summary.baseline_gps !== "number"
+            {activeModality === "Baseline"
               ? lang === "kz"
-                ? "Салыстырмалы VR дерегі жоқ"
-                : "Нет парной VR-пробы"
-              : summary.vr_gps < summary.baseline_gps
+                ? "Базалық сынама бойынша"
+                : "Оценено по базовой пробе"
+              : !isFiniteNum(activePostGps) || !isFiniteNum(summary.baseline_gps)
+              ? lang === "kz"
+                ? `Салыстырмалы ${activeModality} дерегі жоқ`
+                : `Нет парной ${activeModality}-пробы`
+              : activePostGps < summary.baseline_gps
               ? lang === "kz"
                 ? "Жүріс профилі (GPS) жақсарды"
                 : "Индекс походки GPS улучшился"
