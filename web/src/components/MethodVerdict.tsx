@@ -8,7 +8,7 @@ import { fmtFixed, fmtSigned, fmtPcr, isFiniteNum, cleanClinicalText } from "@/l
 interface Props {
   modalities?: ModalitiesComparison;
   summary?: DiscreteSummary;
-  lang: "ru" | "kz";
+  lang: "ru" | "kz" | "en";
 }
 
 export function MethodVerdict({ modalities, summary, lang }: Props) {

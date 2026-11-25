@@ -6,7 +6,7 @@ import type { CohortAnalytics as CohortAnalyticsType } from "@/lib/types";
 
 interface CohortAnalyticsProps {
   stats: CohortAnalyticsType;
-  lang: "ru" | "kz";
+  lang: "ru" | "kz" | "en";
 }
 
 function sharePercent(part: number, total: number): number {
@@ -18,7 +18,8 @@ export function CohortAnalytics({ stats, lang }: CohortAnalyticsProps) {
   const isKz = lang === "kz";
   const cdss = stats.cdss_distribution;
   const assessedTotal = cdss.green + cdss.yellow + cdss.red;
-  const unassessedCount = Math.max(0, stats.total_patients - assessedTotal);
+  const unassessedCount =
+    stats.unassessed_patients ?? Math.max(0, stats.total_patients - assessedTotal);
   const methodTotal =
     stats.best_method_distribution.VR +
     stats.best_method_distribution.Verbal +

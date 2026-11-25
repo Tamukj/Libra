@@ -114,8 +114,10 @@ export interface CdssRisk {
   tje: number | null;
   label_ru: string;
   label_kz: string;
+  label_en?: string;
   recommendation_ru: string;
   recommendation_kz: string;
+  recommendation_en?: string;
 }
 
 export interface ModalitiesComparison {
@@ -130,6 +132,7 @@ export interface ModalitiesComparison {
   delta_pelvis_verbal: number | null;
   verdict_ru: string;
   verdict_kz: string;
+  verdict_en?: string;
 }
 
 export interface PatientAnalysis {
@@ -139,6 +142,8 @@ export interface PatientAnalysis {
   cdss_risk: CdssRisk;
   cdss?: CdssRisk;
   modalities?: ModalitiesComparison;
+  limitations?: string[];
+  disclaimer?: string;
   icf: {
     b770_baseline: string;
     b770_vr: string;
@@ -188,6 +193,7 @@ export interface JointCurveSeries {
 export interface JointKinematics {
   name_ru: string;
   name_kz: string;
+  name_en?: string;
   unit: string;
   time_percent: number[];
   baseline: JointCurveSeries | null;
@@ -220,6 +226,7 @@ export interface CohortAnalytics {
     license: string;
   };
   total_patients: number;
+  unassessed_patients?: number;
   cycles: {
     baseline: number;
     verbal: number;
@@ -272,33 +279,35 @@ export interface GaitDiffResponse {
   session_b: string;
   visit_a?: string;
   visit_b?: string;
-  status: "improved" | "stable" | "regressed";
+  status: "improved" | "stable" | "regressed" | "insufficient_data" | (string & {});
   session_a_label: string;
   session_b_label: string;
-  gps_a: number;
-  gps_b: number;
-  delta_gps: number;
-  gdi_a: number;
-  gdi_b: number;
-  delta_gdi: number;
-  tje_a: number;
-  tje_b: number;
-  delta_tje: number;
-  pcr_a: number;
-  pcr_b: number;
-  delta_pcr: number;
+  gps_a: number | null;
+  gps_b: number | null;
+  delta_gps: number | null;
+  gdi_a: number | null;
+  gdi_b: number | null;
+  delta_gdi: number | null;
+  tje_a: number | null;
+  tje_b: number | null;
+  delta_tje: number | null;
+  pcr_a: number | null;
+  pcr_b: number | null;
+  delta_pcr: number | null;
   icf_a: string;
   icf_b: string;
   icf_transition: string;
   icf_improved: boolean;
   verdict_ru: string;
   verdict_kz: string;
+  verdict_en?: string;
 }
 
 export interface ThreeClassMLMetrics {
   balanced_accuracy: number;
   roc_auc?: number;
   f1_macro: number;
+  classes?: string[];
   n_splits: number;
   n_cycles: number;
   n_subjects: number;
@@ -323,6 +332,7 @@ export interface VrResponderMetrics {
   feature_mode?: string;
   note?: string;
   note_kz?: string;
+  note_en?: string;
 }
 
 export interface MLMetrics {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useState, useCallback } from "react";
+import React, { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -29,7 +29,7 @@ import type {
   VisitSummary,
 } from "@/lib/types";
 import { useLanguage } from "@/lib/LanguageContext";
-import { cleanClinicalText, fmtCm, fmtFixed, fmtPercent, fmtSigned, isFiniteNum } from "@/lib/format";
+import { cleanClinicalText, fmtCm, fmtFixed, fmtPercent, fmtSigned, isFiniteNum, safeDecodeParam } from "@/lib/format";
 import { CdssTrafficLight } from "@/components/CdssTrafficLight";
 import { MethodVerdict } from "@/components/MethodVerdict";
 import { KinematicsChart } from "@/components/KinematicsChart";
@@ -317,13 +317,14 @@ function PatientDossierContent() {
   const { lang, t } = useLanguage();
   const isKz = lang === "kz";
 
-  const patientCode = decodeURIComponent(String(params?.id || "s61520_1"));
+  const patientCode = safeDecodeParam(String(params?.id || "s61520_1"));
   const visitParam = searchParams?.get("visit") || undefined;
 
   const [analysis, setAnalysis] = useState<PatientAnalysis | null>(null);
   const [kinematics, setKinematics] = useState<KinematicsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [sessionEditorOpen, setSessionEditorOpen] = useState(false);
   const [sessionEditBusy, setSessionEditBusy] = useState(false);
@@ -331,30 +332,30 @@ function PatientDossierContent() {
   const [editTargets, setEditTargets] = useState<Record<string, { condition: GaitCondition; visitKey: string }>>({});
 
   const loadPatient = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
       const [ana, kin] = await Promise.all([
-        getPatientAnalysis(patientCode, visitParam),
-        getPatientKinematics(patientCode, visitParam),
+        getPatientAnalysis(patientCode, visitParam, controller.signal),
+        getPatientKinematics(patientCode, visitParam, controller.signal),
       ]);
+      if (controller.signal.aborted) return;
       setAnalysis(ana);
       setKinematics(kin);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : isKz
-            ? "Пациент деректерін жүктеу мүмкін болмады"
-            : "Не удалось загрузить карту пациента"
-      );
+    } catch (err: unknown) {
+      if ((err as { name?: string })?.name === "AbortError" || controller.signal.aborted) return;
+      setError(err instanceof Error ? err.message : "LOAD_FAILED");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, [patientCode, visitParam, isKz]);
+  }, [patientCode, visitParam]);
 
   useEffect(() => {
     loadPatient();
+    return () => abortRef.current?.abort();
   }, [loadPatient]);
 
   useEffect(() => {
@@ -388,7 +389,12 @@ function PatientDossierContent() {
         </Link>
         <div className="callout callout-red" role="alert">
           <div style={{ color: "var(--red)", fontSize: "13px" }}>
-            <strong>{isKz ? "Қате:" : "Ошибка:"}</strong> {error || (isKz ? "Пациент табылмады" : "Пациент не найден")}
+            <strong>{isKz ? "Қате:" : "Ошибка:"}</strong>{" "}
+            {error === "LOAD_FAILED"
+              ? isKz
+                ? "Пациент деректерін жүктеу мүмкін болмады"
+                : "Не удалось загрузить карту пациента"
+              : error || (isKz ? "Пациент табылмады" : "Пациент не найден")}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-export type FormatLang = "ru" | "kz";
+export type FormatLang = "ru" | "kz" | "en";
 
 const MINUS = "−";
 
@@ -64,6 +64,14 @@ export function fmtVisitCount(count: number, lang: FormatLang): string {
     return `${count} визита`;
   }
   return `${count} визитов`;
+}
+
+export function safeDecodeParam(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 export function cleanClinicalText(text: string): string {

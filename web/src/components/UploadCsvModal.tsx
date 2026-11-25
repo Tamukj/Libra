@@ -11,7 +11,7 @@ import {
   Info,
 } from "lucide-react";
 import { ModalDialog } from "@/components/ModalDialog";
-import { uploadPatientCSV, getCsvTemplateUrl, getPatientVisits } from "@/lib/api";
+import { uploadPatientCSV, downloadCsvTemplate, getPatientVisits } from "@/lib/api";
 import { CsvUploadResponse, GaitCondition, VisitSummary } from "@/lib/types";
 
 interface Props {
@@ -529,22 +529,29 @@ export function UploadCsvModal({
             {isKz ? "Үлгі CSV шаблондарды жүктеу" : "Скачать шаблоны CSV"}
           </div>
           <div className="cluster">
-            <a href={getCsvTemplateUrl("vicon")} download="libra_template_vicon.csv" className="btn btn-sm">
-              <Download size={14} aria-hidden="true" />
-              <span>Vicon / GRAIL</span>
-            </a>
-            <a href={getCsvTemplateUrl("imu")} download="libra_template_imu.csv" className="btn btn-sm">
-              <Download size={14} aria-hidden="true" />
-              <span>{isKz ? "IMU сенсорлары" : "Датчики IMU"}</span>
-            </a>
-            <a
-              href={getCsvTemplateUrl("kinematics")}
-              download="libra_template_kinematics.csv"
-              className="btn btn-sm"
-            >
-              <Download size={14} aria-hidden="true" />
-              <span>{isKz ? "51-нүктелі кинематика" : "51-точечные кривые"}</span>
-            </a>
+            {(
+              [
+                { fmt: "vicon", label: "Vicon / GRAIL" },
+                { fmt: "imu", label: isKz ? "IMU сенсорлары" : "Датчики IMU" },
+                { fmt: "kinematics", label: isKz ? "51-нүктелі кинематика" : "51-точечные кривые" },
+              ] as const
+            ).map(({ fmt, label }) => (
+              <button
+                key={fmt}
+                type="button"
+                className="btn btn-sm"
+                onClick={async () => {
+                  try {
+                    await downloadCsvTemplate(fmt);
+                  } catch (err: unknown) {
+                    setError(err instanceof Error ? err.message : String(err));
+                  }
+                }}
+              >
+                <Download size={14} aria-hidden="true" />
+                <span>{label}</span>
+              </button>
+            ))}
           </div>
         </div>
 

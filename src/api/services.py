@@ -11,38 +11,21 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from src.database.models import Patient, GaitSession
+from src.database.session import _pelvic_tilt_mean
 from src.core.data_loader import get_patient_discrete_summary
 from src.core.biomechanics import (
     analyze_compensation_risk,
     build_baseline_only_risk,
-    classify_icf_b770,
-    classify_icf_d450,
     compare_modalities,
     compute_pcr,
-    compute_sagittal_gdi,
     compute_true_joint_extension,
     is_finite_number,
     opt_float,
-    _safe_float,
 )
 from src.core.normative_data import NORMATIVE_PROFILES
 from src.api.deps import ClinicalEngineState
 
 logger = logging.getLogger(__name__)
-
-
-def _compute_mean_pelvic_tilt(df_kin: pd.DataFrame, subject: str) -> Optional[float]:
-    if df_kin is None or df_kin.empty:
-        return None
-    sub = df_kin[df_kin["subject"] == subject]
-    if sub.empty:
-        return None
-    p_cols = [c for c in df_kin.columns if c.startswith("aSagP_pct_GC_")]
-    if not p_cols:
-        return None
-    vals = sub[p_cols].to_numpy(dtype=float)
-    valid = vals[np.isfinite(vals)] if vals.size > 0 else vals
-    return float(np.mean(valid)) if valid.size > 0 else None
 
 
 def _compute_mean_hip_rom(df_kin: pd.DataFrame, subject: str) -> Optional[float]:
@@ -229,7 +212,7 @@ def _build_summary_from_visit_sessions(
         if db_t is not None:
             return db_t
         if getattr(sess, "source", "seeded") == "seeded":
-            return _compute_mean_pelvic_tilt(df_kin_static, code)
+            return _pelvic_tilt_mean(df_kin_static, code)
         return None
 
     tilt_b = _cond_tilt(base_sess, state.df_kin_base)
@@ -400,9 +383,9 @@ def resolve_patient_summary(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=f"No biomechanical gait sessions recorded for patient {code}: {exc}")
 
-    tilt_b = _compute_mean_pelvic_tilt(state.df_kin_base, code)
-    tilt_vr = _compute_mean_pelvic_tilt(state.df_kin_vr, code)
-    tilt_vb = _compute_mean_pelvic_tilt(state.df_kin_vb, code)
+    tilt_b = _pelvic_tilt_mean(state.df_kin_base, code)
+    tilt_vr = _pelvic_tilt_mean(state.df_kin_vr, code)
+    tilt_vb = _pelvic_tilt_mean(state.df_kin_vb, code)
     hip_rom_b = _compute_mean_hip_rom(state.df_kin_base, code)
     summary["has_seeded"] = True
     summary["visit_key"] = "visit-1"
@@ -494,14 +477,14 @@ def compute_patient_cycle_stability(
         target_cond = "VR"
         static_df = state.df_kin_vr
         n_cycles_summary = int(summary.get("vr_cycles") or 0)
-    elif summary.get("has_baseline"):
-        target_cond = "Baseline"
-        static_df = state.df_kin_base
-        n_cycles_summary = int(summary.get("baseline_cycles") or 0)
-    else:
+    elif summary.get("has_verbal"):
         target_cond = "Verbal"
         static_df = state.df_kin_vb
         n_cycles_summary = int(summary.get("verbal_cycles") or 0)
+    else:
+        target_cond = "Baseline"
+        static_df = state.df_kin_base
+        n_cycles_summary = int(summary.get("baseline_cycles") or 0)
 
     target_sess = by_cond.get(target_cond)
     target_curves: Optional[np.ndarray] = None
@@ -554,7 +537,7 @@ def build_patient_kinematics(
     Returns 51-point kinematic curves per condition scoped to the target visit (or latest visit)
     without cross-patient surrogate copying or cloning Baseline into unrecorded VR/Verbal conditions.
     """
-    if not patient and code not in state.df_kin_base["subject"].values:
+    if not patient:
         raise HTTPException(status_code=404, detail=f"Patient {code} not found")
 
     all_db_sessions = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).all() if patient else []
@@ -672,7 +655,7 @@ def _extract_static_cond_joints(sub_df: pd.DataFrame) -> Dict[str, Dict[str, Lis
     return extracted
 
 
-def extract_session_metrics_for_diff(summary: Dict[str, Any], condition: str, lang: str = "ru") -> Dict[str, Any]:
+def extract_session_metrics_for_diff(summary: Dict[str, Any], condition: str) -> Dict[str, Any]:
     c = condition.strip().lower()
     base_gps = opt_float(summary.get("baseline_gps"))
     base_hip = opt_float(summary.get("baseline_amin_sagh"))

@@ -8,6 +8,19 @@ import { LibraLogo } from "@/components/LibraLogo";
 import { LanguageSwitch, LargeFontButton } from "@/components/PageControls";
 import { useLanguage } from "@/lib/LanguageContext";
 
+const SESSION_SALT = "libra-clinical-v1";
+
+function createSessionToken(): string {
+  const ts = String(Date.now());
+  let h = 2166136261;
+  const input = `${SESSION_SALT}:${ts}`;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `v1.${ts}.${(h >>> 0).toString(16).padStart(8, "0")}`;
+}
+
 function LoginFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -15,6 +28,9 @@ function LoginFormContent() {
   const isKz = lang === "kz";
 
   const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     try {
@@ -23,18 +39,46 @@ function LoginFormContent() {
     } catch {}
   }, []);
 
-  const handleEnterPortal = (e: React.FormEvent) => {
+  const handleEnterPortal = async (e: React.FormEvent) => {
     e.preventDefault();
-    document.cookie = "libra_session=clinician; path=/; max-age=604800; SameSite=Lax";
+    setAuthError(null);
+    setSubmitting(true);
+    const trimmedKey = apiKey.trim();
+    const apiBase =
+      process.env.NEXT_PUBLIC_API_URL !== undefined
+        ? process.env.NEXT_PUBLIC_API_URL
+        : "http://127.0.0.1:8000";
     try {
-      if (apiKey.trim()) {
-        sessionStorage.setItem("libra_api_key", apiKey.trim());
-      } else {
-        sessionStorage.removeItem("libra_api_key");
+      const res = await fetch(`${apiBase}/api/v1/patients`, {
+        headers: trimmedKey ? { "X-API-Key": trimmedKey } : {},
+      });
+      if (!res.ok) {
+        setAuthError(
+          isKz
+            ? `Кіру қабылданбады (HTTP ${res.status}). Сервер кілтін тексеріңіз.`
+            : `Доступ отклонён (HTTP ${res.status}). Проверьте ключ доступа клиники.`
+        );
+        return;
       }
-    } catch {}
-    const from = searchParams.get("from") || "/portal";
-    router.push(from.startsWith("/portal") ? from : "/portal");
+      document.cookie = `libra_session=${createSessionToken()}; path=/; max-age=604800; SameSite=Lax`;
+      try {
+        if (trimmedKey) {
+          sessionStorage.setItem("libra_api_key", trimmedKey);
+        } else {
+          sessionStorage.removeItem("libra_api_key");
+        }
+      } catch {}
+      const from = searchParams.get("from") || "/portal";
+      router.push(from.startsWith("/portal") ? from : "/portal");
+    } catch {
+      setAuthError(
+        isKz
+          ? "Серверге қосылу мүмкін болмады."
+          : "Не удалось связаться с сервером для проверки доступа."
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -97,19 +141,35 @@ function LoginFormContent() {
                 <label htmlFor="api-key-input" style={{ display: "block", fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
                   {isKz ? "Сервер кілті" : "Ключ доступа сервера"}
                 </label>
-                <input
-                  id="api-key-input"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="••••••••••••"
-                  style={{ width: "100%" }}
-                />
+                <div style={{ display: "flex", gap: "var(--sp-2)", alignItems: "center" }}>
+                  <input
+                    id="api-key-input"
+                    type={showKey ? "text" : "password"}
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="••••••••••••"
+                    style={{ width: "100%" }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    aria-pressed={showKey}
+                    onClick={() => setShowKey((v) => !v)}
+                  >
+                    {showKey ? (isKz ? "Жасыру" : "Скрыть") : (isKz ? "Көрсету" : "Показать")}
+                  </button>
+                </div>
               </div>
             </details>
 
-            <button type="submit" className="btn btn-primary btn-lg" style={{ width: "100%" }}>
-              <span>{isKz ? "Тізілімді ашу" : "Открыть реестр пациентов"}</span>
+            {authError && (
+              <div className="callout callout-red" role="alert" style={{ padding: "var(--sp-3) var(--sp-4)", fontSize: "13px" }}>
+                {authError}
+              </div>
+            )}
+
+            <button type="submit" className="btn btn-primary btn-lg" style={{ width: "100%" }} disabled={submitting}>
+              <span>{submitting ? (isKz ? "Тексерілуде..." : "Проверка...") : isKz ? "Тізілімді ашу" : "Открыть реестр пациентов"}</span>
               <ArrowRight size={16} strokeWidth={1.5} aria-hidden="true" />
             </button>
           </form>

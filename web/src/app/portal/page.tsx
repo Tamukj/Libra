@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Search, AlertTriangle, CheckCircle2, ArrowRight, RotateCcw } from "lucide-react";
 import { getPatients, getCohortAnalytics } from "@/lib/api";
@@ -8,7 +8,7 @@ import { Patient, CohortAnalytics } from "@/lib/types";
 import { useLanguage } from "@/lib/LanguageContext";
 import { fmtFixed, fmtSigned, fmtPcr, fmtCm, fmtVisitCount, isFiniteNum } from "@/lib/format";
 
-type RiskFilter = "all" | "red" | "yellow" | "green";
+type RiskFilter = "all" | "red" | "yellow" | "green" | "unassessed";
 type SideFilter = "ALL" | "LEFT" | "RIGHT";
 
 export default function PortalRegistryPage() {
@@ -17,35 +17,43 @@ export default function PortalRegistryPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [stats, setStats] = useState<CohortAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [sideFilter, setSideFilter] = useState<SideFilter>("ALL");
 
   const loadData = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
-    setError(null);
+    setLoadError(false);
     try {
-      const [pts, cohort] = await Promise.all([getPatients(), getCohortAnalytics()]);
+      const [pts, cohort] = await Promise.all([
+        getPatients(controller.signal),
+        getCohortAnalytics(controller.signal),
+      ]);
+      if (controller.signal.aborted) return;
       setPatients(pts);
       setStats(cohort);
-    } catch {
-      setError(
-        isKz
-          ? "Сервермен байланыс орнату мүмкін болмады. API қызметінің күйін тексеріңіз."
-          : "Не удалось загрузить реестр пациентов. Проверьте доступность клинического сервера."
-      );
+    } catch (err: unknown) {
+      if ((err as { name?: string })?.name === "AbortError" || controller.signal.aborted) return;
+      setLoadError(true);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, [isKz]);
+  }, []);
 
   useEffect(() => {
     loadData();
     const onUpdate = () => loadData();
     window.addEventListener("libra:patient-updated", onUpdate);
-    return () => window.removeEventListener("libra:patient-updated", onUpdate);
+    return () => {
+      abortRef.current?.abort();
+      window.removeEventListener("libra:patient-updated", onUpdate);
+    };
   }, [loadData]);
 
   const formatSide = (side?: Patient["side"] | null) => {
@@ -229,7 +237,9 @@ export default function PortalRegistryPage() {
               [
                 { key: "all", label: t.filter_all_label },
                 { key: "red", label: t.filter_danger_label },
+                { key: "yellow", label: isKz ? "Бақылау" : "Под наблюдением" },
                 { key: "green", label: t.filter_normal_label },
+                { key: "unassessed", label: isKz ? "Бағаланбаған" : "Без оценки" },
               ] as const
             ).map((f) => (
               <button
@@ -261,10 +271,14 @@ export default function PortalRegistryPage() {
         </div>
       </section>
 
-      {error && (
+      {loadError && (
         <div role="alert" className="callout callout-red row-between" style={{ color: "var(--red)" }}>
-          <span>{error}</span>
-          <button type="button" onClick={loadData} className="btn btn-sm">
+          <span>
+            {isKz
+              ? "Сервермен байланыс орнату мүмкін болмады. API қызметінің күйін тексеріңіз."
+              : "Не удалось загрузить реестр пациентов. Проверьте доступность клинического сервера."}
+          </span>
+          <button type="button" onClick={() => loadData()} className="btn btn-sm">
             <RotateCcw size={14} strokeWidth={1.5} aria-hidden="true" />
             <span>{isKz ? "Қайта жүктеу" : "Повторить"}</span>
           </button>

@@ -22,6 +22,7 @@ import { LibraLogo } from "@/components/LibraLogo";
 import { ModalDialog } from "@/components/ModalDialog";
 import { LanguageSwitch, useLargeFontPreference } from "@/components/PageControls";
 import { useLanguage } from "@/lib/LanguageContext";
+import { safeDecodeParam } from "@/lib/format";
 
 interface SidebarProps {
   onOpenUpload: () => void;
@@ -42,7 +43,7 @@ function SidebarContent({
   useEffect(() => {
     const match = pathname.match(/^\/portal\/patients\/([^/]+)/);
     if (match && match[1]) {
-      const code = decodeURIComponent(match[1]);
+      const code = safeDecodeParam(match[1]);
       setActivePatient(code);
       try {
         sessionStorage.setItem("libra_last_patient", code);
@@ -297,7 +298,7 @@ export function PortalTopBar() {
 
   let pageLabel = lang === "kz" ? "Пациенттер тізілімі" : "Реестр пациентов";
   if (pathname.startsWith("/portal/patients/")) {
-    const id = decodeURIComponent(pathname.replace("/portal/patients/", "").split("/")[0] || "");
+    const id = safeDecodeParam(pathname.replace("/portal/patients/", "").split("/")[0] || "");
     pageLabel = `${lang === "kz" ? "Пациент картасы" : "Карточка пациента"} · ${id}`;
   } else if (pathname.startsWith("/portal/analytics")) {
     pageLabel = lang === "kz" ? "Когорта талдауы" : "Аналитика когорты";

@@ -1,19 +1,22 @@
 "use client";
 
-import React from "react";
-import { AlertTriangle, CheckCircle2, AlertOctagon } from "lucide-react";
+import React, { useState } from "react";
+import { AlertTriangle, CheckCircle2, AlertOctagon, HelpCircle } from "lucide-react";
 import { PatientAnalysis, GaitCondition } from "@/lib/types";
 import { translations } from "@/lib/translations";
 import { isFiniteNum, fmtFixed, fmtSigned, fmtPcr, cleanClinicalText } from "@/lib/format";
 
 interface CdssProps {
   analysis: PatientAnalysis;
-  lang: "ru" | "kz";
+  lang: "ru" | "kz" | "en";
 }
 
 export function CdssTrafficLight({ analysis, lang }: CdssProps) {
   const isKz = lang === "kz";
-  const t = translations[lang];
+  const t = translations[isKz ? "kz" : "ru"];
+  const [openTip, setOpenTip] = useState<"hip" | "tje" | "pcr" | "icf" | null>(null);
+  const toggleTip = (key: "hip" | "tje" | "pcr" | "icf") =>
+    setOpenTip((prev) => (prev === key ? null : key));
   const cdss_risk = analysis.cdss_risk || analysis.cdss || {
     status: "yellow" as const,
     pcr: null,
@@ -199,10 +202,24 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
       </div>
 
       <div className="grid-kpi-4">
-        <div className="surface-compact" title={t.tooltip_delta_hip}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
-            {isKz ? "Санның жазылу өсімі" : "Разгибание бедра в опоре"}
+        <div className="surface-compact">
+          <div className="row-between" style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)", gap: "var(--sp-1)" }}>
+            <span>{isKz ? "Санның жазылу өсімі" : "Разгибание бедра в опоре"}</span>
+            <button
+              type="button"
+              onClick={() => toggleTip("hip")}
+              aria-expanded={openTip === "hip"}
+              aria-label={isKz ? "Көрсеткіш түсіндірмесі" : "Пояснение показателя"}
+              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--muted)", display: "inline-flex" }}
+            >
+              <HelpCircle size={13} aria-hidden="true" />
+            </button>
           </div>
+          {openTip === "hip" && (
+            <p style={{ fontSize: "12px", color: "var(--secondary)", marginBottom: "var(--sp-2)", lineHeight: 1.4 }}>
+              {t.tooltip_delta_hip}
+            </p>
+          )}
           <div
             className="tabular-nums"
             style={{
@@ -219,10 +236,24 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
           </div>
         </div>
 
-        <div className="surface-compact" title={t.tooltip_tje}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
-            {t.tje_title}
+        <div className="surface-compact">
+          <div className="row-between" style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)", gap: "var(--sp-1)" }}>
+            <span>{t.tje_title}</span>
+            <button
+              type="button"
+              onClick={() => toggleTip("tje")}
+              aria-expanded={openTip === "tje"}
+              aria-label={isKz ? "TJE түсіндірмесі" : "Пояснение TJE"}
+              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--muted)", display: "inline-flex" }}
+            >
+              <HelpCircle size={13} aria-hidden="true" />
+            </button>
           </div>
+          {openTip === "tje" && (
+            <p style={{ fontSize: "12px", color: "var(--secondary)", marginBottom: "var(--sp-2)", lineHeight: 1.4 }}>
+              {t.tooltip_tje}
+            </p>
+          )}
           <div
             className="tabular-nums"
             style={{
@@ -246,10 +277,24 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
           </div>
         </div>
 
-        <div className="surface-compact" title={t.tooltip_pcr}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
-            {t.pcr_title}
+        <div className="surface-compact">
+          <div className="row-between" style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)", gap: "var(--sp-1)" }}>
+            <span>{t.pcr_title}</span>
+            <button
+              type="button"
+              onClick={() => toggleTip("pcr")}
+              aria-expanded={openTip === "pcr"}
+              aria-label={isKz ? "PCR түсіндірмесі" : "Пояснение PCR"}
+              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--muted)", display: "inline-flex" }}
+            >
+              <HelpCircle size={13} aria-hidden="true" />
+            </button>
           </div>
+          {openTip === "pcr" && (
+            <p style={{ fontSize: "12px", color: "var(--secondary)", marginBottom: "var(--sp-2)", lineHeight: 1.4 }}>
+              {t.tooltip_pcr}
+            </p>
+          )}
           <div style={{ display: "flex", alignItems: "baseline", gap: "var(--sp-2)" }}>
             <span
               className="tabular-nums"
@@ -296,10 +341,24 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
           </div>
         </div>
 
-        <div className="surface-compact" title={t.tooltip_icf}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
-            {t.icf_title}
+        <div className="surface-compact">
+          <div className="row-between" style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)", gap: "var(--sp-1)" }}>
+            <span>{t.icf_title}</span>
+            <button
+              type="button"
+              onClick={() => toggleTip("icf")}
+              aria-expanded={openTip === "icf"}
+              aria-label={isKz ? "ХҚЖ түсіндірмесі" : "Пояснение МКФ"}
+              style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--muted)", display: "inline-flex" }}
+            >
+              <HelpCircle size={13} aria-hidden="true" />
+            </button>
           </div>
+          {openTip === "icf" && (
+            <p style={{ fontSize: "12px", color: "var(--secondary)", marginBottom: "var(--sp-2)", lineHeight: 1.4 }}>
+              {t.tooltip_icf}
+            </p>
+          )}
           <div className="stack-xs" style={{ fontSize: "13px" }}>
             <div className="kv-row">
               <span style={{ color: "var(--muted)" }}>b770</span>

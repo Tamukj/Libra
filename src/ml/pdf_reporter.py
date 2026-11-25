@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 
 import matplotlib
 matplotlib.use("Agg")
+from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
 import numpy as np
@@ -25,6 +26,10 @@ def _fmt_signed(val: Any, digits: int = 2, suffix: str = "") -> str:
     if not is_finite_number(val):
         return "—"
     return f"{float(val):+.{digits}f}{suffix}"
+
+
+def _fmt_cycles(val: Any) -> str:
+    return str(int(val)) if is_finite_number(val) else "—"
 
 
 def _wrap_text(text: str, width: int) -> list[str]:
@@ -116,13 +121,20 @@ def generate_pdf_report(
         visit_prefix = "Визит"
 
     visit_meta = f"{visit_label} ({visit_date})" if (visit_label and visit_date) else (visit_label or visit_date)
+    meta_lines = textwrap.wrap(meta_line, width=96, break_long_words=True)
     if visit_meta:
-        ax.text(0.065, 0.949, title[:70], fontsize=11.6, fontweight="bold", color="#1C1917", family=font_family)
-        ax.text(0.065, 0.927, meta_line[:95], fontsize=7.6, color="#57534E", family=font_family)
-        ax.text(0.065, 0.908, f"{visit_prefix}: {visit_meta}"[:95], fontsize=7.5, fontweight="bold", color="#44403C", family=font_family)
+        ax.text(0.065, 0.952, title, fontsize=11.2, fontweight="bold", color="#1C1917", family=font_family)
+        my = 0.935
+        for mline in meta_lines[:2]:
+            ax.text(0.065, my, mline, fontsize=7.0, color="#57534E", family=font_family)
+            my -= 0.013
+        ax.text(0.065, 0.906, f"{visit_prefix}: {visit_meta}", fontsize=7.2, fontweight="bold", color="#44403C", family=font_family)
     else:
-        ax.text(0.065, 0.943, title[:70], fontsize=12.0, fontweight="bold", color="#1C1917", family=font_family)
-        ax.text(0.065, 0.917, meta_line[:95], fontsize=7.8, color="#57534E", family=font_family)
+        ax.text(0.065, 0.948, title, fontsize=11.6, fontweight="bold", color="#1C1917", family=font_family)
+        my = 0.928
+        for mline in meta_lines[:2]:
+            ax.text(0.065, my, mline, fontsize=7.2, color="#57534E", family=font_family)
+            my -= 0.014
 
     # 2. CDSS Status Banner
     status = risk.get("status", "yellow")
@@ -141,7 +153,11 @@ def generate_pdf_report(
     status_label = risk.get(f"label_{eff_lang}") or risk.get("label_ru") or ""
     icf_d_txt = icf_d450 or ("жоқ" if is_kz else ("N/A" if is_en else "нет данных"))
     icf_tag = pdf_loc.get("icf_label", "ICF" if is_en else ("ХҚЖ" if is_kz else "МКФ"))
-    ax.text(0.065, 0.868, f"CDSS: {status_label[:72]}", fontsize=9.2, fontweight="bold", color=fg_col, family=font_family)
+    cdss_lines = textwrap.wrap(f"CDSS: {status_label}", width=84, break_long_words=True)
+    cy = 0.872 if len(cdss_lines) > 1 else 0.868
+    for cline in cdss_lines[:2]:
+        ax.text(0.065, cy, cline, fontsize=8.4 if len(cdss_lines) > 1 else 9.0, fontweight="bold", color=fg_col, family=font_family)
+        cy -= 0.015
     method_label = "Ұсыныс" if is_kz else ("Best" if is_en else "Метод")
     metrics_pill = (
         f"TJE: {_fmt_signed(risk.get('tje'), 2, '°')}  |  "
@@ -149,7 +165,7 @@ def generate_pdf_report(
         f"{method_label}: {modalities.get('best_method', 'Baseline')}  |  "
         f"{icf_tag}: {icf_b770_base} -> {icf_b770_vr}, d450: {icf_d_txt}"
     )
-    ax.text(0.065, 0.838, metrics_pill[:92], fontsize=7.8, color="#1C1917", family=font_family)
+    ax.text(0.065, 0.833, metrics_pill, fontsize=7.6, color="#1C1917", family=font_family)
 
     # 3. Quantitative Metrics Table
     y_top = 0.798
@@ -160,9 +176,13 @@ def generate_pdf_report(
     )
     ax.text(0.05, y_top, table_title, fontsize=9.5, fontweight="bold", color="#1C1917", family=font_family)
 
-    has_base = bool(summary.get("has_baseline", True)) and int(summary.get("cycles_baseline") or 0) > 0 or summary.get("baseline_gps") is not None
-    has_vr = bool(summary.get("has_vr")) and (int(summary.get("cycles_vr") or 0) > 0)
-    has_vb = bool(summary.get("has_verbal")) and (int(summary.get("cycles_verbal") or 0) > 0)
+    has_base = bool(summary.get("has_baseline", True)) and (
+        int(summary.get("cycles_baseline") or 0) > 0
+        or summary.get("baseline_gps") is not None
+        or summary.get("baseline_amin_sagh") is not None
+    )
+    has_vr = bool(summary.get("has_vr")) or summary.get("vr_gps") is not None or summary.get("vr_amin_sagh") is not None
+    has_vb = bool(summary.get("has_verbal")) or summary.get("verbal_gps") is not None or summary.get("verbal_amin_sagh") is not None
 
     if has_vr:
         delta_col_hdr = "Δ (VR - Base)"
@@ -231,9 +251,9 @@ def generate_pdf_report(
     rows = [
         [
             cyc_lbl,
-            str(summary.get("cycles_baseline", 0)),
-            str(summary.get("cycles_verbal", 0)),
-            str(summary.get("cycles_vr", 0)),
+            _fmt_cycles(summary.get("cycles_baseline")),
+            _fmt_cycles(summary.get("cycles_verbal")),
+            _fmt_cycles(summary.get("cycles_vr")),
             "—",
         ],
         _row_vals(gps_lbl, "gps"),
@@ -336,12 +356,9 @@ def generate_pdf_report(
     line_y = box_top - 0.014
     avail_h = max(0.04, line_y - (box_bottom + 0.008))
     max_lines = max(1, int(avail_h // min_step))
-    if len(wrapped_lines) <= max_lines:
-        display_lines = wrapped_lines
-        line_step = min(0.0135, avail_h / max(1, len(display_lines)))
-    else:
-        display_lines = wrapped_lines[: max(1, max_lines - 1)] + ["[...]"]
-        line_step = min_step
+    display_lines = wrapped_lines[:max_lines]
+    overflow_lines = wrapped_lines[max_lines:]
+    line_step = min(0.0135, avail_h / max(1, len(display_lines))) if not overflow_lines else min_step
 
     for line in display_lines:
         if line_y < box_bottom + 0.008:
@@ -365,13 +382,46 @@ def generate_pdf_report(
             "Ограничения и примечание (п. 8.2): Libra — СППР, не ставит диагноз; модель калибрована на выборке N=29 "
             "(только сагиттальная кинематика). Нужен контроль врача; экстренная помощь: 103."
         )
-    footer_lines = textwrap.wrap(footer_raw, width=96)
-    fy = 0.064
-    for fline in footer_lines[:2]:
-        ax.text(0.05, fy, fline, fontsize=7.2, fontweight="bold", color="#B45309", family=font_family)
-        fy -= 0.014
+    footer_lines = textwrap.wrap(footer_raw, width=98)
+
+    def _draw_footer(target_ax):
+        fy = 0.068
+        for fline in footer_lines:
+            target_ax.text(0.05, fy, fline, fontsize=7.0, fontweight="bold", color="#B45309", family=font_family)
+            fy -= 0.013
+
+    _draw_footer(ax)
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="pdf")
-    plt.close(fig)
+    with PdfPages(buf) as pdf:
+        pdf.savefig(fig)
+        plt.close(fig)
+
+        while overflow_lines:
+            fig_ov = plt.figure(figsize=(8.27, 11.69), dpi=150)
+            fig_ov.patch.set_facecolor("#FFFFFF")
+            ax_ov = fig_ov.add_axes([0.0, 0.0, 1.0, 1.0])
+            ax_ov.set_xlim(0, 1)
+            ax_ov.set_ylim(0, 1)
+            ax_ov.axis("off")
+
+            ax_ov.text(0.05, 0.950, f"{title} · {subject}", fontsize=10.5, fontweight="bold", color="#1C1917", family=font_family)
+            ov_box_top = 0.928
+            ax_ov.add_patch(FancyBboxPatch(
+                (0.05, box_bottom), 0.90, ov_box_top - box_bottom,
+                boxstyle="round,pad=0.004,rounding_size=0.008",
+                facecolor="#FAF8F5", edgecolor="#DDD8CE", linewidth=0.8,
+            ))
+            ov_y = ov_box_top - 0.016
+            ov_avail = ov_y - (box_bottom + 0.008)
+            ov_max = max(1, int(ov_avail // min_step))
+            chunk = overflow_lines[:ov_max]
+            overflow_lines = overflow_lines[ov_max:]
+            for line in chunk:
+                ax_ov.text(0.062, ov_y, line, fontsize=font_sz, color="#1C1917", family=font_family)
+                ov_y -= min_step
+            _draw_footer(ax_ov)
+            pdf.savefig(fig_ov)
+            plt.close(fig_ov)
+
     return buf.getvalue()

@@ -8,7 +8,7 @@ import { fmtFixed } from "@/lib/format";
 interface KinematicsProps {
   data: KinematicsResponse;
   summary?: DiscreteSummary;
-  lang: "ru" | "kz";
+  lang: "ru" | "kz" | "en";
 }
 
 type JointKey = "aSagH" | "aSagP" | "aSagK" | "aSagA" | "mSagH";
@@ -19,17 +19,18 @@ export function KinematicsChart({ data, summary, lang }: KinematicsProps) {
   const [cursorIdx, setCursorIdx] = useState<number | null>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  const jointTabs: Array<{ key: JointKey; label: string }> = [
+  const allJointTabs: Array<{ key: JointKey; label: string }> = [
     { key: "aSagH", label: isKz ? "Сан буыны" : "Бедро" },
     { key: "aSagP", label: isKz ? "Жамбас" : "Таз" },
     { key: "aSagK", label: isKz ? "Тізе" : "Колено" },
     { key: "aSagA", label: isKz ? "Тобық" : "Стопа" },
-    ...(data.joints?.mSagH
-      ? [{ key: "mSagH" as const, label: isKz ? "Сан моменті" : "Момент бедра" }]
-      : []),
+    { key: "mSagH", label: isKz ? "Сан моменті" : "Момент бедра" },
   ];
-
-  const jointData = data.joints?.[activeJoint] || data.joints?.aSagH;
+  const jointTabs = allJointTabs.filter((tab) => Boolean(data.joints?.[tab.key]));
+  const effectiveJoint = data.joints?.[activeJoint]
+    ? activeJoint
+    : (jointTabs[0]?.key ?? activeJoint);
+  const jointData = data.joints?.[effectiveJoint];
   if (!jointData) {
     return (
       <section className="surface" style={{ display: "flex", alignItems: "flex-start", gap: "var(--sp-3)", color: "var(--muted)", fontSize: "13px" }}>
@@ -69,7 +70,7 @@ export function KinematicsChart({ data, summary, lang }: KinematicsProps) {
     ...jointData.norm_td.mean.map((m, i) => m - (jointData.norm_td.std[i] || 0)),
   ].filter((v): v is number => typeof v === "number" && Number.isFinite(v));
 
-  const isMoment = activeJoint === "mSagH";
+  const isMoment = effectiveJoint === "mSagH";
   const step = isMoment ? 0.5 : 5;
   const minY = allValues.length > 0 ? Math.floor(Math.min(...allValues) / step) * step - step : -10;
   const maxY = allValues.length > 0 ? Math.ceil(Math.max(...allValues) / step) * step + step : 40;
@@ -77,16 +78,21 @@ export function KinematicsChart({ data, summary, lang }: KinematicsProps) {
   const scaleX = (pct: number) => padLeft + (pct / 100) * (width - padLeft - padRight);
   const scaleY = (val: number) => padTop + (1 - (val - minY) / (maxY - minY || 1)) * (height - padTop - padBottom);
 
-  const makePath = (points: number[]) => {
+  const makePath = (points: Array<number | null | undefined>) => {
     const denom = points.length > 1 ? points.length - 1 : 1;
-    return points
-      .map((val, idx) => {
-        const safeVal = typeof val === "number" && Number.isFinite(val) ? val : 0;
-        const x = scaleX((idx / denom) * 100);
-        const y = scaleY(safeVal);
-        return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-      })
-      .join(" ");
+    const cmds: string[] = [];
+    let segStart = true;
+    points.forEach((val, idx) => {
+      if (typeof val !== "number" || !Number.isFinite(val)) {
+        segStart = true;
+        return;
+      }
+      const x = scaleX((idx / denom) * 100);
+      const y = scaleY(val);
+      cmds.push(`${segStart ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`);
+      segStart = false;
+    });
+    return cmds.join(" ");
   };
 
   const stdArr = jointData.norm_td?.std || [];
@@ -102,6 +108,7 @@ export function KinematicsChart({ data, summary, lang }: KinematicsProps) {
     " Z";
 
   const nPts = jointData.time_percent?.length || 51;
+  const nDenom = nPts > 1 ? nPts - 1 : 1;
   const unit = jointData.unit || "°";
   const digits = isMoment ? 2 : 1;
 
@@ -110,7 +117,7 @@ export function KinematicsChart({ data, summary, lang }: KinematicsProps) {
     const relX = ((e.clientX - rect.left) / rect.width) * width;
     const pct = ((relX - padLeft) / (width - padLeft - padRight)) * 100;
     const clamped = Math.max(0, Math.min(100, pct));
-    const idx = Math.round((clamped / 100) * (nPts - 1));
+    const idx = nPts > 1 ? Math.round((clamped / 100) * nDenom) : 0;
     setCursorIdx(idx);
   };
 
@@ -127,8 +134,8 @@ export function KinematicsChart({ data, summary, lang }: KinematicsProps) {
   };
 
   const midY = isMoment ? Number(((minY + maxY) / 2).toFixed(1)) : Math.round((minY + maxY) / 2);
-  const activeTabId = `kin-tab-${activeJoint}`;
-  const activePanelId = `kin-panel-${activeJoint}`;
+  const activeTabId = `kin-tab-${effectiveJoint}`;
+  const activePanelId = `kin-panel-${effectiveJoint}`;
   const activeIdx = cursorIdx ?? 0;
 
   return (
@@ -215,7 +222,7 @@ export function KinematicsChart({ data, summary, lang }: KinematicsProps) {
           <div className="tabular-nums mono" style={{ fontSize: "12px", color: "var(--secondary)" }}>
             {cursorIdx !== null ? (
               <>
-                <span>{Math.round((activeIdx / (nPts - 1)) * 100)}%</span>
+                <span>{Math.round((activeIdx / nDenom) * 100)}%</span>
                 {showBaseline && jointData.baseline && (
                   <span> · {isKz ? "Қал." : "База"} {fmtFixed(jointData.baseline.mean[activeIdx], digits, unit)}</span>
                 )}
@@ -328,9 +335,9 @@ export function KinematicsChart({ data, summary, lang }: KinematicsProps) {
 
             {cursorIdx !== null && (
               <line
-                x1={scaleX((cursorIdx / (nPts - 1)) * 100)}
+                x1={scaleX((cursorIdx / nDenom) * 100)}
                 y1={padTop}
-                x2={scaleX((cursorIdx / (nPts - 1)) * 100)}
+                x2={scaleX((cursorIdx / nDenom) * 100)}
                 y2={height - padBottom}
                 stroke="var(--ink)"
                 strokeWidth="1"
@@ -349,14 +356,14 @@ export function KinematicsChart({ data, summary, lang }: KinematicsProps) {
             id="kinematics-cycle-scrubber"
             type="range"
             min={0}
-            max={nPts - 1}
+            max={nPts > 1 ? nPts - 1 : 0}
             value={cursorIdx ?? 0}
             onChange={(e) => setCursorIdx(Number(e.target.value))}
-            aria-valuetext={`${Math.round(((cursorIdx ?? 0) / (nPts - 1)) * 100)}%`}
+            aria-valuetext={`${Math.round(((cursorIdx ?? 0) / nDenom) * 100)}%`}
             style={{ flex: 1, maxWidth: "420px" }}
           />
           <span className="tabular-nums mono" style={{ fontSize: "12px", color: "var(--secondary)", minWidth: "40px", textAlign: "right" }}>
-            {cursorIdx !== null ? `${Math.round((cursorIdx / (nPts - 1)) * 100)}%` : "—"}
+            {cursorIdx !== null ? `${Math.round((cursorIdx / nDenom) * 100)}%` : "—"}
           </span>
         </div>
       </div>

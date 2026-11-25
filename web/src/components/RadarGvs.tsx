@@ -6,7 +6,7 @@ import { fmtFixed, isFiniteNum } from "@/lib/format";
 
 interface RadarProps {
   summary: DiscreteSummary;
-  lang: "ru" | "kz";
+  lang: "ru" | "kz" | "en";
 }
 
 export function RadarGvs({ summary, lang }: RadarProps) {
@@ -52,7 +52,47 @@ export function RadarGvs({ summary, lang }: RadarProps) {
     },
   ];
 
-  const maxGvs = 20.0;
+  const normVals = [4.2, 5.0, 5.5, 4.0];
+  const baseVals = [
+    summary.baseline_gvs_pelvis ?? 0,
+    summary.baseline_gvs_hip ?? 0,
+    summary.baseline_gvs_knee ?? 0,
+    summary.baseline_gvs_ankle ?? 0,
+  ];
+  const verbalRaw = [
+    summary.verbal_gvs_pelvis,
+    summary.verbal_gvs_hip,
+    summary.verbal_gvs_knee,
+    summary.verbal_gvs_ankle,
+  ];
+  const vrRaw = [
+    summary.vr_gvs_pelvis,
+    summary.vr_gvs_hip,
+    summary.vr_gvs_knee,
+    summary.vr_gvs_ankle,
+  ];
+  const verbalVals = [
+    summary.verbal_gvs_pelvis ?? summary.baseline_gvs_pelvis ?? 0,
+    summary.verbal_gvs_hip ?? summary.baseline_gvs_hip ?? 0,
+    summary.verbal_gvs_knee ?? summary.baseline_gvs_knee ?? 0,
+    summary.verbal_gvs_ankle ?? summary.baseline_gvs_ankle ?? 0,
+  ];
+  const vrVals = [
+    summary.vr_gvs_pelvis ?? 0,
+    summary.vr_gvs_hip ?? 0,
+    summary.vr_gvs_knee ?? 0,
+    summary.vr_gvs_ankle ?? 0,
+  ];
+
+  const showVerbal = summary.has_verbal !== false && verbalRaw.some(isFiniteNum);
+  const showVR = summary.has_vr !== false && vrRaw.some(isFiniteNum);
+
+  const allFiniteGvs = [
+    ...baseVals,
+    ...(showVerbal ? verbalRaw.filter(isFiniteNum) : []),
+    ...(showVR ? vrRaw.filter(isFiniteNum) : []),
+  ].filter(isFiniteNum);
+  const maxGvs = Math.max(20, ...allFiniteGvs);
 
   const getCoord = (angle: number, value: number) => {
     const val = isFiniteNum(value) ? Math.max(0, value) : 0;
@@ -70,29 +110,6 @@ export function RadarGvs({ summary, lang }: RadarProps) {
         return `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
       })
       .join(" ");
-
-  const normVals = [4.2, 5.0, 5.5, 4.0];
-  const baseVals = [
-    summary.baseline_gvs_pelvis ?? 0,
-    summary.baseline_gvs_hip ?? 0,
-    summary.baseline_gvs_knee ?? 0,
-    summary.baseline_gvs_ankle ?? 0,
-  ];
-  const verbalVals = [
-    summary.verbal_gvs_pelvis ?? summary.baseline_gvs_pelvis ?? 0,
-    summary.verbal_gvs_hip ?? summary.baseline_gvs_hip ?? 0,
-    summary.verbal_gvs_knee ?? summary.baseline_gvs_knee ?? 0,
-    summary.verbal_gvs_ankle ?? summary.baseline_gvs_ankle ?? 0,
-  ];
-  const vrVals = [
-    summary.vr_gvs_pelvis ?? 0,
-    summary.vr_gvs_hip ?? 0,
-    summary.vr_gvs_knee ?? 0,
-    summary.vr_gvs_ankle ?? 0,
-  ];
-
-  const showVerbal = summary.has_verbal !== false && isFiniteNum(summary.verbal_gvs_pelvis);
-  const showVR = summary.has_vr !== false && isFiniteNum(summary.vr_gvs_pelvis);
 
   const srSummary = isKz
     ? `Жамбас ${fmtFixed(summary.baseline_gvs_pelvis, 1, "°")}, Сан ${fmtFixed(summary.baseline_gvs_hip, 1, "°")}, Тізе ${fmtFixed(summary.baseline_gvs_knee, 1, "°")}, Тобық ${fmtFixed(summary.baseline_gvs_ankle, 1, "°")}`

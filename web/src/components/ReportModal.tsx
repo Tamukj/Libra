@@ -10,7 +10,7 @@ interface Props {
   open: boolean;
   patientCode: string;
   visitKey?: string;
-  lang: "ru" | "kz";
+  lang: "ru" | "kz" | "en";
   onClose: () => void;
 }
 
@@ -21,7 +21,7 @@ export function ReportModal({
   lang: initialLang,
   onClose,
 }: Props) {
-  const [modalLang, setModalLang] = useState<"ru" | "kz">(initialLang);
+  const [modalLang, setModalLang] = useState<"ru" | "kz">(initialLang === "kz" ? "kz" : "ru");
   const [audience, setAudience] = useState<"doctor" | "parent">("doctor");
   const [loading, setLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -36,7 +36,11 @@ export function ReportModal({
   } | null>(null);
 
   useEffect(() => {
-    setModalLang(initialLang);
+    setPdfError(null);
+  }, [open, patientCode, visitKey]);
+
+  useEffect(() => {
+    setModalLang(initialLang === "kz" ? "kz" : "ru");
   }, [initialLang]);
 
   useEffect(() => {

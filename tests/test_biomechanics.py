@@ -140,7 +140,9 @@ def test_compare_modalities_with_none_values():
     }
     res = compare_modalities(summary)
     assert "best_method" in res
-    assert res["best_method"] in ["VR", "Baseline"]
+    assert res["best_method"] == "Baseline"
+    assert res["pcr_vr"] is None
+    assert res["delta_pelvis_vr"] is None
 
 def test_analyze_compensation_risk_nan_guards():
     # If delta_pelvis_term is NaN, it should sanitize gracefully rather than producing nan TJE

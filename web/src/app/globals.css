@@ -1072,7 +1072,16 @@ html.a11y-large td,
 html.a11y-large th,
 html.a11y-large label,
 html.a11y-large p {
-  font-size: 15px;
+  font-size: 15px !important;
+}
+
+html.a11y-large div[style*="11px"],
+html.a11y-large div[style*="12px"],
+html.a11y-large div[style*="13px"],
+html.a11y-large span[style*="11px"],
+html.a11y-large span[style*="12px"],
+html.a11y-large span[style*="13px"] {
+  font-size: 14px !important;
 }
 
 html.a11y-large :focus-visible {
@@ -1091,6 +1100,14 @@ html.a11y-large :focus-visible {
   }
   .portal-shell {
     display: block;
+  }
+  dialog.libra-dialog {
+    position: static;
+    max-block-size: none;
+    max-inline-size: none;
+    overflow: visible;
+    border: none;
+    box-shadow: none;
   }
   .surface,
   .surface-compact,

@@ -47,7 +47,7 @@ export function LanguageSwitch({ compact = false }: { compact?: boolean }) {
         type="button"
         onClick={() => setLang("ru")}
         aria-pressed={lang === "ru"}
-        className="seg-btn seg-btn-light"
+        className="btn seg-btn seg-btn-light"
       >
         {compact ? "Рус" : "Русский"}
       </button>
@@ -55,7 +55,7 @@ export function LanguageSwitch({ compact = false }: { compact?: boolean }) {
         type="button"
         onClick={() => setLang("kz")}
         aria-pressed={lang === "kz"}
-        className="seg-btn seg-btn-light"
+        className="btn seg-btn seg-btn-light"
       >
         {compact ? "Қаз" : "Қазақша"}
       </button>

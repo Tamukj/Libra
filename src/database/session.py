@@ -4,11 +4,13 @@ import math
 import os
 import tempfile
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Clinic, Patient, GaitSession
@@ -252,12 +254,50 @@ def _migrate_sqlite_columns():
                     if col_name not in gs_cols:
                         cur.execute(f"ALTER TABLE gait_sessions ADD COLUMN {col_name} {col_type}")
 
-        # 3. ClinicalReport table: visit_key
+        # 3. ClinicalReport table: visit_key, narrative_en, nullable tje/pcr
         cr_info = cur.execute("PRAGMA table_info(clinical_reports)").fetchall()
         if cr_info:
-            cr_cols = {row[1] for row in cr_info}
-            if "visit_key" not in cr_cols:
-                cur.execute("ALTER TABLE clinical_reports ADD COLUMN visit_key VARCHAR(64) NOT NULL DEFAULT 'visit-1'")
+            cr_cols = {row[1]: row for row in cr_info}
+            needs_cr_rebuild = (
+                "visit_key" not in cr_cols
+                or "narrative_en" not in cr_cols
+                or cr_cols.get("tje", (None, None, None, 0))[3] == 1
+                or cr_cols.get("pcr", (None, None, None, 0))[3] == 1
+            )
+            if needs_cr_rebuild:
+                vk_expr = "COALESCE(NULLIF(visit_key, ''), 'visit-1')" if "visit_key" in cr_cols else "'visit-1'"
+                en_expr = "COALESCE(narrative_en, '')" if "narrative_en" in cr_cols else "''"
+                cur.execute("""
+                    CREATE TABLE clinical_reports_migrated (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        patient_id INTEGER NOT NULL REFERENCES patients (id) ON DELETE CASCADE,
+                        visit_key VARCHAR(64) NOT NULL DEFAULT 'visit-1',
+                        icf_b770 VARCHAR(16) NOT NULL,
+                        icf_d450 VARCHAR(16) NOT NULL,
+                        tje FLOAT,
+                        pcr FLOAT,
+                        status VARCHAR(16) NOT NULL DEFAULT 'green',
+                        narrative_ru TEXT NOT NULL,
+                        narrative_kz TEXT NOT NULL,
+                        narrative_en TEXT NOT NULL DEFAULT '',
+                        audience VARCHAR(16) NOT NULL DEFAULT 'doctor',
+                        created_at DATETIME
+                    )
+                """)
+                cur.execute(f"""
+                    INSERT INTO clinical_reports_migrated (
+                        id, patient_id, visit_key, icf_b770, icf_d450, tje, pcr,
+                        status, narrative_ru, narrative_kz, narrative_en, audience, created_at
+                    )
+                    SELECT
+                        id, patient_id, {vk_expr}, icf_b770, icf_d450, tje, pcr,
+                        COALESCE(status, 'green'), narrative_ru, narrative_kz, {en_expr},
+                        COALESCE(audience, 'doctor'), created_at
+                    FROM clinical_reports
+                """)
+                cur.execute("DROP TABLE clinical_reports")
+                cur.execute("ALTER TABLE clinical_reports_migrated RENAME TO clinical_reports")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_clinical_reports_patient_id ON clinical_reports (patient_id)")
 
         raw_conn.commit()
         cur.execute("PRAGMA foreign_keys = ON;")
@@ -275,88 +315,104 @@ def _migrate_sqlite_columns():
 def init_db(seed_cohort: bool = True):
     """Initializes tables and seeds initial clinic and patients atomically if empty."""
     with _cross_platform_init_lock():
-        Base.metadata.create_all(bind=engine, checkfirst=True)
-        _migrate_sqlite_columns()
+        for attempt in range(5):
+            try:
+                try:
+                    Base.metadata.create_all(bind=engine, checkfirst=True)
+                except (OperationalError, ProgrammingError) as exc:
+                    if "already exists" not in str(exc).lower():
+                        raise
+                _migrate_sqlite_columns()
 
-        if not seed_cohort:
-            return
+                if not seed_cohort:
+                    return
 
-        with SessionLocal() as db:
-            if db.query(Patient).count() > 0:
+                with SessionLocal() as db:
+                    if db.query(Patient).count() > 0:
+                        return
+
+                    try:
+                        clinic = db.query(Clinic).first()
+                        if not clinic:
+                            clinic = Clinic(
+                                name="Клиническая когорта ДЦП (KU Leuven) / БЦП клиникалық когортасы",
+                                city="",
+                                region="",
+                            )
+                            db.add(clinic)
+                            db.flush()
+
+                        baseline_file = DATA_DIR / "Discrete_Parameters_Baseline.csv"
+                        vr_file = DATA_DIR / "Discrete_Parameters_VR.csv"
+                        verbal_file = DATA_DIR / "Discrete_Parameters_Verbal.csv"
+                        kin_b_file = DATA_DIR / "Kinematics_Kinetics_Baseline.csv"
+                        kin_vr_file = DATA_DIR / "Kinematics_Kinetics_VR.csv"
+                        kin_vb_file = DATA_DIR / "Kinematics_Kinetics_Verbal.csv"
+
+                        if not baseline_file.exists():
+                            db.commit()
+                            return
+
+                        df_base = load_discrete_dataset(baseline_file)
+                        df_vr = load_discrete_dataset(vr_file) if vr_file.exists() else None
+                        df_vb = load_discrete_dataset(verbal_file) if verbal_file.exists() else None
+                        df_kin_b = load_kinematics_dataset(kin_b_file) if kin_b_file.exists() else None
+                        df_kin_vr = load_kinematics_dataset(kin_vr_file) if kin_vr_file.exists() else None
+                        df_kin_vb = load_kinematics_dataset(kin_vb_file) if kin_vb_file.exists() else None
+
+                        for sub in df_base["subject"].dropna().unique():
+                            sub_b = df_base[df_base["subject"] == sub]
+                            raw_side = str(sub_b["side"].iloc[0]).strip().upper() if "side" in sub_b.columns else ""
+                            side_val = raw_side if raw_side in ("LEFT", "RIGHT") else "UNSPECIFIED"
+                            w_val = _optional_mean(sub_b, "weight")
+                            h_val = _optional_mean(sub_b, "height")
+                            l_val = _optional_mean(sub_b, "LegLength")
+                            p = Patient(
+                                code=sub,
+                                side=side_val,
+                                weight=w_val,
+                                height=h_val,
+                                leg_length=l_val,
+                                anthropometry_estimated=(w_val is None or h_val is None or l_val is None),
+                                side_estimated=(side_val == "UNSPECIFIED"),
+                                clinic_id=clinic.id,
+                            )
+                            db.add(p)
+                            db.flush()
+
+                            condition_specs = [
+                                ("Baseline", sub_b, df_kin_b),
+                                ("VR", df_vr[df_vr["subject"] == sub] if df_vr is not None else None, df_kin_vr),
+                                ("Verbal", df_vb[df_vb["subject"] == sub] if df_vb is not None else None, df_kin_vb),
+                            ]
+                            for cond_name, sub_df, kin_df in condition_specs:
+                                if sub_df is None or sub_df.empty:
+                                    continue
+                                db.add(GaitSession(
+                                    patient_id=p.id,
+                                    visit_key="visit-1",
+                                    visit_label="Базовый курс (KU Leuven)",
+                                    visit_date="2024-04-30",
+                                    condition=cond_name,
+                                    cycle_count=len(sub_df),
+                                    avg_gps=_optional_mean(sub_df, "GPS_a"),
+                                    avg_amin_sagh=_optional_mean(sub_df, "aMinSagH"),
+                                    avg_gvs_pelvis=_optional_mean(sub_df, "GVS_aSagP"),
+                                    avg_gvs_hip=_optional_mean(sub_df, "GVS_aSagH"),
+                                    avg_gvs_knee=_optional_mean(sub_df, "GVS_aSagK"),
+                                    avg_gvs_ankle=_optional_mean(sub_df, "GVS_aSagA"),
+                                    avg_pctm_zero=_optional_mean(sub_df, "pctmZeroStSagH"),
+                                    avg_pelvis_tilt=_pelvic_tilt_mean(kin_df, sub),
+                                    source="seeded",
+                                ))
+
+                        db.commit()
+                    except IntegrityError:
+                        db.rollback()
                 return
-
-            clinic = db.query(Clinic).first()
-            if not clinic:
-                clinic = Clinic(
-                    name="Клиническая когорта ДЦП (KU Leuven) / БЦП клиникалық когортасы",
-                    city="",
-                    region="",
-                )
-                db.add(clinic)
-                db.flush()
-
-            baseline_file = DATA_DIR / "Discrete_Parameters_Baseline.csv"
-            vr_file = DATA_DIR / "Discrete_Parameters_VR.csv"
-            verbal_file = DATA_DIR / "Discrete_Parameters_Verbal.csv"
-            kin_b_file = DATA_DIR / "Kinematics_Kinetics_Baseline.csv"
-            kin_vr_file = DATA_DIR / "Kinematics_Kinetics_VR.csv"
-            kin_vb_file = DATA_DIR / "Kinematics_Kinetics_Verbal.csv"
-
-            if not baseline_file.exists():
-                db.commit()
-                return
-
-            df_base = load_discrete_dataset(baseline_file)
-            df_vr = load_discrete_dataset(vr_file) if vr_file.exists() else None
-            df_vb = load_discrete_dataset(verbal_file) if verbal_file.exists() else None
-            df_kin_b = load_kinematics_dataset(kin_b_file) if kin_b_file.exists() else None
-            df_kin_vr = load_kinematics_dataset(kin_vr_file) if kin_vr_file.exists() else None
-            df_kin_vb = load_kinematics_dataset(kin_vb_file) if kin_vb_file.exists() else None
-
-            for sub in df_base["subject"].dropna().unique():
-                sub_b = df_base[df_base["subject"] == sub]
-                raw_side = str(sub_b["side"].iloc[0]).strip().upper() if "side" in sub_b.columns else ""
-                side_val = raw_side if raw_side in ("LEFT", "RIGHT") else "UNSPECIFIED"
-                w_val = _optional_mean(sub_b, "weight")
-                h_val = _optional_mean(sub_b, "height")
-                l_val = _optional_mean(sub_b, "LegLength")
-                p = Patient(
-                    code=sub,
-                    side=side_val,
-                    weight=w_val,
-                    height=h_val,
-                    leg_length=l_val,
-                    anthropometry_estimated=(w_val is None or h_val is None or l_val is None),
-                    side_estimated=(side_val == "UNSPECIFIED"),
-                    clinic_id=clinic.id,
-                )
-                db.add(p)
-                db.flush()
-
-                condition_specs = [
-                    ("Baseline", sub_b, df_kin_b),
-                    ("VR", df_vr[df_vr["subject"] == sub] if df_vr is not None else None, df_kin_vr),
-                    ("Verbal", df_vb[df_vb["subject"] == sub] if df_vb is not None else None, df_kin_vb),
-                ]
-                for cond_name, sub_df, kin_df in condition_specs:
-                    if sub_df is None or sub_df.empty:
-                        continue
-                    db.add(GaitSession(
-                        patient_id=p.id,
-                        visit_key="visit-1",
-                        visit_label="Базовый курс (KU Leuven)",
-                        visit_date="2024-04-30",
-                        condition=cond_name,
-                        cycle_count=len(sub_df),
-                        avg_gps=_optional_mean(sub_df, "GPS_a"),
-                        avg_amin_sagh=_optional_mean(sub_df, "aMinSagH"),
-                        avg_gvs_pelvis=_optional_mean(sub_df, "GVS_aSagP"),
-                        avg_gvs_hip=_optional_mean(sub_df, "GVS_aSagH"),
-                        avg_gvs_knee=_optional_mean(sub_df, "GVS_aSagK"),
-                        avg_gvs_ankle=_optional_mean(sub_df, "GVS_aSagA"),
-                        avg_pctm_zero=_optional_mean(sub_df, "pctmZeroStSagH"),
-                        avg_pelvis_tilt=_pelvic_tilt_mean(kin_df, sub),
-                        source="seeded",
-                    ))
-
-            db.commit()
+            except OperationalError as exc:
+                msg = str(exc).lower()
+                if ("locked" in msg or "busy" in msg) and attempt < 4:
+                    time.sleep(0.05 * (attempt + 1))
+                    continue
+                raise

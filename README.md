@@ -1,14 +1,14 @@
 # Libra
 
-Clinical biomechanics and decision support system for pediatric cerebral palsy rehabilitation.
+Клиническая платформа биомеханики походки и система поддержки принятия врачебных решений (СППР) для реабилитации детей с детским церебральным параличом (ДЦП).
 
-Developed for AI-Sana Shakarim Solveathon: AI & Medicine 2026, Semey, Abai Region.
+Разработано для **AI-Sana Shakarim Solveathon: AI & Medicine 2026** (г. Семей, область Абай).
 
-Libra processes 3D gait data, detects compensatory pelvic tilt during virtual reality motor therapy, isolates true hip joint extension, and generates clinical documentation aligned with World Health Organization International Classification of Functioning codes (ICF b770 and d450).
+Libra обрабатывает 3D-данные походки (дискретные параметры и 51-точечные кривые цикла шага), выявляет патологический компенсаторный наклон таза при VR-обратной связи и вербальных инструкциях, выделяет истинное разгибание тазобедренного сустава (**TJE**) и формирует врачебные и родительские отчёты с привязкой к кодам МКФ ВОЗ (**b770** и **d450**).
 
 ---
 
-## Clinical statechart
+## Архитектура клинического конвейера
 
 ```mermaid
 stateDiagram-v2
@@ -22,31 +22,31 @@ stateDiagram-v2
         ValidateFormat --> ParseData
     }
 
-    Ingestion --> BiomechanicsEngine : Cleaned kinematic arrays and discrete metrics
+    Ingestion --> BiomechanicsEngine : Очищенные кривые и дискретные метрики
 
     state BiomechanicsEngine {
-        [*] --> ComputeBakerScores : GVS and GPS
-        ComputeBakerScores --> ComputeTrueJointExtension : TJE formula
-        ComputeTrueJointExtension --> ComputeCompensationRatio : PCR formula
-        ComputeCompensationRatio --> ClassifyWHOICF : b770 and d450 codes
+        [*] --> ComputeBakerScores : GVS и GPS
+        ComputeBakerScores --> ComputeTrueJointExtension : Формула TJE
+        ComputeTrueJointExtension --> ComputeCompensationRatio : Формула PCR
+        ComputeCompensationRatio --> ClassifyWHOICF : Коды b770 и d450
     }
 
-    BiomechanicsEngine --> DecisionSupport : Biomechanical feature vectors
+    BiomechanicsEngine --> DecisionSupport : Векторы биомеханических признаков
 
     state DecisionSupport {
-        [*] --> GroupKFoldClassifier : Leak-free condition prediction
-        [*] --> PCAStabilityGuard : Q-statistic reconstruction error
-        GroupKFoldClassifier --> ModalityVerdict : Compare Baseline, Verbal, VR
+        [*] --> GroupKFoldClassifier : Кросс-валидация строго по subject
+        [*] --> PCAStabilityGuard : Ошибка реконструкции (SPE)
+        GroupKFoldClassifier --> ModalityVerdict : Сравнение Baseline, Verbal, VR
         PCAStabilityGuard --> ModalityVerdict
-        ModalityVerdict --> TrafficLightStatus : Green, Yellow, Red
+        ModalityVerdict --> TrafficLightStatus : Зелёный, Жёлтый, Красный
     }
 
-    DecisionSupport --> OutputDelivery : Clinical evaluation
+    DecisionSupport --> OutputDelivery : Клиническая сводка
 
     state OutputDelivery {
-        [*] --> InteractiveDashboard : 51-point curves, radar, cohort stats
-        [*] --> MedicalNarrative : Doctor protocol and parent summary in KZ, RU, and EN
-        InteractiveDashboard --> ExportProtocol : Downloadable A4 PDF report
+        [*] --> InteractiveDashboard : 51-точечные кривые, радар GVS, аналитика когорты
+        [*] --> MedicalNarrative : Протокол врача и памятка родителя (RU/KZ в UI + EN в API/PDF)
+        InteractiveDashboard --> ExportProtocol : Скачиваемый PDF-отчёт (A4)
         MedicalNarrative --> ExportProtocol
     }
 
@@ -55,222 +55,281 @@ stateDiagram-v2
 
 ---
 
-## Quick start & dependencies
+## Как работают данные и ML-модели после `git clone`
 
-### How ML models & data work on a fresh clone
-No pre-trained binary weights (`.pkl` / `.joblib`) are committed to Git. All 6 clinical CSV files from the open KU Leuven dataset (`gait-cp-dataset/`) are included in the repository. On backend startup (`src/api/app.py`), FastAPI automatically seeds the database and trains `GaitConditionClassifier`, `VRResponderPredictor`, and `KinematicPCAAnomalyDetector` in-memory from `gait-cp-dataset/` in a few seconds—offline, with zero external downloads.
+В репозиторий не зашиты бинарные веса моделей (`.pkl` / `.joblib`). Все 6 исходных CSV-файлов открытого датасета KU Leuven находятся в каталоге [`gait-cp-dataset/`](gait-cp-dataset/).
 
-### Option A: Docker Compose (Recommended — no Python or Node.js required)
+При первом запуске бэкенда ([`src/api/app.py`](src/api/app.py)) сервер автоматически:
+1. Создаёт и инициализирует базу данных (SQLite `libra.db` локально или PostgreSQL в Docker).
+2. Загружает все 29 участников (866 циклов `Baseline`, 870 `Verbal`, 870 `VR`) из `gait-cp-dataset/`.
+3. Обучает в памяти модели `GaitConditionClassifier`, `VRResponderPredictor` и `KinematicPCAAnomalyDetector` за несколько секунд — полностью офлайн, без обращения к внешним серверам.
 
-Only **Docker** and **Docker Compose** are required on the host machine. The containers install Python 3.12 (`pyproject.toml`), Node.js 24 (`web/package.json`), PostgreSQL 16, and Caddy automatically:
+---
+
+## Пошаговый запуск с нуля (чистая Windows 10/11)
+
+Ниже приведена полная инструкция для запуска на чистом компьютере с Windows без Docker.
+
+### Шаг 1. Установка необходимых программ
+
+Установите три инструмента (если ещё не установлены):
+1. **Git for Windows:** https://git-scm.com/download/win (оставьте настройки по умолчанию).
+2. **Python 3.11 или 3.12:** https://www.python.org/downloads/windows/
+   > **Важно:** на первом экране установщика обязательно поставьте галочку **"Add python.exe to PATH"**!
+3. **Node.js 20 LTS (или 18+):** https://nodejs.org/ (вместе с ним автоматически установится `npm`).
+
+Откройте **PowerShell** (или **Командную строку `cmd`**) и проверьте, что всё доступно в `PATH`:
+
+```powershell
+git --version
+python --version
+node --version
+npm --version
+```
+
+### Шаг 2. Клонирование репозитория
+
+```powershell
+git clone https://github.com/Tamukj/Libra.git
+cd Libra
+```
+
+### Шаг 3. Установка зависимостей Python и Node.js (выполняется один раз)
+
+В **PowerShell** выполните по очереди:
+
+```powershell
+# 1. Создаём виртуальное окружение Python
+python -m venv .venv
+
+# 2. Если PowerShell запрещает запуск скриптов, разрешите локальные скрипты для текущего пользователя:
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+
+# 3. Активируем виртуальное окружение (в начале строки появится (.venv))
+.\.venv\Scripts\Activate.ps1
+
+# 4. Обновляем pip и ставим бэкенд + зависимости для тестов
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+
+# 5. Ставим зависимости фронтенда (Next.js)
+cd web
+npm install
+cd ..
+```
+
+*(Если используете классическую командную строку **`cmd.exe`** вместо PowerShell, для активации окружения выполните `.\.venv\Scripts\activate.bat` вместо шагов 2–3.)*
+
+### Шаг 4. Запуск сайта
+
+Убедитесь, что в текущем терминале активировано `.venv` (`(.venv)` в начале строки), и запустите проект одним из способов:
+
+- **Способ 1 (PowerShell):**
+  ```powershell
+  .\run_local.ps1
+  ```
+- **Способ 2 (`cmd.exe`):**
+  ```bat
+  run_local.bat
+  ```
+- **Способ 3 (вручную в двух окнах терминала — самый надёжный при отладке):**
+  - **Окно 1 (Backend FastAPI):**
+    ```powershell
+    cd Libra
+    .\.venv\Scripts\Activate.ps1
+    python -m uvicorn src.api.app:app --host 127.0.0.1 --port 8000
+    ```
+  - **Окно 2 (Frontend Next.js):**
+    ```powershell
+    cd Libra\web
+    npm run dev
+    ```
+
+После запуска откройте в браузере:
+- **Веб-интерфейс:** http://127.0.0.1:3000
+- **Документация REST API (Swagger):** http://127.0.0.1:8000/docs
+- **Проверка готовности (Healthcheck):** http://127.0.0.1:8000/health
+
+Для остановки серверов нажмите `Ctrl+C` (или закройте открытые окна терминала).
+
+---
+
+## Запуск на Linux / macOS
 
 ```bash
 git clone https://github.com/Tamukj/Libra.git
 cd Libra
-docker compose up -d --build
-```
 
-Access the interface at http://localhost.
-
-### Option B: Local startup from source (Linux / macOS / Windows)
-
-#### 1. System & package dependencies
-- **Python 3.10+** (`pip`) — backend packages declared in `pyproject.toml`: `fastapi`, `uvicorn`, `pydantic`, `sqlalchemy`, `psycopg2-binary`, `pandas`, `numpy`, `scipy`, `scikit-learn`, `python-multipart`, `matplotlib` (plus `pytest` for tests).
-- **Node.js 18+** (`npm`) — frontend packages declared in `web/package.json` (`next`, `react`, `react-dom`, `lucide-react`, `zod`, `typescript`).
-
-#### 2. One-time dependency installation after `git clone`
-
-Linux / macOS:
-```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install .
+pip install -e ".[dev]"
+
 cd web && npm install && cd ..
+
+./run_local.sh
 ```
 
-Windows (PowerShell):
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install .
-cd web; npm install; cd ..
-```
-
-#### 3. Start both servers in one command
-
-- **Linux / macOS:** `./run_local.sh`
-- **Windows (`cmd`):** `run_local.bat`
-- **Windows (PowerShell):** `.\run_local.ps1`
-
-The script starts the FastAPI backend on port 8000 and the Next.js frontend on port 3000:
-
-- Web interface: http://127.0.0.1:3000
-- REST API documentation (OpenAPI Swagger): http://127.0.0.1:8000/docs
-- Health check: http://127.0.0.1:8000/health
-
-To stop both services, press `Ctrl+C`.
+Веб-интерфейс откроется на http://127.0.0.1:3000, API — на http://127.0.0.1:8000.
 
 ---
 
-## Test suite execution
+## Запуск через Docker Compose (продакшн-конфигурация)
 
-To run all 52 automated tests verifying parsers, biomechanical formulas, leak-free machine learning, PII safeguards, and API contracts:
+Требуются только **Docker** и **Docker Compose** (Python и Node.js на хосте не нужны). Контейнеры автоматически поднимают PostgreSQL 16, FastAPI, Next.js и обратный прокси Caddy:
+
+```bash
+git clone https://github.com/Tamukj/Libra.git
+cd Libra
+
+# Укажите надёжный пароль БД (и при необходимости API-ключ для защищённого режима):
+export POSTGRES_PASSWORD="change_me_strong_password"
+# Для демо-доступа без X-API-Key в локальном Docker (для продакшна оставьте 0 и задайте LIBRA_API_KEY):
+export LIBRA_ALLOW_DEMO=1
+
+docker compose up -d --build
+```
+
+*(На Windows PowerShell вместо `export` используйте `$env:POSTGRES_PASSWORD="change_me_strong_password"` и `$env:LIBRA_ALLOW_DEMO="1"`.)*
+
+После сборки откройте http://localhost.
+
+---
+
+## Запуск автотестов
+
+Активируйте `.venv` и выполните:
 
 ```bash
 python3 -m pytest tests/ -v
 ```
 
-All 52 tests must pass without errors. Tests run against an isolated temporary SQLite database without polluting `libra.db`.
+Все **58 автотестов** проверяют CSV-парсер (`;`, `,`, `NaN`, `LEFT`/`RIGHT`), биомеханические формулы (`TJE`, `PCR`, `GVS`, `GPS`, МКФ `b770`/`d450`), изоляцию ML-кросс-валидации по `subject`, защиту от ПДн (Закон РК № 94-V), генерацию PDF и контракты REST API. Тесты работают во временной изолированной БД и не затрагивают `libra.db`.
+
+Проверка типов TypeScript на фронтенде:
+
+```bash
+cd web && npx tsc --noEmit
+```
 
 ---
 
-## Step-by-step jury evaluation guide
+## Пошаговый сценарий проверки для жюри
 
-Follow these 9 steps to test the application:
-
-1. **Open the application and enter the portal:** Navigate to http://127.0.0.1:3000 and click **"Кабинет врача"**, or open http://127.0.0.1:3000/login and click **"Открыть реестр пациентов"**.
-2. **Review the cohort:** On the `/portal` registry table, inspect all 29 participants from the hackathon dataset and open a patient card.
-3. **Inspect high-risk compensation (Patient `s61520_1`):** Select patient `s61520_1`. Observe that the Clinical Decision Support indicator turns Red. The patient displays a Pathological Compensation Ratio of 1.21. While raw hip extension appears improved by 2.68 degrees, the child achieved this through compensatory pelvic deviation (+5.36 degrees pelvic tilt), yielding TJE = +2.68 degrees and creating risk of lumbar hyperlordosis.
-4. **Inspect true therapeutic response (Patient `s61520_13`):** Select patient `s61520_13`. Observe the Green indicator. The patient achieved true joint extension with a Pathological Compensation Ratio under 0.40 without dangerous pelvic tilt.
-5. **Compare modalities:** Scroll to the "Selection of rehabilitation tactics" card. The card compares Baseline, Verbal, and VR conditions, stating whether verbal feedback or VR feedback provides the safer outcome for the active patient.
-6. **Switch language:** Click the language button in the top navigation bar to toggle between Kazakh (`ҚАЗ`) and Russian (`РУС`). Notice that medical terminology and clinical narratives update across the entire interface.
-7. **View live cohort analytics:** Click "Cohort Analytics" (`Аналитика когорты` / `Когорта талдауы`) in the navigation bar to inspect real-time distributions of CDSS statuses, optimal modalities, cycle counts, and anthropometric ranges computed directly from the database.
-8. **Generate clinical PDF report:** Click **"Медицинский отчёт (PDF)"** in the upper right corner. Switch between Doctor and Parent views or KZ/RU languages, then click **Скачать отчёт PDF** to download the A4 PDF containing the comparison table, hip kinematic curve, WHO ICF codes (`b770`, `d450`), and clinical narrative for the selected visit.
-9. **Test custom CSV upload and longitudinal visits:** Click **"Загрузить CSV"** in the sidebar or **"+ Новый визит (CSV)"** inside a patient card. Upload a Vicon, IMU, or 51-point kinematics CSV table to create a new visit without overwriting prior CSV sessions, switch between recorded visits in the visit selector bar (`?visit=`), and use **"Сравнение визитов"** to compare metrics across visits.
+1. **Вход в систему:** откройте http://127.0.0.1:3000 и нажмите **«Кабинет врача»** (или перейдите на http://127.0.0.1:3000/login и нажмите **«Открыть реестр пациентов»**).
+2. **Реестр пациентов (`/portal`):** изучите список всех 29 обезличенных участников когорты KU Leuven, фильтры по статусам СППР (`Все`, `Риск перегрузки`, `Внимание / адаптация`, `Без перегрузки`, `Не оценено`) и откройте карту пациента.
+3. **Разбор компенсации тазом (пациент `s61520_1`):** индикатор СППР загорается **красным**. Коэффициент компенсации `PCR = 1.21`: несмотря на кажущееся улучшение разгибания бедра, оно достигнуто за счёт перегрузки таза (`+5.36°` наклона), что даёт `TJE = +2.68°` и риск поясничного гиперлордоза.
+4. **Разбор истинного прогресса (пациент `s61520_13`):** индикатор СППР **зелёный**. Истинное разгибание бедра без патологической компенсации тазом (`PCR < 0.40`).
+5. **Сравнение условий (`Baseline`, `Verbal`, `VR`):** в блоке выбора тактики реабилитации сравниваются все три условия с указанием наиболее безопасного режима и числа учтённых циклов шага.
+6. **Переключение языка:** в верхней панели переключите язык между русским (`РУС`) и казахским (`ҚАЗ`) — переводится весь интерфейс, клиническая терминология и заключения.
+7. **Живая аналитика когорты:** откройте вкладку **«Аналитика когорты»** для просмотра распределений статусов СППР, оптимальных режимов, циклов шага и антропометрии из БД.
+8. **Экспорт PDF-отчёта:** нажмите **«Медицинский отчёт (PDF)»**, выберите режим **Врач** или **Родитель** и язык, затем скачайте A4 PDF со сравнительной таблицей, кривой цикла шага, кодами МКФ (`b770`, `d450`), ограничениями решения и памяткой по номеру `103`.
+9. **Загрузка собственных CSV и лонгитюдные визиты:** нажмите **«Загрузить CSV»** в боковой панели или **«Добавить визит»** в карте пациента. Поддерживаются шаблоны Vicon, IMU и 51-точечной кинематики, сопоставление визитов и исправление/перенос проб.
 
 ---
 
-## Biomechanical formulas and clinical heuristics
+## Биомеханические формулы и клинические эвристики
 
-### 1. Baker Gait Variable Score (GVS) and Gait Profile Score (GPS)
+### 1. Baker Gait Variable Score (GVS) и Gait Profile Score (GPS)
 
-GVS measures the root mean square deviation of a patient's kinematic curve from the normative mean of typically developing children across 51 points of the gait cycle:
+GVS оценивает среднеквадратичное отклонение кинематической кривой пациента от возрастной нормы по 51 точке цикла шага:
 
 $$GVS_v = \sqrt{ \frac{1}{51} \sum_{t=0}^{50} \left( \theta_{patient, v}(t) - \bar{\theta}_{TD, v}(t) \right)^2 }$$
 
-GPS is the overall index combining all joint variable scores:
+GPS объединяет показатели GVS по всем сегментам:
 
 $$GPS = \sqrt{ \frac{1}{N_v} \sum_{v=1}^{N_v} GVS_v^2 }$$
 
-*Note: GVS is an unsigned root-mean-square deviation magnitude from the norm corridor, not a directional angle.*
+### 2. True Joint Extension (TJE — истинное разгибание бедра)
 
-### 2. True Joint Extension (TJE)
-
-Children with cerebral palsy often simulate hip extension by tilting the pelvis anteriorly. True Joint Extension isolates true anatomical joint extension by penalizing compensatory sagittal pelvic tilt ($\Delta PelvicTilt$ derived from kinematic angle curves `aSagP`):
+Исключает ложное «улучшение» разгибания бедра за счёт компенсаторного переднего наклона таза ($\Delta PelvicTilt$ по кривой `aSagP`):
 
 $$TJE = \Delta aMinSagH + \alpha \cdot \max(0, \Delta PelvicTilt)$$
 
-A negative delta indicates true improved anatomical joint extension.
+Отрицательное значение `TJE` подтверждает истинный анатомический прогресс в тазобедренном суставе.
 
-### 3. Pathological Compensation Ratio (PCR)
-
-PCR is a Clinical Decision Support heuristic that quantifies the ratio of kinematic deviation in adjacent segments (pelvis, knee, ankle) relative to hip extension gain:
+### 3. Pathological Compensation Ratio (PCR — коэффициент компенсации)
 
 $$PCR = \frac{0.5 \cdot \max(0, \Delta GVS_P) + 0.3 \cdot \max(0, \Delta GVS_K) + 0.2 \cdot \max(0, \Delta GVS_A)}{|\Delta aMinSagH|}$$
 
-- **Green ($PCR < 0.4$):** True responder. Pure joint improvement.
-- **Yellow ($0.4 \le PCR \le 0.8$):** Moderate adaptation. Requires therapist monitoring.
-- **Red ($PCR > 0.8$ or $TJE \ge 0$ with pelvic overload):** Pathological compensation. Under Rule 8.2, Libra acts strictly as an advisory CDSS alert. It flags pelvic overload and recommends consulting the attending physician regarding VR load adjustment or modality choice, plus calling `103` for acute symptoms. It never diagnoses, prescribes pharmacotherapy, or alters therapy autonomously.
+- **Зелёный ($PCR < 0.4$):** истинный положительный отклик без перегрузки таза.
+- **Жёлтый ($0.4 \le PCR \le 0.8$ или неполные данные):** умеренная адаптация, требуется наблюдение специалиста.
+- **Красный ($PCR > 0.8$ или $TJE \ge 0$ с перегрузкой таза):** патологическая компенсация; рекомендация консультации лечащего врача и вызова `103` при острых симптомах.
 
-*The weights ($0.5, 0.3, 0.2$) and decision thresholds ($0.4, 0.8$) are algorithmic heuristics calibrated on the CP cohort to assist clinical evaluation.*
+### 4. Соответствие категориям МКФ ВОЗ
 
-### 4. WHO ICF classification mapping
-
-- **ICF code b770 (Gait pattern functions):** Mapped from GPS:
-  - `b770.0` (No impairment): GPS < 5.5 deg
-  - `b770.1` (Mild impairment): 5.5 to 7.5 deg
-  - `b770.2` (Moderate impairment): 7.5 to 11.0 deg
-  - `b770.3` (Severe impairment): 11.0 to 15.0 deg
-  - `b770.4` (Complete impairment): GPS >= 15.0 deg
-- **ICF code d450 (Walking stability):** Mapped from gait cycle anomaly rate detected by the kinematic PCA model as an algorithmic heuristic proxy for walking difficulty.
+- **МКФ `b770` (Функции стереотипа походки):** `b770.0` (GPS < 5.5°), `b770.1` (5.5–7.5°), `b770.2` (7.5–11.0°), `b770.3` (11.0–15.0°), `b770.4` (≥ 15.0°).
+- **МКФ `d450` (Ходьба):** определяется по доле аномальных циклов шага, выявленных кинематической моделью PCA.
 
 ---
 
-## Machine learning protocol
+## Протокол машинного обучения
 
-The machine learning pipeline follows four design principles:
-
-1. **Strict subject isolation:** Evaluated through `GroupKFold(n_splits=5)` grouped by `subject`. Cycles of the same patient never appear in both training and test sets.
-2. **Leak-free preprocessing:** Imputation and scaling occur strictly inside each cross-validation fold.
-3. **Realistic clinical metrics:** On combined discrete parameters and cycle-level sagittal waveform features (`Baseline` vs `VR`, 1,736 cycles across 29 subjects), `LogisticRegression` achieves Balanced Accuracy **70.6%** and ROC-AUC **0.772** (`Sensitivity 66.2%`, `Specificity 74.9%`). A 3-class `Baseline vs Verbal vs VR` classifier (2,606 cycles) reaches **51.6%** Balanced Accuracy (vs 33.3% chance). The pre-therapy `VRResponderPredictor` (LOO on $N=29$ aligned strictly with CDSS safety criteria — 11 true non-red responders / 18 compensators or non-responders — using `GPS_a`, `GVS_aSagP`, `aMinSagH`, `pelvis_mean`, `hip_rom`) achieves Balanced Accuracy **50.5%** and ROC-AUC **0.581**, triggering an explicit `model_reliable = false` (`< 0.75`) cohort-size caveat in the API and UI so clinical decisions remain anchored to factual CDSS metrics (TJE/PCR).
-4. **Kinematic PCA stability detector:** Analyzes Squared Prediction Error on 51-point hip curves (`aSagH`). Under strict subject-level `GroupKFold(n_splits=5)`, Baseline out-of-fold false-positive rate is **9.2%** vs **27.5%** across VR cycles, and per-cycle SPE breakdowns are surfaced in the patient card.
+1. **Строгая изоляция по участнику (`subject`):** используется `GroupKFold(n_splits=5)` и Leave-One-Subject-Out (`LOO`) с группировкой по `subject`. Циклы одного ребёнка никогда не попадают одновременно в обучение и проверку.
+2. **Отсутствие утечки при препроцессинге:** `SimpleImputer` и `StandardScaler` обучаются строго внутри каждого фолда.
+3. **Честные метрики:**
+   - Бинарная классификация `Baseline` vs `VR` (1 736 циклов, 29 участников): Balanced Accuracy **70.6%**, ROC-AUC **0.772** (`Sensitivity 66.2%`, `Specificity 74.9%`).
+   - 3-классовая классификация `Baseline` vs `Verbal` vs `VR` (2 606 циклов): Balanced Accuracy **51.6%** (случайное угадывание — 33.3%).
+   - Дотерапевтический прогноз отклика `VRResponderPredictor` (LOO по $N=29$): Balanced Accuracy **50.5%**, ROC-AUC **0.581** — в API и UI честно выставляется флаг `model_reliable = false` (`< 0.75`), чтобы врач опирался на фактические метрики `TJE`/`PCR`.
+4. **Детектор стабильности циклов (PCA SPE):** под строгим `GroupKFold(n_splits=5)` доля аномальных циклов в `Baseline` составляет **9.2%** против **27.5%** в `VR`.
 
 ---
 
-## REST API reference
+## Справочник REST API
 
-| Method | Endpoint | Description |
+| Метод | Эндпоинт | Назначение |
 | :--- | :--- | :--- |
-| `GET` | `/health` | Health check verifying database and engine readiness |
-| `GET` | `/api/v1/patients` | List of all cohort patients with live PCR, TJE, status, GPS, and visit count |
-| `GET` | `/api/v1/patients/{code}/visits` | List longitudinal visits/sessions recorded for a patient |
-| `GET` | `/api/v1/patients/{code}/analysis` | Baseline, Verbal, VR metrics, deltas, TJE, PCR, ICF, and ML output (supports `?visit=`) |
-| `GET` | `/api/v1/patients/{code}/kinematics` | 51-point kinematic curves for pelvis, hip, knee, and ankle (supports `?visit=`) |
-| `GET` | `/api/v1/patients/{code}/diff` | Compare gait sessions within a visit or across visits (`session_a`, `session_b`, `visit_a`, `visit_b`, `lang`) |
-| `POST` | `/api/v1/patients/{code}/report` | Structured medical narrative with ICF codes in KZ and RU (supports `?visit=`) |
-| `GET` | `/api/v1/patients/{code}/report.pdf` | Downloadable A4 PDF report with metric table, hip curve, ICF codes, and narrative (supports `?visit=`) |
-| `GET` | `/api/v1/ml/metrics` | GroupKFold cross-validation results (binary + 3-class) and feature importances |
-| `GET` | `/api/v1/analytics/cohort` | Live cohort aggregations computed from registered patients and gait cycles |
-| `GET` | `/api/v1/ingest/template` | Downloadable CSV templates (`format=vicon`, `imu`, or `kinematics`) |
-| `POST`| `/api/v1/patients/upload` | Multi-condition (`Baseline`/`Verbal`/`VR`) Vicon/IMU CSV ingestion with optional `visit_key`, `visit_label`, and `visit_date` |
+| `GET` | `/health` | Проверка готовности БД и движка |
+| `GET` | `/api/v1/patients` | Список пациентов с `PCR`, `TJE`, статусом, `GPS` и числом визитов |
+| `GET` | `/api/v1/patients/{code}/visits` | Список визитов пациента |
+| `GET` | `/api/v1/patients/{code}/analysis` | Анализ `Baseline`/`Verbal`/`VR`, дельты, `TJE`, `PCR`, МКФ и ML (`?visit=`) |
+| `GET` | `/api/v1/patients/{code}/kinematics` | 51-точечные кривые таза, бедра, колена и стопы (`?visit=`) |
+| `GET` | `/api/v1/patients/{code}/diff` | Сравнение сессий или визитов (`session_a`, `session_b`, `visit_a`, `visit_b`, `lang`) |
+| `POST` | `/api/v1/patients/{code}/report` | Текстовый отчёт с кодами МКФ (`ru`/`kz`/`en`, `?visit=`) |
+| `GET` | `/api/v1/patients/{code}/report.pdf` | Скачиваемый PDF-отчёт формата A4 (`?visit=`, `audience`, `lang`) |
+| `GET` | `/api/v1/ml/metrics` | Метрики `GroupKFold`, `LOO` и важности признаков |
+| `GET` | `/api/v1/analytics/cohort` | Живая агрегированная аналитика когорты из БД |
+| `GET` | `/api/v1/ingest/template` | Шаблоны CSV (`format=vicon`, `imu`, `kinematics`) |
+| `POST` | `/api/v1/patients/upload` | Загрузка CSV (`Baseline`/`Verbal`/`VR`) с фильтром ПДн по 94-V |
+| `PATCH` / `DELETE` | `/api/v1/patients/{code}/sessions` | Переназначение, обмен или удаление ошибочно загруженной пробы |
 
 ---
 
-## Limitations of the solution (Rule 8.2 compliance)
+## Ограничения решения (соответствие п. 8.2 Положения)
 
-1. **Cohort Sample Size ($N=29$):** The system is calibrated on the open KU Leuven clinical cerebral palsy dataset (29 pediatric participants with spastic CP). While leak-free generalization was confirmed using `GroupKFold(n_splits=5)`, broad nationwide clinical adoption requires multi-center validation across heterogeneous CP cohorts.
-2. **Clinical Decision Support Heuristics:**
-   - **Pathological Compensation Ratio (PCR):** The segmental weights ($w_{\text{pelvis}}=0.5$, $w_{\text{knee}}=0.3$, $w_{\text{ankle}}=0.2$) and decision thresholds ($0.4$ and $0.8$) are algorithmic heuristics derived to identify proximal compensatory strategies, not universal ISO standards.
-   - **True Joint Extension (TJE):** Directional pelvic tilt correction ($\Delta \text{PelvisTilt}$) is derived from sagittal kinematics (`aSagP`) to isolate anatomical hip extension from compensatory lumbar/pelvic sway.
-   - **WHO ICF d450 Mapping:** The walking stability classification maps PCA kinematic anomaly rate (<5%, 5-12%, 12-25%, 25-45%, >=45%) as an algorithmic proxy for locomotor difficulty.
-3. **Advisory Status (CDSS):** Per Rule 8.2 of the Solveathon Regulations, Libra is an advisory Clinical Decision Support System. It does not replace medical specialists, does not establish diagnoses, does not prescribe pharmacotherapy, and does not autonomously modify therapy protocols or target angles. In acute pain, trauma, or emergency symptoms, contact `103` immediately. Final clinical decisions remain solely with the attending pediatric physiatrist or rehabilitation physician.
-4. **Normative Curves:** The healthy TD reference corridor (`src/core/normative_data.py`) uses a parametric Winter/Schwartz-calibrated curve (mean ± 1 SD) rather than digitized raw lab trials; preloaded cohort GVS/GPS values come directly from the KU Leuven CSVs.
-5. **Default Authentication Mode:** In local development and hackathon evaluation environments, permissive demo mode (`LIBRA_ALLOW_DEMO=1`) is enabled by default to allow jury testing without API key configuration. Production deployments require setting `LIBRA_ALLOW_DEMO=0` and configuring `LIBRA_API_KEY` header verification across both `GET` and `POST` clinical endpoints.
+1. **Размер выборки ($N=29$):** калибровка выполнена на открытом клиническом датасете KU Leuven (29 детей со спастическим ДЦП). Для широкого клинического внедрения требуется многоцентровая валидация.
+2. **Эвристический характер коэффициентов СППР:** веса `PCR` ($0.5, 0.3, 0.2$), пороги ($0.4, 0.8$) и прокси-оценка `d450` по PCA являются алгоритмическими ориентирами, а не стандартом ISO.
+3. **Консультативный статус (не диагноз):** согласно п. 8.2, Libra является исключительно вспомогательной СППР. Система **не ставит диагнозы**, **не назначает лекарственные препараты** и не изменяет протокол терапии самостоятельно. При острой боли, травме или ухудшении состояния необходимо обратиться к лечащему врачу или в службу скорой медицинской помощи по номеру **103**.
+4. **Нормативные кривые:** коридор нормы здоровых детей (`±1 SD`) параметризован по Schwartz et al. (2008).
+5. **Режим авторизации:** при локальной разработке без `LIBRA_API_KEY` включён демо-режим (`LIBRA_ALLOW_DEMO=1`); при установке `LIBRA_API_KEY` авторизация по умолчанию переходит в строгий режим (`LIBRA_ALLOW_DEMO=0`).
 
 ---
 
-## AI tools and open data sources (Rules 8.3 and 9.3 compliance)
+## ИИ-инструменты, открытые данные и лицензии (п. 8.3 и 9.2)
 
-### AI tools employed
+### Использованные ИИ-инструменты
+- **Claude 3.7 Sonnet (Anthropic):** проектирование архитектуры и клиническая ревизия.
+- **Gemini 2.5 Pro и Gemini 4 Hydrogen (Google DeepMind):** валидация биомеханики, мультиязычное выравнивание (`ru`/`kz`/`en`), аудит безопасности и настройка Docker.
 
-- **Claude 3.7 Sonnet (Anthropic):** Initial architecture, codebase audit, and clinical consistency review.
-- **Gemini 2.5 Pro & Gemini 4 Hydrogen (Google DeepMind):** Biomechanical validation, bilingual Kazakh/Russian/English alignment, adversarial review fixes, and Docker orchestration.
+### Открытые источники данных
+- **KU Leuven Pediatric Cerebral Palsy Gait Dataset** (De Mulder et al., 2024): открытый датасет 3D-анализа походки (`Baseline`, `Verbal`, `VR`). Лицензия: `CC-BY-NC-SA-4.0`, DOI: `10.48804/JUNNWW`.
+- **Нормативная кинематика:** коридор нормы здоровых детей по Schwartz et al. (2008).
 
-### Open data sources and licenses
+### Сторонние библиотеки и лицензии (п. 8.3)
 
-- **KU Leuven Pediatric Cerebral Palsy Gait Dataset:** De Mulder et al., 2024. Open dataset containing 3D motion capture (kinematics, kinetics, and discrete parameters) across Baseline, Verbal feedback, and Virtual Reality cueing conditions.
-  - License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (`CC-BY-NC-SA-4.0`).
-  - Permanent DOI: `10.48804/JUNNWW`.
-- **Normative Gait Kinematics:** Parametric pediatric reference corridor calibrated to Schwartz et al., 2008 ($\pm 1$ SD).
-
-### Third-party libraries and licenses (Rule 8.3)
-
-| Component | Purpose | License |
+| Компонент | Назначение | Лицензия |
 | :--- | :--- | :--- |
-| FastAPI / Starlette / Pydantic | REST API & request validation | MIT |
-| Uvicorn | ASGI server | BSD-3-Clause |
-| SQLAlchemy | ORM & SQLite/PostgreSQL persistence | MIT |
-| psycopg2-binary | PostgreSQL DBAPI adapter (`docker-compose`) | LGPL-3.0 (with OpenSSL exception) |
-| pandas / NumPy / SciPy | CSV parsing & numerical arrays | BSD-3-Clause |
-| scikit-learn | GroupKFold, LogisticRegression, PCA | BSD-3-Clause |
-| python-multipart | Multipart CSV upload parsing | Apache-2.0 |
-| Matplotlib | Clinical A4 PDF plot & report rendering | PSF / Matplotlib License |
-| Next.js / React / React DOM | Web frontend framework | MIT |
-| Lucide React | UI icons | ISC |
-| Zod | Client schema validation | MIT |
-| Inter / Noto Serif / JetBrains Mono | Bundled typography (`web/public/fonts`) | SIL Open Font License 1.1 |
-
----
-
-## Compliance with hackathon rules
-
-| Requirement | Implementation in Libra |
-| :--- | :--- |
-| **CSV parsing** | Handles semicolon delimiters, decimal commas, missing NaN values, and anonymized patient identifiers. |
-| **Modality comparison** | Compares Baseline, Verbal, and VR across discrete metrics and 51-point kinematic curves. |
-| **Machine learning** | GroupKFold cross-validation grouped by subject, feature importances, and PCA anomaly detection. |
-| **Clinical presentation** | Doctor card, CDSS safety indicator, radar chart, and exportable report with ICF b770 and d450 codes. |
-| **Multilingual support (Rule 9.3)** | Localization in Kazakh, Russian, and English (`locales/*.json`). |
-| **Open data (Rule 9.3)** | Built on the open KU Leuven Pediatric CP Gait Dataset (DOI: `10.48804/JUNNWW`, `CC-BY-NC-SA-4.0`) with live cohort aggregations. |
-| **Clinical export** | Downloadable A4 PDF reports with metric tables, hip kinematics curves, and WHO ICF `b770` / `d450` codes. |
-| **Safety and ethics (Rule 8.2)** | Operates strictly as a decision support tool without autonomous prescribing. Surfaces explicit solution limitations, emergency guidance (`103`), and data protection compliance (Law of RK No. 94-V, Rule 8.1). |
+| FastAPI / Starlette / Pydantic | REST API и валидация схем | MIT |
+| Uvicorn | ASGI-сервер | BSD-3-Clause |
+| SQLAlchemy | ORM и работа с SQLite / PostgreSQL | MIT |
+| psycopg2-binary | Драйвер PostgreSQL (`docker-compose`) | LGPL-3.0 (с исключением OpenSSL) |
+| pandas / NumPy / SciPy | Парсинг CSV и матричные расчёты | BSD-3-Clause |
+| scikit-learn | `GroupKFold`, `LogisticRegression`, `PCA` | BSD-3-Clause |
+| python-multipart | Обработка multipart-загрузки CSV | Apache-2.0 |
+| Matplotlib | Построение графиков и A4 PDF-отчётов | PSF / Matplotlib License |
+| Next.js / React / React DOM | Веб-интерфейс | MIT |
+| TypeScript | Статическая типизация фронтенда | Apache-2.0 |
+| Lucide React | Иконки интерфейса | ISC |
+| Inter / Noto Serif / JetBrains Mono | Встроенные шрифты (`web/public/fonts`) | SIL Open Font License 1.1 |
+| PostgreSQL | Реляционная БД в Docker Compose | PostgreSQL License |
+| Caddy | Обратный прокси в Docker Compose | Apache-2.0 |
+| pytest / httpx | Модульное и API-тестирование (`[dev]`) | MIT / BSD-3-Clause |

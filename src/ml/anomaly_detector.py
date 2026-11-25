@@ -34,7 +34,7 @@ class KinematicPCAAnomalyDetector:
         if arr.size == 0 or arr.shape[0] == 0:
             raise ValueError("Cannot fit KinematicPCAAnomalyDetector on 0 gait cycles.")
 
-        # Drop cycles that are completely NaN across all time points
+        arr = np.where(np.isfinite(arr), arr, np.nan)
         valid_rows = ~np.isnan(arr).all(axis=1)
         arr = arr[valid_rows]
         if arr.shape[0] == 0:
@@ -81,7 +81,7 @@ class KinematicPCAAnomalyDetector:
                 "n_total": 0,
             }
 
-        arr_2d = np.atleast_2d(arr)
+        arr_2d = np.where(np.isfinite(np.atleast_2d(arr)), np.atleast_2d(arr), np.nan)
         all_nan_mask = np.isnan(arr_2d).all(axis=1)
         clean_curves = self.imputer.transform(arr_2d)
 
@@ -114,6 +114,12 @@ class KinematicPCAAnomalyDetector:
         n_splits: int = 5,
     ) -> Dict[str, Any]:
         """Evaluates out-of-fold Baseline anomaly rate under strict subject-level GroupKFold isolation."""
+        valid_mask = np.array(
+            [g is not None and not (isinstance(g, float) and np.isnan(g)) for g in groups],
+            dtype=bool,
+        )
+        curves = curves[valid_mask]
+        groups = np.asarray(groups)[valid_mask]
         unique_groups = np.unique(groups)
         n_subjects = len(unique_groups)
         if n_subjects < 2:

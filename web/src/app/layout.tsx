@@ -39,7 +39,7 @@ export const metadata: Metadata = {
   title: "Libra — Клиническая система анализа походки при ДЦП",
   description:
     "Система поддержки принятия врачебных решений для анализа биомеханики походки детей с ДЦП по данным CSV при обычной ходьбе, голосовых инструкциях и в VR.",
-  icons: { icon: "/icon.svg" },
+  icons: { icon: "/icon.png" },
 };
 
 export default function RootLayout({

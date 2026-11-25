@@ -6,7 +6,7 @@ import type { MLMetrics } from "@/lib/types";
 
 interface MlValidationProps {
   metrics: MLMetrics;
-  lang: "ru" | "kz";
+  lang: "ru" | "kz" | "en";
 }
 
 function mapFeatureLabel(key: string, isKz: boolean): string {

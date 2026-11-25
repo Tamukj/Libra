@@ -66,13 +66,6 @@ def _count_valid_gait_cycles(df: pd.DataFrame) -> int:
     return int(valid_mask.sum())
 
 
-def _count_valid_col(df: pd.DataFrame, col: str) -> int:
-    if col not in df.columns:
-        return 0
-    s = pd.to_numeric(df[col], errors="coerce")
-    return int(np.isfinite(s).sum())
-
-
 def _extract_valid_side(df: pd.DataFrame) -> Optional[str]:
     if "side" not in df.columns or df.empty:
         return None
@@ -98,6 +91,28 @@ def _resolve_subject_column(df: pd.DataFrame, path_name: str) -> pd.DataFrame:
     raise ValueError(f"Missing required 'subject' column in {path_name}")
 
 
+def _read_gait_csv(path: Path) -> pd.DataFrame:
+    header_cols = pd.read_csv(path, sep=";", nrows=0).columns
+    id_norms = {"subject", "side", "patientcode", "patientid", "code", "subjectid"}
+    id_dtypes = {
+        c: str
+        for c in header_cols
+        if str(c).strip().lower().replace("_", "") in id_norms
+    }
+    df = pd.read_csv(
+        path,
+        sep=";",
+        decimal=",",
+        na_values=["NaN", "nan", "NULL", "null", ""],
+        dtype=id_dtypes,
+    )
+    df = _resolve_subject_column(df, path.name)
+    df["subject"] = _clean_id_series(df["subject"])
+    if "side" in df.columns:
+        df["side"] = _clean_id_series(df["side"])
+    return df
+
+
 def load_discrete_dataset(path: Path) -> pd.DataFrame:
     """
     Loads and cleans a Discrete_Parameters_*.csv file.
@@ -106,23 +121,11 @@ def load_discrete_dataset(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Dataset file not found: {path}")
 
-    df = pd.read_csv(
-        path,
-        sep=";",
-        decimal=",",
-        na_values=["NaN", "nan", "NULL", "null", ""],
-        dtype={"subject": str, "side": str},
-    )
-
-    df = _resolve_subject_column(df, path.name)
-
-    df["subject"] = _clean_id_series(df["subject"])
-    if "side" in df.columns:
-        df["side"] = _clean_id_series(df["side"])
+    df = _read_gait_csv(path)
 
     for col in DISCRETE_NUMERIC_COLS:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = pd.to_numeric(df[col], errors="coerce").replace([np.inf, -np.inf], np.nan)
 
     return df
 
@@ -135,27 +138,15 @@ def load_kinematics_dataset(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Kinematics file not found: {path}")
 
-    df = pd.read_csv(
-        path,
-        sep=";",
-        decimal=",",
-        na_values=["NaN", "nan", "NULL", "null", ""],
-        dtype={"subject": str, "side": str},
-    )
-
-    df = _resolve_subject_column(df, path.name)
-
-    df["subject"] = _clean_id_series(df["subject"])
-    if "side" in df.columns:
-        df["side"] = _clean_id_series(df["side"])
+    df = _read_gait_csv(path)
 
     for col in ["weight", "height", "LegLength"]:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = pd.to_numeric(df[col], errors="coerce").replace([np.inf, -np.inf], np.nan)
 
     ts_cols = [c for c in df.columns if "_pct_GC_" in c]
     for col in ts_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        df[col] = pd.to_numeric(df[col], errors="coerce").replace([np.inf, -np.inf], np.nan)
     if ts_cols:
         prefixes = set(c.split("_pct_GC_")[0] for c in ts_cols)
         for pfx in sorted(prefixes):
@@ -254,9 +245,6 @@ def get_patient_discrete_summary(
         "baseline_cycles": cycles_b,
         "vr_cycles": cycles_vr,
         "verbal_cycles": cycles_vb,
-        "cycles_baseline_pctm": _count_valid_col(sub_base, "pctmZeroStSagH"),
-        "cycles_vr_pctm": _count_valid_col(sub_vr, "pctmZeroStSagH") if has_vr else 0,
-        "cycles_verbal_pctm": _count_valid_col(sub_vb, "pctmZeroStSagH") if has_vb else 0,
         "has_baseline": True,
         "has_vr": has_vr,
         "has_verbal": has_vb,

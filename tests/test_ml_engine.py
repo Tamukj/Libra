@@ -181,16 +181,31 @@ def test_vr_responder_with_kinematics_and_pca_group_kfold(discrete_data):
     assert 0.45 <= metrics["balanced_accuracy"] <= 1.0
     assert 0.50 <= metrics["roc_auc"] <= 1.0
 
-    # W3-01: CDSS 'red' subjects must never be labeled positive responder=1
+    # W3-01: CDSS 'red' subjects must never be labeled positive responder=1 in training,
+    # and predictor must return bounded probabilities for every 'red' subject.
     from src.core.data_loader import get_patient_discrete_summary
     from src.core.biomechanics import analyze_compensation_risk
+    expected_responders = 0
+    red_subjects = 0
     for code in sorted(set(df_base["subject"]) & set(df_vr["subject"])):
         s = get_patient_discrete_summary(df_base, df_vr, code)
         risk = analyze_compensation_risk(
             s["delta_amin_sagh"], s["delta_gvs_pelvis"], s["delta_gvs_knee"], s["delta_gvs_ankle"],
         )
+        if risk["status"] != "red" and s["delta_amin_sagh"] <= -1.0 and risk["tje"] is not None and risk["tje"] < 0.0:
+            expected_responders += 1
         if risk["status"] == "red":
-            assert not (s["delta_amin_sagh"] <= -1.0 and risk["status"] != "red")
+            red_subjects += 1
+            kin_stats = predictor._extract_subject_kin_stats(df_kin_base[df_kin_base["subject"] == code])
+            red_pred = predictor.predict_subject_response({
+                **s,
+                "baseline_pelvis_tilt": kin_stats["pelvis_mean"],
+                "baseline_hip_rom": kin_stats["hip_rom"],
+            })
+            assert 0.0 <= red_pred["responder_probability"] <= 1.0
+            assert isinstance(red_pred["is_predicted_responder"], bool)
+    assert red_subjects > 0
+    assert metrics["n_responders"] == expected_responders
 
     sub_summary = {
         "baseline_gps": 7.25,

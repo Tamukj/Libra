@@ -107,7 +107,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           </div>
         )}
 
-        <main id="portal-main-content" tabIndex={-1} className="portal-content">
+        <main id="portal-main-content" tabIndex={-1} className="portal-content no-print">
           {children}
         </main>
 
@@ -134,7 +134,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
       <UploadCsvModal
         open={uploadOpen}
-        lang={lang}
+        lang={lang === "kz" ? "kz" : "ru"}
         initialSubjectCode={uploadPrefill?.subjectCode}
         defaultVisitMode={uploadPrefill?.defaultVisitMode}
         initialVisits={uploadPrefill?.visits}
@@ -144,7 +144,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
       <OnboardingModal
         open={guideOpen}
-        lang={lang}
+        lang={lang === "kz" ? "kz" : "ru"}
         onClose={() => setGuideOpen(false)}
       />
     </div>

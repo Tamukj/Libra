@@ -318,9 +318,9 @@ def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
     """
     has_base = bool(summary.get("has_baseline", True)) and is_finite_number(summary.get("baseline_amin_sagh"))
     base_hip = opt_float(summary.get("baseline_amin_sagh")) or 0.0
-    base_pelvis = opt_float(summary.get("baseline_gvs_pelvis")) or 0.0
-    base_knee = opt_float(summary.get("baseline_gvs_knee")) or 0.0
-    base_ankle = opt_float(summary.get("baseline_gvs_ankle")) or 0.0
+    base_pelvis = opt_float(summary.get("baseline_gvs_pelvis"))
+    base_knee = opt_float(summary.get("baseline_gvs_knee"))
+    base_ankle = opt_float(summary.get("baseline_gvs_ankle"))
 
     has_vr = has_base and bool(summary.get("has_vr", True)) and is_finite_number(summary.get("vr_amin_sagh"))
     has_vb = has_base and bool(summary.get("has_verbal", True)) and is_finite_number(summary.get("verbal_amin_sagh"))
@@ -330,12 +330,13 @@ def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
         raw_p = opt_float(summary.get(f"{prefix}_gvs_pelvis"))
         raw_k = opt_float(summary.get(f"{prefix}_gvs_knee"))
         raw_a = opt_float(summary.get(f"{prefix}_gvs_ankle"))
-        d_p = (raw_p - base_pelvis) if (raw_p is not None and is_finite_number(summary.get("baseline_gvs_pelvis"))) else 0.0
-        d_k = (raw_k - base_knee) if (raw_k is not None and is_finite_number(summary.get("baseline_gvs_knee"))) else 0.0
-        d_a = (raw_a - base_ankle) if (raw_a is not None and is_finite_number(summary.get("baseline_gvs_ankle"))) else 0.0
-        pelvis_for_tje = _safe_float(summary.get(tilt_key), d_p)
-        pcr = compute_pcr(d_p, d_k, d_a, d_hip)
-        tje = compute_true_joint_extension(d_hip, pelvis_for_tje)
+        d_p = (raw_p - base_pelvis) if (raw_p is not None and base_pelvis is not None) else None
+        d_k = (raw_k - base_knee) if (raw_k is not None and base_knee is not None) else 0.0
+        d_a = (raw_a - base_ankle) if (raw_a is not None and base_ankle is not None) else 0.0
+        tilt_val = opt_float(summary.get(tilt_key))
+        pelvis_for_tje = tilt_val if tilt_val is not None else d_p
+        pcr = compute_pcr(d_p, d_k, d_a, d_hip) if d_p is not None else None
+        tje = compute_true_joint_extension(d_hip, pelvis_for_tje) if pelvis_for_tje is not None else None
         return {"d_hip": d_hip, "d_p": d_p, "pcr": pcr, "tje": tje}
 
     vr_m = _cond_metrics("vr", "delta_pelvis_tilt") if has_vr else None
@@ -348,6 +349,11 @@ def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
 
     vr_safe = _is_safe_effective(vr_m)
     vb_safe = _is_safe_effective(vb_m)
+
+    def _is_overloaded(m: Optional[Dict[str, Optional[float]]]) -> bool:
+        if m is None:
+            return False
+        return (m["pcr"] is not None and m["pcr"] > 0.8) or (m["d_p"] is not None and m["d_p"] > 2.0)
 
     if not has_vr and not has_vb:
         best_method = "Baseline"
@@ -400,7 +406,7 @@ def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
                 verdict_en = f"VR feedback outperforms verbal cueing by {gain_diff:.1f}° with stable joint extension and controlled pelvis."
     elif vb_safe and (not vr_safe or vb_m["tje"] < vr_m["tje"]):  # type: ignore[index]
         best_method = "Verbal"
-        if has_vr and vr_m is not None and (vr_m["pcr"] > 0.8 or vr_m["d_p"] > 2.0):  # type: ignore[operator]
+        if has_vr and _is_overloaded(vr_m):
             verdict_ru = f"Вербальные команды врача безопаснее и физиологичнее. В VR ребенок компенсирует шаг завалом таза (PCR = {vr_m['pcr']:.2f}, ΔGVS таза = {vr_m['d_p']:+.1f}°), тогда как голосовой контроль предотвращает гиперлордоз."
             verdict_kz = f"Дәрігердің ауызша нұсқаулары қауіпсіз және физиологиялық тұрғыдан дұрыс. VR кезінде бала жамбасын шамадан тыс еңкейтеді (PCR = {vr_m['pcr']:.2f}, ΔGVS жамбас = {vr_m['d_p']:+.1f}°), ал ауызша бақылау гиперлордоздың алдын алады."
             verdict_en = f"Verbal clinician cueing is safer: VR induces pelvic compensation (PCR = {vr_m['pcr']:.2f}, ΔGVS pelvis = {vr_m['d_p']:+.1f}°), whereas verbal guidance preserves posture."
@@ -410,8 +416,8 @@ def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
             verdict_en = "Verbal clinician cueing is more effective and physiological, delivering superior true joint extension."
     else:
         best_method = "Baseline"
-        vr_over = has_vr and vr_m is not None and (vr_m["pcr"] > 0.8 or vr_m["d_p"] > 2.0)  # type: ignore[operator]
-        vb_over = has_vb and vb_m is not None and (vb_m["pcr"] > 0.8 or vb_m["d_p"] > 2.0)  # type: ignore[operator]
+        vr_over = has_vr and _is_overloaded(vr_m)
+        vb_over = has_vb and _is_overloaded(vb_m)
         if vr_over or vb_over:
             verdict_ru = "Режимы обратной связи вызывают патологическую компенсацию таза (PCR > 0.8 или ΔGVS таза > +2.0°) либо не дают чистого разгибания. Рекомендован возврат к базовым упражнениям под контролем врача."
             verdict_kz = "Кері байланыс режимдері жамбастың патологиялық компенсациясын тудырады (PCR > 0.8 немесе ΔGVS жамбас > +2.0°) не таза жазылу бермейді. Дәрігер бақылауымен базалық жаттығуларға оралу ұсынылады."
@@ -423,14 +429,14 @@ def compare_modalities(summary: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "best_method": best_method,
-        "tje_vr": float(vr_m["tje"]) if vr_m is not None else None,
-        "tje_verbal": float(vb_m["tje"]) if vb_m is not None else None,
-        "pcr_vr": float(vr_m["pcr"]) if vr_m is not None else None,
-        "pcr_verbal": float(vb_m["pcr"]) if vb_m is not None else None,
-        "delta_hip_vr": float(vr_m["d_hip"]) if vr_m is not None else None,
-        "delta_hip_verbal": float(vb_m["d_hip"]) if vb_m is not None else None,
-        "delta_pelvis_vr": float(vr_m["d_p"]) if vr_m is not None else None,
-        "delta_pelvis_verbal": float(vb_m["d_p"]) if vb_m is not None else None,
+        "tje_vr": float(vr_m["tje"]) if (vr_m is not None and vr_m["tje"] is not None) else None,
+        "tje_verbal": float(vb_m["tje"]) if (vb_m is not None and vb_m["tje"] is not None) else None,
+        "pcr_vr": float(vr_m["pcr"]) if (vr_m is not None and vr_m["pcr"] is not None) else None,
+        "pcr_verbal": float(vb_m["pcr"]) if (vb_m is not None and vb_m["pcr"] is not None) else None,
+        "delta_hip_vr": float(vr_m["d_hip"]) if (vr_m is not None and vr_m["d_hip"] is not None) else None,
+        "delta_hip_verbal": float(vb_m["d_hip"]) if (vb_m is not None and vb_m["d_hip"] is not None) else None,
+        "delta_pelvis_vr": float(vr_m["d_p"]) if (vr_m is not None and vr_m["d_p"] is not None) else None,
+        "delta_pelvis_verbal": float(vb_m["d_p"]) if (vb_m is not None and vb_m["d_p"] is not None) else None,
         "verdict_ru": verdict_ru,
         "verdict_kz": verdict_kz,
         "verdict_en": verdict_en,
@@ -489,12 +495,6 @@ def compute_session_diff(
             "status": "insufficient_data",
             "session_a_label": label_a,
             "session_b_label": label_b,
-            "session_a_label_ru": label_a_ru,
-            "session_a_label_kz": label_a_kz,
-            "session_a_label_en": label_a_en,
-            "session_b_label_ru": label_b_ru,
-            "session_b_label_kz": label_b_kz,
-            "session_b_label_en": label_b_en,
             "gps_a": gps_a,
             "gps_b": gps_b,
             "delta_gps": None,
@@ -517,17 +517,12 @@ def compute_session_diff(
             "limitations": get_solution_limitations(lang),
         }
 
-    tje_a_val = tje_a if tje_a is not None else 0.0
-    tje_b_val = tje_b if tje_b is not None else 0.0
-    pcr_a_val = pcr_a if pcr_a is not None else 0.0
-    pcr_b_val = pcr_b if pcr_b is not None else 0.0
-
     gdi_a = compute_sagittal_gdi(gps_a)
     gdi_b = compute_sagittal_gdi(gps_b)
 
     delta_gps = round(gps_b - gps_a, 2)
-    delta_tje = round(tje_b_val - tje_a_val, 2)
-    delta_pcr = round(pcr_b_val - pcr_a_val, 2)
+    delta_tje = round(tje_b - tje_a, 2) if (tje_a is not None and tje_b is not None) else None
+    delta_pcr = round(pcr_b - pcr_a, 2) if (pcr_a is not None and pcr_b is not None) else None
     delta_gdi = round(gdi_b - gdi_a, 1)
 
     rank_a = int(icf_a.split(".")[1])
@@ -535,23 +530,31 @@ def compute_session_diff(
     icf_improved = rank_b < rank_a
     icf_regressed = rank_b > rank_a
 
-    if (delta_gps < -0.3 or delta_gdi > 3.0 or icf_improved) and delta_pcr <= 0.15:
+    pcr_safe_for_improved = (pcr_b is not None) and (
+        pcr_b < 0.4 or (delta_pcr is not None and delta_pcr <= 0.15)
+    )
+    pcr_regressed = (
+        delta_pcr is not None and delta_pcr > 0.3 and pcr_b is not None and pcr_b >= 0.4
+    )
+
+    if (delta_gps < -0.3 or delta_gdi > 3.0 or icf_improved) and pcr_safe_for_improved:
         status = "improved"
         verdict_ru = f"Положительная динамика курса (+{delta_gdi} к индексу GDI). Снижение отклонения походки на {abs(delta_gps):.1f}° без усиления компенсации таза."
         verdict_kz = f"Оң клиникалық динамика (GDI индексі +{delta_gdi}). Жамбас компенсациясынсыз жүріс ауытқуы {abs(delta_gps):.1f}°-қа азайды."
         verdict_en = f"Positive clinical progression (+{delta_gdi} GDI points). Gait deviation decreased by {abs(delta_gps):.1f}° without added pelvic compensation."
-    elif delta_pcr > 0.3 or delta_gps > 0.8 or icf_regressed:
+    elif pcr_regressed or delta_gps > 0.8 or icf_regressed:
         status = "regressed"
+        delta_pcr_str = f"{delta_pcr:+.2f}" if delta_pcr is not None else "N/A"
         verdict_ru = (
-            f"Отрицательная динамика: зафиксирован рост патологической компенсации (прирост PCR {delta_pcr:+.2f}). "
+            f"Отрицательная динамика: зафиксирован рост патологической компенсации (прирост PCR {delta_pcr_str}). "
             f"Риск перегрузки поясничного отдела; требуется очная консультация лечащего врача (в экстренных ситуациях звоните 103, п. 8.2)."
         )
         verdict_kz = (
-            f"Теріс динамика: патологиялық компенсация өсті (PCR өсімі {delta_pcr:+.2f}). "
+            f"Теріс динамика: патологиялық компенсация өсті (PCR өсімі {delta_pcr_str}). "
             f"Бел омыртқасына жүктеме қаупі бар; емдеуші дәрігердің кеңесі қажет (шұғыл жағдайда 103, 8.2-т.)."
         )
         verdict_en = (
-            f"Negative progression: increased pathological compensation (ΔPCR {delta_pcr:+.2f}). "
+            f"Negative progression: increased pathological compensation (ΔPCR {delta_pcr_str}). "
             f"Lumbar overload risk; consult the attending physician (in emergencies call 103, Rule 8.2)."
         )
     else:
@@ -564,23 +567,17 @@ def compute_session_diff(
         "status": status,
         "session_a_label": label_a,
         "session_b_label": label_b,
-        "session_a_label_ru": label_a_ru,
-        "session_a_label_kz": label_a_kz,
-        "session_a_label_en": label_a_en,
-        "session_b_label_ru": label_b_ru,
-        "session_b_label_kz": label_b_kz,
-        "session_b_label_en": label_b_en,
         "gps_a": gps_a,
         "gps_b": gps_b,
         "delta_gps": delta_gps,
         "gdi_a": gdi_a,
         "gdi_b": gdi_b,
         "delta_gdi": delta_gdi,
-        "tje_a": tje_a_val,
-        "tje_b": tje_b_val,
+        "tje_a": tje_a,
+        "tje_b": tje_b,
         "delta_tje": delta_tje,
-        "pcr_a": pcr_a_val,
-        "pcr_b": pcr_b_val,
+        "pcr_a": pcr_a,
+        "pcr_b": pcr_b,
         "delta_pcr": delta_pcr,
         "icf_a": icf_a,
         "icf_b": icf_b,

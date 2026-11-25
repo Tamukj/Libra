@@ -4,7 +4,7 @@ from functools import lru_cache
 import os
 import secrets
 from typing import Dict, Any, Optional, List
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
 from fastapi.security import APIKeyHeader
 import pandas as pd
 
@@ -16,7 +16,6 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def require_clinician_auth(
-    request: Request,
     api_key: Optional[str] = Depends(API_KEY_HEADER),
 ) -> Dict[str, Any]:
     """
@@ -24,12 +23,12 @@ def require_clinician_auth(
     Demo access is allowed only when LIBRA_ALLOW_DEMO is truthy ('1', 'true', 'yes').
     """
     configured_key = os.getenv("LIBRA_API_KEY", "").strip()
-    demo_raw = os.getenv("LIBRA_ALLOW_DEMO", "1").strip().lower()
+    demo_default = "0" if configured_key else "1"
+    demo_raw = os.getenv("LIBRA_ALLOW_DEMO", demo_default).strip().lower()
     demo_mode = demo_raw in ("1", "true", "yes")
 
-    raw_header = api_key if api_key is not None else request.headers.get("x-api-key")
-    if raw_header is not None:
-        if configured_key and secrets.compare_digest(raw_header.strip(), configured_key):
+    if api_key is not None:
+        if configured_key and secrets.compare_digest(api_key.strip(), configured_key):
             return {"authorized": True, "role": "clinician", "demo": False}
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API Key")
 

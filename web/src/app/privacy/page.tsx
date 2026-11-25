@@ -4,15 +4,19 @@ import React from "react";
 import Link from "next/link";
 import { ArrowLeft, Lock } from "lucide-react";
 import { LibraLogo } from "@/components/LibraLogo";
-import { LanguageSwitch, LargeFontButton } from "@/components/PageControls";
+import { LanguageSwitch, LargeFontButton, useLargeFontPreference } from "@/components/PageControls";
 import { useLanguage } from "@/lib/LanguageContext";
 
 export default function PrivacyPage() {
   const { lang, t } = useLanguage();
+  const { largeFont } = useLargeFontPreference();
   const isKz = lang === "kz";
 
   return (
-    <div style={{ minHeight: "100dvh", background: "var(--paper)" }}>
+    <div style={{ minHeight: "100dvh", background: "var(--paper)" }} data-a11y-large={largeFont ? "1" : "0"}>
+      <a href="#main-content" className="skip-link visually-hidden">
+        {isKz ? "Негізгі мазмұнға өту" : "Перейти к содержимому"}
+      </a>
       <header className="site-header" style={{ background: "var(--white)" }}>
         <div className="container site-header-inner">
           <LibraLogo size="md" href="/" subtitle={t.brand_sub} />
@@ -26,7 +30,7 @@ export default function PrivacyPage() {
         </div>
       </header>
 
-      <main className="container stack-md" style={{ maxWidth: "820px", paddingBlock: "var(--sp-8)" }}>
+      <main id="main-content" tabIndex={-1} className="container stack-md" style={{ maxWidth: "820px", paddingBlock: "var(--sp-8)" }}>
         <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "var(--muted)", alignSelf: "flex-start" }}>
           <ArrowLeft size={14} strokeWidth={1.5} aria-hidden="true" />
           <span>{isKz ? "Басты бетке оралу" : "На главную"}</span>

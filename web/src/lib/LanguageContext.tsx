@@ -3,8 +3,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { translations } from "./translations";
+import { safeDecodeParam } from "./format";
 
-export type Lang = "ru" | "kz";
+export type Lang = "ru" | "kz" | "en";
 
 interface LanguageContextType {
   lang: Lang;
@@ -22,12 +23,11 @@ function readStoredLang(): Lang {
   if (typeof window === "undefined") return "ru";
   try {
     const urlLang = new URLSearchParams(window.location.search).get("lang");
-    if (urlLang === "ru" || urlLang === "kz") return urlLang;
-    const saved =
-      localStorage.getItem("libra_lang") || localStorage.getItem("gaitai_lang");
-    if (saved === "ru" || saved === "kz") return saved;
-    const cookieMatch = document.cookie.match(/(?:^|;\s*)libra_lang=(ru|kz)/);
-    if (cookieMatch?.[1] === "ru" || cookieMatch?.[1] === "kz") {
+    if (urlLang === "ru" || urlLang === "kz" || urlLang === "en") return urlLang;
+    const saved = localStorage.getItem("libra_lang");
+    if (saved === "ru" || saved === "kz" || saved === "en") return saved;
+    const cookieMatch = document.cookie.match(/(?:^|;\s*)libra_lang=(ru|kz|en)/);
+    if (cookieMatch?.[1] === "ru" || cookieMatch?.[1] === "kz" || cookieMatch?.[1] === "en") {
       return cookieMatch[1];
     }
   } catch {}
@@ -37,7 +37,7 @@ function readStoredLang(): Lang {
 function resolvePageTitle(pathname: string, lang: Lang): string {
   const isKz = lang === "kz";
   if (pathname.startsWith("/portal/patients/")) {
-    const code = decodeURIComponent(
+    const code = safeDecodeParam(
       pathname.replace("/portal/patients/", "").split("/")[0] || ""
     );
     return isKz
@@ -77,7 +77,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const applyDomLanguage = useCallback(
     (targetLang: Lang, currentPath: string) => {
       if (typeof document === "undefined") return;
-      document.documentElement.lang = targetLang === "kz" ? "kk" : "ru";
+      document.documentElement.lang = targetLang === "kz" ? "kk" : targetLang;
       document.title = resolvePageTitle(currentPath, targetLang);
     },
     []
@@ -148,7 +148,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <LanguageContext.Provider value={{ lang, setLang, t: translations[lang] }}>
+    <LanguageContext.Provider value={{ lang, setLang, t: translations[lang === "kz" ? "kz" : "ru"] }}>
       {children}
     </LanguageContext.Provider>
   );

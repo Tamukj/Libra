@@ -1,5 +1,6 @@
 """CSV ingestion, Law 94-V PII validation, size limiting, and atomic database upsert."""
 
+import csv
 import datetime
 import io
 import json
@@ -36,7 +37,7 @@ _PII_NORMALIZED_TOKENS = {
     "address", "адрес", "мекенжай",
     "phone", "mobile", "cell", "tel", "телефон", "ұялы",
     "email", "mail", "почта",
-    "dob", "birthdate", "dateofbirth", "датарождения", "туғанкүні",
+    "dob", "birthdate", "dateofbirth", "datebirth", "childname", "датарождения", "туғанкүні",
 }
 
 _COLUMN_ALIASES: Dict[str, List[str]] = {
@@ -106,8 +107,9 @@ def _validate_non_pii_subject_code(target_code: str) -> None:
             status_code=400,
             detail="Invalid patient code. Allowed characters: alphanumeric, hyphens, and underscores (max 64 chars).",
         )
-    # Block 12-digit RK IIN (e.g. 090512501234)
-    if re.fullmatch(r"\d{12}", target_code):
+    digits_only = re.sub(r"[-_]", "", target_code)
+    # Block 12-digit RK IIN (e.g. 090512501234 or 0905-1250-1234)
+    if re.fullmatch(r"\d{12}", digits_only):
         raise HTTPException(
             status_code=400,
             detail="Law of RK No. 94-V violation: 12-digit IIN identifiers are prohibited in subject code.",
@@ -120,7 +122,7 @@ def _validate_non_pii_subject_code(target_code: str) -> None:
             status_code=400,
             detail="Law of RK No. 94-V violation: personal name/birth-date identifiers are prohibited in subject code.",
         )
-    if re.search(r"\d{10,}", target_code):
+    if re.search(r"\d{10,}", digits_only):
         raise HTTPException(
             status_code=400,
             detail="Law of RK No. 94-V violation: numeric personal/phone identifiers are prohibited.",
@@ -129,7 +131,7 @@ def _validate_non_pii_subject_code(target_code: str) -> None:
 
 def _find_col_by_aliases(df: pd.DataFrame, canonical: str) -> Optional[str]:
     aliases = _COLUMN_ALIASES.get(canonical, [canonical])
-    norm_to_col = {str(c).lower().replace("_", ""): c for c in df.columns}
+    norm_to_col = {str(c).lstrip("\ufeff").strip().lower().replace("_", ""): c for c in df.columns}
     for alias in aliases:
         if alias in df.columns:
             return alias
@@ -140,23 +142,29 @@ def _find_col_by_aliases(df: pd.DataFrame, canonical: str) -> Optional[str]:
 
 
 def _parse_csv_bytes(contents: bytes) -> pd.DataFrame:
+    if not contents or not contents.strip():
+        raise HTTPException(status_code=400, detail="Invalid CSV: File is empty.")
     na_vals = ["NaN", "nan", "NULL", "null", ""]
+    df: Optional[pd.DataFrame] = None
     try:
-        return pd.read_csv(
+        df = pd.read_csv(
             io.BytesIO(contents),
             sep=None,
             decimal=",",
             engine="python",
+            encoding="utf-8-sig",
             na_values=na_vals,
         )
-    except (pd.errors.ParserError, UnicodeDecodeError, ValueError):
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, csv.Error, UnicodeDecodeError, ValueError):
         try:
-            return pd.read_csv(io.BytesIO(contents), sep=";", decimal=",", na_values=na_vals)
-        except (pd.errors.ParserError, UnicodeDecodeError, ValueError):
+            df = pd.read_csv(io.BytesIO(contents), sep=";", decimal=",", encoding="utf-8-sig", na_values=na_vals)
+        except (pd.errors.ParserError, pd.errors.EmptyDataError, csv.Error, UnicodeDecodeError, ValueError):
             try:
-                return pd.read_csv(io.BytesIO(contents), sep=",", decimal=".", na_values=na_vals)
+                df = pd.read_csv(io.BytesIO(contents), sep=",", decimal=".", encoding="utf-8-sig", na_values=na_vals)
             except Exception as exc:
                 raise HTTPException(status_code=400, detail=f"Invalid CSV file format: {exc}")
+    df.columns = [str(c).lstrip("\ufeff").strip() for c in df.columns]
+    return df
 
 
 def _sanitize_json_matrix(arr: np.ndarray) -> List[List[Optional[float]]]:
@@ -180,6 +188,11 @@ def _prepare_subject_payload(df_sub: pd.DataFrame, target_code: str) -> Dict[str
         valid_nums = s_clean[np.isfinite(s_clean)]
         if valid_nums.empty:
             return None
+        if (valid_nums.abs() > 1e6).any():
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid physiological measurement: value exceeds physical bounds.",
+            )
         if require_positive and (valid_nums <= 0).any():
             raise HTTPException(
                 status_code=400,
@@ -262,7 +275,10 @@ def _prepare_subject_payload(df_sub: pd.DataFrame, target_code: str) -> Dict[str
         )
 
     present_gvs = [v for v in (opt_p, opt_h, opt_k, opt_a) if is_finite_number(v)]
-    derived_gps = math.sqrt(sum(v ** 2 for v in present_gvs) / len(present_gvs)) if present_gvs else None
+    try:
+        derived_gps = math.sqrt(sum(v ** 2 for v in present_gvs) / len(present_gvs)) if present_gvs else None
+    except OverflowError:
+        raise HTTPException(status_code=400, detail="Invalid physiological measurement: value exceeds physical bounds.")
     avg_gps = opt_gps if opt_gps is not None else derived_gps
     avg_pctm_zero = _parse_optional("pctmZeroStSagH")
     avg_pelvis_tilt = _parse_optional("pelvic_tilt_mean")
@@ -471,11 +487,13 @@ def persist_upload_payloads(
     visit_key: Optional[str] = None,
     visit_label: Optional[str] = None,
     visit_date: Optional[str] = None,
+    clinic_id: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Atomically upserts Patient and longitudinal GaitSession rows using dialect-native ON CONFLICT."""
     norm_vk, clean_vl, clean_vd = validate_visit_params(visit_key, visit_label, visit_date)
-    clinic = db.query(Clinic).first()
-    clinic_id = clinic.id if clinic else None
+    if clinic_id is None:
+        default_clinic = db.query(Clinic).order_by(Clinic.id.asc()).first()
+        clinic_id = default_clinic.id if default_clinic else None
 
     dialect = db.bind.dialect.name if db.bind is not None else "sqlite"
     insert_fn = pg_insert if dialect == "postgresql" else sqlite_insert
@@ -484,6 +502,17 @@ def persist_upload_payloads(
     try:
         for item in payloads:
             target_code = item["code"]
+            existing_patient = db.query(Patient).filter(Patient.code == target_code).first()
+            if (
+                existing_patient is not None
+                and item["parsed_side"] is not None
+                and existing_patient.side in ("LEFT", "RIGHT")
+                and existing_patient.side != item["parsed_side"]
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Conflicting limb side for patient {target_code}: existing {existing_patient.side}, uploaded {item['parsed_side']}.",
+                )
             p_stmt = insert_fn(Patient).values(
                 code=target_code,
                 side=item["parsed_side"] or "UNSPECIFIED",

@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { ArrowRight, GitCompare } from "lucide-react";
 import { getPatientDiff } from "@/lib/api";
 import { cleanClinicalText, fmtFixed, fmtPcr, fmtSigned } from "@/lib/format";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useLanguage, type Lang } from "@/lib/LanguageContext";
 import type { GaitCondition, GaitDiffResponse, VisitSummary } from "@/lib/types";
 
 interface GaitDiffViewerProps {
@@ -15,7 +15,7 @@ interface GaitDiffViewerProps {
 
 function getConditionLabel(
   condition: string,
-  lang: "ru" | "kz",
+  lang: Lang,
   fallbackLabel?: string
 ): string {
   const norm = condition.toLowerCase();
@@ -43,6 +43,18 @@ export function GaitDiffViewer({
   const [diff, setDiff] = useState<GaitDiffResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [diffError, setDiffError] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const onUpdated = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ code?: string } | undefined>).detail;
+      if (!detail?.code || detail.code === patientCode) {
+        setRefreshTick((n) => n + 1);
+      }
+    };
+    window.addEventListener("libra:patient-updated", onUpdated);
+    return () => window.removeEventListener("libra:patient-updated", onUpdated);
+  }, [patientCode]);
 
   useEffect(() => {
     if (visits.length >= 2) {
@@ -106,6 +118,8 @@ export function GaitDiffViewer({
     crossSessionB,
     activeVisitKey,
     hasMultipleVisits,
+    visits,
+    refreshTick,
     lang,
     isKz,
   ]);
@@ -126,10 +140,15 @@ export function GaitDiffViewer({
       badge: "badge-neutral",
       label: isKz ? "Өзгеріссіз" : "Стабильно",
     },
+    insufficient_data: {
+      callout: "callout-amber",
+      badge: "badge-neutral",
+      label: isKz ? "Деректер жеткіліксіз" : "Недостаточно данных",
+    },
   };
 
   const activeStatus = diff
-    ? statusConfig[diff.status] || statusConfig.stable
+    ? statusConfig[diff.status as keyof typeof statusConfig] || statusConfig.stable
     : statusConfig.stable;
 
   const visitSelectA = visits.find((v) => v.visit_key === visitA);
@@ -175,7 +194,7 @@ export function GaitDiffViewer({
             >
               <button
                 type="button"
-                className="seg-btn"
+                className="btn seg-btn"
                 aria-pressed={compareMode === "within"}
                 onClick={() => setCompareMode("within")}
               >
@@ -183,7 +202,7 @@ export function GaitDiffViewer({
               </button>
               <button
                 type="button"
-                className="seg-btn"
+                className="btn seg-btn"
                 aria-pressed={compareMode === "cross"}
                 onClick={() => setCompareMode("cross")}
               >
@@ -200,7 +219,7 @@ export function GaitDiffViewer({
             >
               <button
                 type="button"
-                className="seg-btn"
+                className="btn seg-btn"
                 aria-pressed={withinSessionB === "VR"}
                 onClick={() => setWithinSessionB("VR")}
               >
@@ -208,7 +227,7 @@ export function GaitDiffViewer({
               </button>
               <button
                 type="button"
-                className="seg-btn"
+                className="btn seg-btn"
                 aria-pressed={withinSessionB === "Verbal"}
                 onClick={() => setWithinSessionB("Verbal")}
               >
@@ -339,7 +358,7 @@ export function GaitDiffViewer({
               <div style={{ fontSize: "12px", color: "var(--muted)" }}>
                 {isKz ? "Жалпы жүріс индексі (GPS)" : "Индекс походки (GPS)"}
               </div>
-              <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)", color: diff.delta_gps < 0 ? "var(--teal)" : "var(--ink)" }}>
+              <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)", color: diff.delta_gps !== null && diff.delta_gps < 0 ? "var(--teal)" : "var(--ink)" }}>
                 {fmtSigned(diff.delta_gps, 2, "°")}
               </div>
               <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "var(--sp-1)" }}>
@@ -351,7 +370,7 @@ export function GaitDiffViewer({
               <div style={{ fontSize: "12px", color: "var(--muted)" }}>
                 {isKz ? "Ауытқу индексі (GDI)" : "Индекс отклонения (GDI)"}
               </div>
-              <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)", color: diff.delta_gdi > 0 ? "var(--teal)" : "var(--ink)" }}>
+              <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)", color: diff.delta_gdi !== null && diff.delta_gdi > 0 ? "var(--teal)" : "var(--ink)" }}>
                 {fmtSigned(diff.delta_gdi, 1, "")}
               </div>
               <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "var(--sp-1)" }}>
@@ -363,7 +382,7 @@ export function GaitDiffViewer({
               <div style={{ fontSize: "12px", color: "var(--muted)" }}>
                 {isKz ? "Шынайы буын жазылуы (TJE)" : "Истинное разгибание (TJE)"}
               </div>
-              <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)", color: diff.tje_b < -0.5 ? "var(--teal)" : "var(--ink)" }}>
+              <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)", color: diff.tje_b !== null && diff.tje_b < -0.5 ? "var(--teal)" : "var(--ink)" }}>
                 {fmtSigned(diff.tje_b, 1, "°")}
               </div>
               <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "var(--sp-1)" }}>
@@ -381,7 +400,7 @@ export function GaitDiffViewer({
                   fontSize: "20px",
                   fontWeight: 600,
                   marginTop: "var(--sp-1)",
-                  color: diff.pcr_b > 0.8 ? "var(--amber)" : "var(--teal)",
+                  color: diff.pcr_b === null ? "var(--ink)" : diff.pcr_b > 0.8 ? "var(--amber)" : "var(--teal)",
                 }}
               >
                 {fmtPcr(diff.pcr_b)}

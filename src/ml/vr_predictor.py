@@ -170,9 +170,17 @@ class GaitConditionClassifier:
             vr = df_vr.copy()
             vr["condition"] = 1
             df = pd.concat([base, vr], ignore_index=True)
-            X = df[self.feature_names]
+            avail = [f for f in self.feature_names if f in df.columns]
+            X = df[avail]
             y = df["condition"].values
             groups = df["subject"].values if "subject" in df.columns else np.zeros(len(df), dtype=int)
+
+        X = X.replace([np.inf, -np.inf], np.nan)
+        valid_mask = pd.notna(groups)
+        if not np.all(valid_mask):
+            X = X.iloc[valid_mask].reset_index(drop=True)
+            y = y[valid_mask]
+            groups = groups[valid_mask]
 
         n_groups = len(np.unique(groups)) if len(groups) > 0 else 0
         if n_groups < 2 or len(np.unique(y)) < 2:
@@ -275,10 +283,23 @@ class GaitConditionClassifier:
                 _extract_waveform_features(df_vr, df_kin_vr),
             ], ignore_index=True)
         else:
+            avail = [
+                f for f in self.feature_names
+                if f in df_base.columns and f in df_verbal.columns and f in df_vr.columns
+            ]
+            if not avail:
+                return {
+                    "balanced_accuracy": 1.0 / 3.0,
+                    "f1_macro": 0.0,
+                    "n_splits": 0,
+                    "n_cycles": len(df_base) + len(df_verbal) + len(df_vr),
+                    "n_subjects": 0,
+                    "classes": ["Baseline", "Verbal", "VR"],
+                }
             X = pd.concat([
-                df_base[self.feature_names],
-                df_verbal[self.feature_names],
-                df_vr[self.feature_names],
+                df_base[avail],
+                df_verbal[avail],
+                df_vr[avail],
             ], ignore_index=True)
 
         y = np.concatenate([
@@ -287,10 +308,17 @@ class GaitConditionClassifier:
             np.full(len(df_vr), 2, dtype=int),
         ])
         groups = np.concatenate([
-            df_base["subject"].values,
-            df_verbal["subject"].values,
-            df_vr["subject"].values,
+            df_base["subject"].values if "subject" in df_base.columns else np.zeros(len(df_base), dtype=int),
+            df_verbal["subject"].values if "subject" in df_verbal.columns else np.ones(len(df_verbal), dtype=int),
+            df_vr["subject"].values if "subject" in df_vr.columns else np.full(len(df_vr), 2, dtype=int),
         ])
+
+        X = X.replace([np.inf, -np.inf], np.nan)
+        valid_mask = pd.notna(groups)
+        if not np.all(valid_mask):
+            X = X.iloc[valid_mask].reset_index(drop=True)
+            y = y[valid_mask]
+            groups = groups[valid_mask]
 
         n_groups = len(np.unique(groups)) if len(groups) > 0 else 0
         if n_groups < 2 or len(np.unique(y)) < 2:
@@ -355,7 +383,7 @@ class GaitConditionClassifier:
         vr["condition"] = 1
 
         df = pd.concat([base, vr], ignore_index=True)
-        X = df[self.feature_names]
+        X = df[self.feature_names].replace([np.inf, -np.inf], np.nan)
         y = df["condition"].values
 
         if len(y) == 0 or len(np.unique(y)) < 2:
@@ -445,6 +473,7 @@ class VRResponderPredictor:
         self.active_train_cols_: Optional[set[str]] = None
         self.is_fitted = False
         self.metrics_: Dict[str, Any] = {}
+        self.disc_metrics_: Dict[str, Any] = {}
 
     @staticmethod
     def _extract_subject_kin_stats(df_kin_sub: pd.DataFrame) -> Dict[str, float]:
@@ -464,6 +493,37 @@ class VRResponderPredictor:
         else:
             h_rom = np.nan
         return {"pelvis_mean": p_mean, "hip_rom": h_rom}
+
+    @staticmethod
+    def _run_loo_cv(X_data: pd.DataFrame, y_arr: np.ndarray, reg_c: float) -> tuple[float, float]:
+        loo = LeaveOneOut()
+        y_preds: List[int] = []
+        y_probs: List[float] = []
+
+        for train_idx, test_idx in loo.split(X_data):
+            if len(np.unique(y_arr[train_idx])) < 2:
+                maj = int(y_arr[train_idx][0])
+                y_probs.append(float(maj))
+                y_preds.append(maj)
+                continue
+
+            fold_imputer = SimpleImputer(strategy="median", keep_empty_features=True)
+            fold_scaler = StandardScaler()
+            X_tr = fold_scaler.fit_transform(fold_imputer.fit_transform(X_data.iloc[train_idx]))
+            X_te = fold_scaler.transform(fold_imputer.transform(X_data.iloc[test_idx]))
+
+            model = LogisticRegression(class_weight="balanced", C=reg_c, random_state=42)
+            model.fit(X_tr, y_arr[train_idx])
+            p = float(model.predict_proba(X_te)[0, 1])
+            y_probs.append(p)
+            y_preds.append(int(p >= 0.5))
+
+        b_acc = float(balanced_accuracy_score(y_arr, y_preds))
+        try:
+            auc = float(roc_auc_score(y_arr, y_probs))
+        except Exception:
+            auc = float("nan")
+        return b_acc, auc
 
     def fit_evaluate_subjects(
         self,
@@ -495,10 +555,14 @@ class VRResponderPredictor:
             d_p = float(sv["GVS_aSagP"].mean() - sb["GVS_aSagP"].mean())
             d_k = float(sv["GVS_aSagK"].mean() - sb["GVS_aSagK"].mean())
             d_a = float(sv["GVS_aSagA"].mean() - sb["GVS_aSagA"].mean())
-            cdss_risk = analyze_compensation_risk(d_hip, d_p, d_k, d_a)
+            if not (is_finite_number(d_hip) and is_finite_number(d_p)):
+                continue
 
-            # Align target strictly with CDSS: gain achieved AND no pelvic overload ('red')
-            label = 1 if (d_hip <= -1.0 and cdss_risk["status"] != "red") else 0
+            cdss_risk = analyze_compensation_risk(d_hip, d_p, d_k, d_a)
+            if cdss_risk["tje"] is None or cdss_risk["pcr"] is None:
+                continue
+
+            label = 1 if (d_hip <= -1.0 and cdss_risk["tje"] < 0.0 and cdss_risk["status"] != "red") else 0
 
             kin_stats = (
                 self._extract_subject_kin_stats(df_kin_base[df_kin_base["subject"] == sub])
@@ -523,8 +587,8 @@ class VRResponderPredictor:
             X_disc_rows.append(disc_row)
             y_labels.append(label)
 
-        X_df = pd.DataFrame(X_rows)
-        X_disc_df = pd.DataFrame(X_disc_rows)
+        X_df = pd.DataFrame(X_rows).replace([np.inf, -np.inf], np.nan)
+        X_disc_df = pd.DataFrame(X_disc_rows).replace([np.inf, -np.inf], np.nan)
         y = np.array(y_labels)
         feature_mode = "kinematics_biomech" if use_kin else "discrete_fallback"
 
@@ -539,6 +603,7 @@ class VRResponderPredictor:
                 "n_compensators": 0,
                 "feature_mode": feature_mode,
             }
+            self.disc_metrics_ = dict(self.metrics_)
             return self.metrics_
 
         if len(np.unique(y)) < 2:
@@ -553,35 +618,10 @@ class VRResponderPredictor:
                 "n_compensators": int(np.sum(y == 0)),
                 "feature_mode": feature_mode,
             }
+            self.disc_metrics_ = dict(self.metrics_)
             return self.metrics_
 
-        loo = LeaveOneOut()
-        y_preds: List[int] = []
-        y_probs: List[float] = []
-
-        for train_idx, test_idx in loo.split(X_df):
-            if len(np.unique(y[train_idx])) < 2:
-                maj = int(y[train_idx][0])
-                y_probs.append(float(maj))
-                y_preds.append(maj)
-                continue
-
-            fold_imputer = SimpleImputer(strategy="median", keep_empty_features=True)
-            fold_scaler = StandardScaler()
-            X_tr = fold_scaler.fit_transform(fold_imputer.fit_transform(X_df.iloc[train_idx]))
-            X_te = fold_scaler.transform(fold_imputer.transform(X_df.iloc[test_idx]))
-
-            model = LogisticRegression(class_weight="balanced", C=self.reg_c, random_state=42)
-            model.fit(X_tr, y[train_idx])
-            p = float(model.predict_proba(X_te)[0, 1])
-            y_probs.append(p)
-            y_preds.append(int(p >= 0.5))
-
-        b_acc = float(balanced_accuracy_score(y, y_preds))
-        try:
-            auc = float(roc_auc_score(y, y_probs))
-        except Exception:
-            auc = float("nan")
+        b_acc, auc = self._run_loo_cv(X_df, y, self.reg_c)
 
         self.active_train_cols_ = {
             c for c in self.feature_names if c in X_df.columns and X_df[c].notna().any()
@@ -591,15 +631,6 @@ class VRResponderPredictor:
         self.clf.fit(X_all_scaled, y)
         self.is_fitted = True
 
-        # Fit discrete-only fallback model when primary model requires kinematic curves
-        if use_kin and not X_disc_df.empty:
-            X_d_imp = self.disc_imputer.fit_transform(X_disc_df)
-            X_d_sc = self.disc_scaler.fit_transform(X_d_imp)
-            self.disc_clf.fit(X_d_sc, y)
-            self.disc_fitted = True
-        else:
-            self.disc_fitted = False
-
         self.metrics_ = {
             "balanced_accuracy": b_acc,
             "roc_auc": auc,
@@ -608,6 +639,25 @@ class VRResponderPredictor:
             "n_compensators": int(np.sum(y == 0)),
             "feature_mode": feature_mode,
         }
+
+        if use_kin and not X_disc_df.empty:
+            disc_bacc, disc_auc = self._run_loo_cv(X_disc_df, y, self.disc_clf.C)
+            X_d_imp = self.disc_imputer.fit_transform(X_disc_df)
+            X_d_sc = self.disc_scaler.fit_transform(X_d_imp)
+            self.disc_clf.fit(X_d_sc, y)
+            self.disc_fitted = True
+            self.disc_metrics_ = {
+                "balanced_accuracy": disc_bacc,
+                "roc_auc": disc_auc,
+                "n_subjects": len(y),
+                "n_responders": int(np.sum(y == 1)),
+                "n_compensators": int(np.sum(y == 0)),
+                "feature_mode": "discrete_fallback",
+            }
+        else:
+            self.disc_fitted = False
+            self.disc_metrics_ = dict(self.metrics_)
+
         return self.metrics_
 
     def _extract_input_row(
@@ -633,18 +683,21 @@ class VRResponderPredictor:
         for feat in cols:
             alt_key = feature_map.get(feat, feat)
             if isinstance(patient_data, pd.DataFrame):
+                val = np.nan
                 if feat in patient_data.columns:
                     clean = pd.to_numeric(patient_data[feat], errors="coerce").dropna()
-                    val = float(clean.mean()) if not clean.empty else np.nan
-                elif alt_key in patient_data.columns:
+                    if not clean.empty:
+                        val = float(clean.mean())
+                if not is_finite_number(val) and alt_key != feat and alt_key in patient_data.columns:
                     clean = pd.to_numeric(patient_data[alt_key], errors="coerce").dropna()
-                    val = float(clean.mean()) if not clean.empty else np.nan
-                elif feat in kin_stats:
+                    if not clean.empty:
+                        val = float(clean.mean())
+                if not is_finite_number(val) and feat in kin_stats:
                     val = kin_stats[feat]
-                else:
-                    val = np.nan
             else:
-                val = patient_data.get(feat, patient_data.get(alt_key, np.nan))
+                val = patient_data.get(feat, np.nan)
+                if not is_finite_number(val) and alt_key != feat:
+                    val = patient_data.get(alt_key, np.nan)
             row[feat] = float(val) if is_finite_number(val) else np.nan
         return row
 
@@ -722,8 +775,13 @@ class VRResponderPredictor:
             })
         attributions.sort(key=lambda item: abs(item["attribution"]), reverse=True)
 
-        raw_bacc = self.metrics_.get("balanced_accuracy", 0.0)
-        raw_auc = self.metrics_.get("roc_auc", float("nan"))
+        active_metrics = (
+            self.disc_metrics_
+            if (used_mode == "discrete_fallback" and self.disc_metrics_)
+            else self.metrics_
+        )
+        raw_bacc = active_metrics.get("balanced_accuracy", 0.0)
+        raw_auc = active_metrics.get("roc_auc", float("nan"))
         bacc_val = float(raw_bacc) if is_finite_number(raw_bacc) else 0.0
         auc_valid = is_finite_number(raw_auc)
         auc_val = float(raw_auc) if auc_valid else 0.5
@@ -757,16 +815,17 @@ class VRResponderPredictor:
             ),
         }
         if not model_reliable:
+            n_sub = active_metrics.get("n_subjects", 29)
             result["note"] = (
-                f"Ограничение выборки (n={self.metrics_.get('n_subjects', 29)}): LOO ROC-AUC={auc_val:.3f} < 0.75; "
+                f"Ограничение выборки (n={n_sub}): LOO ROC-AUC={auc_val:.3f} < 0.75; "
                 "прогноз носит ориентировочный характер и не заменяет показатели CDSS (TJE/PCR)."
             )
             result["note_kz"] = (
-                f"Іріктеме шектеуі (n={self.metrics_.get('n_subjects', 29)}): LOO ROC-AUC={auc_val:.3f} < 0.75; "
+                f"Іріктеме шектеуі (n={n_sub}): LOO ROC-AUC={auc_val:.3f} < 0.75; "
                 "болжам бағдарлық сипатта, негізгі шешім CDSS (TJE/PCR) бойынша қабылданады."
             )
             result["note_en"] = (
-                f"Small-cohort caveat (n={self.metrics_.get('n_subjects', 29)}): LOO ROC-AUC={auc_val:.3f} < 0.75; "
+                f"Small-cohort caveat (n={n_sub}): LOO ROC-AUC={auc_val:.3f} < 0.75; "
                 "exploratory prognosis only—anchor clinical decisions to CDSS (TJE/PCR)."
             )
         return result

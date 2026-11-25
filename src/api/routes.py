@@ -18,7 +18,6 @@ from src.core.biomechanics import (
     compute_session_diff,
     get_solution_limitations,
     is_finite_number,
-    opt_float,
 )
 from src.core.i18n import get_locale
 from src.ml.local_reporter import generate_clinical_narrative, generate_parent_narrative
@@ -392,7 +391,8 @@ def create_patient_report(
     gen_fn = generate_parent_narrative if audience == "parent" else generate_clinical_narrative
     narrative_ru = gen_fn(summary, lang="ru")
     narrative_kz = gen_fn(summary, lang="kz")
-    narrative_selected = gen_fn(summary, lang=lang) if lang == "en" else (narrative_kz if lang == "kz" else narrative_ru)
+    narrative_en = gen_fn(summary, lang="en")
+    narrative_selected = narrative_en if lang == "en" else (narrative_kz if lang == "kz" else narrative_ru)
 
     resolved_vk = summary.get("visit_key") or "visit-1"
     report = ClinicalReport(
@@ -400,11 +400,12 @@ def create_patient_report(
         visit_key=resolved_vk,
         icf_b770=icf_b770,
         icf_d450=icf_d450,
-        tje=risk["tje"] if risk["tje"] is not None else 0.0,
-        pcr=risk["pcr"] if risk["pcr"] is not None else 0.0,
+        tje=risk["tje"],
+        pcr=risk["pcr"],
         status=risk["status"],
         narrative_ru=narrative_ru,
         narrative_kz=narrative_kz,
+        narrative_en=narrative_en,
         audience=audience,
     )
     db.add(report)
@@ -464,8 +465,8 @@ def get_patient_diff(
         )[0]
     )
 
-    sess_a_data = extract_session_metrics_for_diff(summary_a, session_a, lang=lang)
-    sess_b_data = extract_session_metrics_for_diff(summary_b, session_b, lang=lang)
+    sess_a_data = extract_session_metrics_for_diff(summary_a, session_a)
+    sess_b_data = extract_session_metrics_for_diff(summary_b, session_b)
 
     if summary_a.get("visit_key") != summary_b.get("visit_key"):
         for s_data, s_sum in ((sess_a_data, summary_a), (sess_b_data, summary_b)):
@@ -541,7 +542,6 @@ async def upload_patient_csv(
     Accepts CSV from Vicon Nexus, GRAIL, or IMU sensors (<= 10 MB), enforces Law 94-V PII filter,
     validates visit metadata, parses in threadpool without blocking event loop, and atomically upserts patient & visit session.
     """
-    validate_visit_params(visit_key, visit_label, visit_date)
     contents = await read_limited_upload(file)
     normalized_condition, n_rows, n_cols, payloads = await run_in_threadpool(
         prepare_csv_upload_payloads,
