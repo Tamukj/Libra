@@ -514,6 +514,11 @@ a {
   overflow: hidden;
 }
 
+.seg-group > .seg-btn {
+  flex: 1 1 0;
+  white-space: nowrap;
+}
+
 .seg-btn {
   min-block-size: 30px;
   padding: var(--sp-1) var(--sp-3);
