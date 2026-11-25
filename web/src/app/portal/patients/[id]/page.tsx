@@ -3,9 +3,15 @@
 import React, { useEffect, useState, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, FileText, RotateCcw, Info, Calendar, Plus } from "lucide-react";
-import { getPatientAnalysis, getPatientKinematics, getPatients } from "@/lib/api";
-import { Patient, PatientAnalysis, KinematicsResponse, VisitSummary } from "@/lib/types";
+import { ArrowLeft, FileText, RotateCcw, Info, Calendar, Plus, ArrowLeftRight, Trash2 } from "lucide-react";
+import {
+  getPatientAnalysis,
+  getPatientKinematics,
+  getPatients,
+  reassignPatientSession,
+  deletePatientSession,
+} from "@/lib/api";
+import { Patient, PatientAnalysis, KinematicsResponse, VisitSummary, GaitCondition } from "@/lib/types";
 import { useLanguage } from "@/lib/LanguageContext";
 import { CdssTrafficLight } from "@/components/CdssTrafficLight";
 import { MethodVerdict } from "@/components/MethodVerdict";
@@ -86,6 +92,10 @@ function PatientDossierContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [sessionEditorOpen, setSessionEditorOpen] = useState(false);
+  const [sessionEditBusy, setSessionEditBusy] = useState(false);
+  const [sessionEditError, setSessionEditError] = useState<string | null>(null);
+  const [editTargets, setEditTargets] = useState<Record<string, { condition: GaitCondition; visitKey: string }>>({});
 
   const loadDossier = useCallback(async () => {
     setLoading(true);
@@ -586,7 +596,7 @@ function PatientDossierContent() {
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
             <span className="badge badge-neutral tabular-nums">
               {t.condition_baseline}: {baseCycles}
             </span>
@@ -600,8 +610,207 @@ function PatientDossierContent() {
                 {t.condition_vr}: {vrCycles}
               </span>
             )}
+            {activeVisit && activeVisit.conditions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSessionEditError(null);
+                  setSessionEditorOpen((prev) => !prev);
+                }}
+                aria-expanded={sessionEditorOpen}
+                className="btn"
+                style={{ minBlockSize: "28px", padding: "3px 10px", fontSize: "12px" }}
+              >
+                <ArrowLeftRight size={13} strokeWidth={1.6} />
+                <span>{lang === "kz" ? "Сынамаларды түзету" : "Исправить пробы"}</span>
+              </button>
+            )}
           </div>
         </div>
+
+        {sessionEditorOpen && activeVisit && (
+          <div
+            style={{
+              background: "var(--paper)",
+              border: "1px solid var(--line)",
+              borderRadius: "8px",
+              padding: "12px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+            }}
+          >
+            <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink)" }}>
+              {lang === "kz"
+                ? "Қате жүктелген сынама режимін немесе визитті ауыстыру"
+                : "Исправление режима пробы или перенос в другой визит"}
+            </div>
+            {sessionEditError && (
+              <div role="alert" style={{ fontSize: "12px", color: "var(--red)" }}>
+                {sessionEditError}
+              </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {(activeVisit.conditions as GaitCondition[]).map((cond) => {
+                const draft = editTargets[cond] ?? {
+                  condition: cond,
+                  visitKey: activeVisit.visit_key,
+                };
+                const targetVisitObj = visits.find((v) => v.visit_key === draft.visitKey);
+                const sameSlot =
+                  draft.condition === cond && draft.visitKey === activeVisit.visit_key;
+                const willSwap =
+                  !sameSlot &&
+                  Boolean(
+                    targetVisitObj?.conditions.some(
+                      (c) => c.toLowerCase() === draft.condition.toLowerCase()
+                    )
+                  );
+                const cycleCountForCond =
+                  cond === "Baseline"
+                    ? baseCycles
+                    : cond === "Verbal"
+                    ? verbalCycles
+                    : vrCycles;
+
+                return (
+                  <div
+                    key={cond}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      flexWrap: "wrap",
+                      gap: "8px",
+                      padding: "8px 10px",
+                      background: "var(--white)",
+                      border: "1px solid var(--line)",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: "130px" }}>
+                      <span style={{ fontFamily: "var(--mono)", fontWeight: 600 }}>{cond}</span>
+                      <span className="tabular-nums" style={{ color: "var(--muted)" }}>
+                        ({cycleCountForCond})
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                      <select
+                        aria-label={`${cond} target condition`}
+                        value={draft.condition}
+                        disabled={sessionEditBusy}
+                        onChange={(e) =>
+                          setEditTargets((prev) => ({
+                            ...prev,
+                            [cond]: {
+                              condition: e.target.value as GaitCondition,
+                              visitKey: draft.visitKey,
+                            },
+                          }))
+                        }
+                        style={{ minBlockSize: "30px", padding: "3px 8px", fontSize: "12px" }}
+                      >
+                        <option value="Baseline">Baseline</option>
+                        <option value="Verbal">Verbal</option>
+                        <option value="VR">VR</option>
+                      </select>
+
+                      {visits.length >= 2 && (
+                        <select
+                          aria-label={`${cond} target visit`}
+                          value={draft.visitKey}
+                          disabled={sessionEditBusy}
+                          onChange={(e) =>
+                            setEditTargets((prev) => ({
+                              ...prev,
+                              [cond]: {
+                                condition: draft.condition,
+                                visitKey: e.target.value,
+                              },
+                            }))
+                          }
+                          style={{ minBlockSize: "30px", padding: "3px 8px", fontSize: "12px" }}
+                        >
+                          {visits.map((v) => (
+                            <option key={v.visit_key} value={v.visit_key}>
+                              {lang === "kz" && v.visit_label_kz ? v.visit_label_kz : v.visit_label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      <button
+                        type="button"
+                        disabled={sameSlot || sessionEditBusy}
+                        className="btn"
+                        style={{ minBlockSize: "30px", padding: "3px 10px", fontSize: "12px" }}
+                        onClick={async () => {
+                          setSessionEditBusy(true);
+                          setSessionEditError(null);
+                          try {
+                            await reassignPatientSession(patientCode, {
+                              visit_key: activeVisit.visit_key,
+                              condition: cond,
+                              target_condition: draft.condition,
+                              target_visit_key: draft.visitKey,
+                              swap: willSwap,
+                            });
+                            setEditTargets({});
+                            if (draft.visitKey !== activeVisit.visit_key) {
+                              router.push(
+                                `/portal/patients/${encodeURIComponent(patientCode)}?visit=${encodeURIComponent(draft.visitKey)}`
+                              );
+                            } else {
+                              await loadDossier();
+                            }
+                          } catch (err) {
+                            setSessionEditError(err instanceof Error ? err.message : String(err));
+                          } finally {
+                            setSessionEditBusy(false);
+                          }
+                        }}
+                      >
+                        {willSwap
+                          ? lang === "kz"
+                            ? "Орын ауыстыру"
+                            : "Поменять местами"
+                          : lang === "kz"
+                          ? "Сақтау"
+                          : "Перенести"}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={sessionEditBusy}
+                        title={lang === "kz" ? "Сынаманы жою" : "Удалить пробу"}
+                        aria-label={lang === "kz" ? `${cond} жою` : `Удалить ${cond}`}
+                        className="btn"
+                        style={{ minBlockSize: "30px", padding: "3px 8px", fontSize: "12px", color: "var(--red)" }}
+                        onClick={async () => {
+                          setSessionEditBusy(true);
+                          setSessionEditError(null);
+                          try {
+                            await deletePatientSession(patientCode, activeVisit.visit_key, cond);
+                            setEditTargets({});
+                            await loadDossier();
+                          } catch (err) {
+                            setSessionEditError(err instanceof Error ? err.message : String(err));
+                          } finally {
+                            setSessionEditBusy(false);
+                          }
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div
           style={{

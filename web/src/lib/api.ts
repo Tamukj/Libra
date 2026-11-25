@@ -115,6 +115,33 @@ export async function createReport(
   return res.json();
 }
 
+export async function reassignPatientSession(
+  code: string,
+  payload: {
+    visit_key: string;
+    condition: "Baseline" | "Verbal" | "VR";
+    target_condition: "Baseline" | "Verbal" | "VR";
+    target_visit_key?: string;
+    swap?: boolean;
+  }
+): Promise<{ status: string; code: string; visit_key: string; condition: string; swapped: boolean }> {
+  return fetchJson(`/api/v1/patients/${encodeURIComponent(code)}/sessions`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deletePatientSession(
+  code: string,
+  visitKey: string,
+  condition: "Baseline" | "Verbal" | "VR"
+): Promise<{ status: string; code: string; visit_key: string; condition: string; remaining_sessions: number }> {
+  const qs = buildQuery({ visit_key: visitKey, condition });
+  return fetchJson(`/api/v1/patients/${encodeURIComponent(code)}/sessions${qs}`, {
+    method: "DELETE",
+  });
+}
+
 export async function getPatientDiff(
   code: string,
   sessionA: string = "Baseline",

@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload, selectinload
 from starlette.concurrency import run_in_threadpool
 
@@ -661,3 +662,139 @@ def export_patient_pdf_report(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="libra-report-{code}-{lang}.pdf"'},
     )
+
+
+_NORM_COND_MAP = {
+    "baseline": "Baseline",
+    "verbal": "Verbal",
+    "vr": "VR",
+}
+
+
+class SessionReassignRequest(BaseModel):
+    visit_key: str
+    condition: str
+    target_condition: str
+    target_visit_key: Optional[str] = None
+    swap: bool = False
+
+
+@router.patch("/patients/{code}/sessions")
+def reassign_patient_session(
+    code: str,
+    payload: SessionReassignRequest,
+    db: Session = Depends(get_db),
+):
+    """Moves or swaps a recorded gait condition/visit when a clinician uploaded a CSV under the wrong mode or visit."""
+    src_cond = _NORM_COND_MAP.get(payload.condition.strip().lower())
+    dst_cond = _NORM_COND_MAP.get(payload.target_condition.strip().lower())
+    if not src_cond or not dst_cond:
+        raise HTTPException(status_code=400, detail="Invalid condition. Allowed values: Baseline, Verbal, VR.")
+
+    src_vk = payload.visit_key.strip()
+    dst_vk = (payload.target_visit_key or payload.visit_key).strip()
+    validate_visit_params(src_vk, None, None)
+    validate_visit_params(dst_vk, None, None)
+
+    patient = db.query(Patient).filter(Patient.code == code).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient {code} not found")
+
+    src_sess = (
+        db.query(GaitSession)
+        .filter(
+            GaitSession.patient_id == patient.id,
+            GaitSession.visit_key == src_vk,
+            GaitSession.condition == src_cond,
+        )
+        .first()
+    )
+    if not src_sess:
+        raise HTTPException(status_code=404, detail=f"Session {src_vk}/{src_cond} not found for patient {code}")
+
+    if src_vk == dst_vk and src_cond == dst_cond:
+        return {"status": "unchanged", "code": code, "visit_key": dst_vk, "condition": dst_cond, "swapped": False}
+
+    dst_sess = (
+        db.query(GaitSession)
+        .filter(
+            GaitSession.patient_id == patient.id,
+            GaitSession.visit_key == dst_vk,
+            GaitSession.condition == dst_cond,
+        )
+        .first()
+    )
+
+    if dst_sess is not None and not payload.swap:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Target slot {dst_vk}/{dst_cond} already exists. Enable swap=true to swap both sessions.",
+        )
+
+    if dst_sess is not None and payload.swap:
+        src_vl, src_vd = src_sess.visit_label, src_sess.visit_date
+        dst_vl, dst_vd = dst_sess.visit_label, dst_sess.visit_date
+        src_sess.condition = "__SWAP__"
+        db.flush()
+        dst_sess.visit_key = src_vk
+        dst_sess.visit_label = src_vl
+        dst_sess.visit_date = src_vd
+        dst_sess.condition = src_cond
+        db.flush()
+        src_sess.visit_key = dst_vk
+        src_sess.visit_label = dst_vl
+        src_sess.visit_date = dst_vd
+        src_sess.condition = dst_cond
+        db.commit()
+        return {"status": "swapped", "code": code, "visit_key": dst_vk, "condition": dst_cond, "swapped": True}
+
+    if dst_vk != src_vk:
+        dst_peer = (
+            db.query(GaitSession)
+            .filter(GaitSession.patient_id == patient.id, GaitSession.visit_key == dst_vk)
+            .first()
+        )
+        if dst_peer is not None:
+            src_sess.visit_label = dst_peer.visit_label
+            src_sess.visit_date = dst_peer.visit_date
+
+    src_sess.visit_key = dst_vk
+    src_sess.condition = dst_cond
+    db.commit()
+    return {"status": "moved", "code": code, "visit_key": dst_vk, "condition": dst_cond, "swapped": False}
+
+
+@router.delete("/patients/{code}/sessions")
+def delete_patient_session(
+    code: str,
+    visit_key: str = Query(...),
+    condition: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Deletes a specific condition session from a patient visit."""
+    norm_cond = _NORM_COND_MAP.get(condition.strip().lower())
+    if not norm_cond:
+        raise HTTPException(status_code=400, detail="Invalid condition. Allowed values: Baseline, Verbal, VR.")
+    vk = visit_key.strip()
+    validate_visit_params(vk, None, None)
+
+    patient = db.query(Patient).filter(Patient.code == code).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient {code} not found")
+
+    sess = (
+        db.query(GaitSession)
+        .filter(
+            GaitSession.patient_id == patient.id,
+            GaitSession.visit_key == vk,
+            GaitSession.condition == norm_cond,
+        )
+        .first()
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail=f"Session {vk}/{norm_cond} not found for patient {code}")
+
+    db.delete(sess)
+    db.commit()
+    remaining = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).count()
+    return {"status": "deleted", "code": code, "visit_key": vk, "condition": norm_cond, "remaining_sessions": remaining}

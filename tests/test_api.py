@@ -969,6 +969,67 @@ def test_sqlite_legacy_schema_migration(tmp_path):
         db_session.SessionLocal = orig_sl
 
 
+def test_reassign_and_delete_patient_session(client):
+    _cleanup_patients("s_fix_mode")
+    try:
+        base_csv = "subject;side;GPS_a;aMinSagH;GVS_aSagP\ns_fix_mode;RIGHT;9,0;8,0;6,0\n".encode("utf-8")
+        vr_uploaded_as_verbal = "subject;side;GPS_a;aMinSagH;GVS_aSagP\ns_fix_mode;RIGHT;7,2;3,5;5,8\n".encode("utf-8")
+        verbal_uploaded_as_vr = "subject;side;GPS_a;aMinSagH;GVS_aSagP\ns_fix_mode;RIGHT;8,5;6,0;6,1\n".encode("utf-8")
+
+        assert client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("b.csv", base_csv, "text/csv")},
+            data={"condition": "Baseline", "visit_key": "new"},
+        ).status_code == 200
+        assert client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("wrong_vb.csv", vr_uploaded_as_verbal, "text/csv")},
+            data={"condition": "Verbal", "subject_code": "s_fix_mode", "visit_key": "visit-1"},
+        ).status_code == 200
+
+        # Move Verbal -> VR when VR slot is empty
+        res_move = client.patch(
+            "/api/v1/patients/s_fix_mode/sessions",
+            json={"visit_key": "visit-1", "condition": "Verbal", "target_condition": "VR"},
+        )
+        assert res_move.status_code == 200
+        assert res_move.json()["status"] == "moved"
+        an1 = client.get("/api/v1/patients/s_fix_mode/analysis").json()
+        assert an1["summary"]["has_vr"] is True
+        assert an1["summary"]["has_verbal"] is False
+        assert an1["summary"]["vr_gps"] == pytest.approx(7.2, abs=1e-3)
+
+        # Upload Verbal and verify 409 without swap, then swap=true swaps VR <-> Verbal
+        assert client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("vb.csv", verbal_uploaded_as_vr, "text/csv")},
+            data={"condition": "Verbal", "subject_code": "s_fix_mode", "visit_key": "visit-1"},
+        ).status_code == 200
+        res_conflict = client.patch(
+            "/api/v1/patients/s_fix_mode/sessions",
+            json={"visit_key": "visit-1", "condition": "VR", "target_condition": "Verbal", "swap": False},
+        )
+        assert res_conflict.status_code == 409
+
+        res_swap = client.patch(
+            "/api/v1/patients/s_fix_mode/sessions",
+            json={"visit_key": "visit-1", "condition": "VR", "target_condition": "Verbal", "swap": True},
+        )
+        assert res_swap.status_code == 200
+        assert res_swap.json()["swapped"] is True
+        an2 = client.get("/api/v1/patients/s_fix_mode/analysis").json()
+        assert an2["summary"]["vr_gps"] == pytest.approx(8.5, abs=1e-3)
+        assert an2["summary"]["verbal_gps"] == pytest.approx(7.2, abs=1e-3)
+
+        # Delete Verbal session
+        res_del = client.delete("/api/v1/patients/s_fix_mode/sessions?visit_key=visit-1&condition=Verbal")
+        assert res_del.status_code == 200
+        assert res_del.json()["remaining_sessions"] == 2
+    finally:
+        _cleanup_patients("s_fix_mode")
+
+
+
 
 
 
