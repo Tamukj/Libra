@@ -215,5 +215,16 @@ def test_pelvic_overload_blocks_unsafe_vr_and_noise_pcr():
     assert mod["best_method"] == "Baseline"
 
 
+def test_rule82_non_prescriptive_wording():
+    res_red = analyze_compensation_risk(delta_hip=-3.0, delta_gvs_p=4.5, delta_gvs_k=1.0, delta_gvs_a=0.5)
+    assert res_red["status"] == "red"
+    for lang_key, rule_tag in (("ru", "8.2"), ("kz", "8.2"), ("en", "Rule 8.2")):
+        rec = res_red[f"recommendation_{lang_key}"]
+        assert "30%" not in rec
+        assert "103" in rec
+        assert rule_tag in rec
+
+
+
 
 

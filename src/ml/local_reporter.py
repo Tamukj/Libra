@@ -72,6 +72,24 @@ def _resolve_anomaly_pct(summary: Dict[str, Any]) -> Optional[float]:
     return raw_rate * 100.0 if raw_rate < 1.0 else raw_rate
 
 
+def _format_visit_segment(summary: Dict[str, Any], lang: str) -> str:
+    visit_label = str(
+        (summary.get("visit_label_kz") if lang == "kz" else None)
+        or summary.get("visit_label")
+        or summary.get("visit_key")
+        or ""
+    ).strip()
+    visit_date = str(summary.get("visit_date") or "").strip()
+    if not visit_label and not visit_date:
+        return ""
+    meta = f"{visit_label} ({visit_date})" if (visit_label and visit_date) else (visit_label or visit_date)
+    if lang == "kz":
+        return f"Қабылдау: {meta} · "
+    if lang == "en":
+        return f"Visit: {meta} · "
+    return f"Визит: {meta} · "
+
+
 def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
     """
     Generates an executive medical narrative based on biomechanical metrics and ML output.
@@ -83,7 +101,8 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
     conditions_map = loc.get("conditions", {})
 
     subject = summary.get("subject", "N/A")
-    side = str(summary.get("side", "RIGHT")).upper()
+    side = str(summary.get("side") or "UNSPECIFIED").strip().upper()
+    visit_seg = _format_visit_segment(summary, eff_lang)
 
     mode, b_gps, post_gps, d_hip, d_pelvis, d_knee, d_ankle, d_pelvis_tilt = _resolve_active_comparison(summary)
 
@@ -125,7 +144,7 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
     limitations = get_solution_limitations(eff_lang)
 
     if eff_lang == "kz":
-        side_txt = "Сол аяқ" if side == "LEFT" else "Оң аяқ"
+        side_txt = "Сол аяқ" if side == "LEFT" else ("Оң аяқ" if side == "RIGHT" else "Көрсетілмеген")
         icf_d_desc = (
             icf_desc_map.get(icf_d, icf_d)
             if icf_d is not None
@@ -133,7 +152,7 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
         )
         return (
             f"КЛИНИКАЛЫҚ БИОМЕХАНИКАЛЫҚ ҚОРЫТЫНДЫ (Libra СППР)\n"
-            f"Пациент: {subject} · Зерттелген аяқ: {side_txt} · Белсенді сынама: {mode}\n"
+            f"Пациент: {subject} · Зерттелген аяқ: {side_txt} · {visit_seg}Белсенді сынама: {mode}\n"
             f"1. ДДҰ ХҚЖ (МКФ) БОЙЫНША СТАТУС:\n"
             f"   • b770 (Жүріс стереотипі): {icf_pre_desc} → {icf_post_desc}\n"
             f"   • d450 (Жүру тұрақтылығы): {icf_d_desc}\n\n"
@@ -153,7 +172,7 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
         )
 
     if eff_lang == "en":
-        side_txt = "Left limb" if side == "LEFT" else "Right limb"
+        side_txt = "Left limb" if side == "LEFT" else ("Right limb" if side == "RIGHT" else "Unspecified")
         icf_d_desc = (
             icf_desc_map.get(icf_d, icf_d)
             if icf_d is not None
@@ -161,7 +180,7 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
         )
         return (
             f"CLINICAL BIOMECHANICAL REPORT (Libra CDSS)\n"
-            f"Patient: {subject} · Side: {side_txt} · Evaluated trial: {mode}\n"
+            f"Patient: {subject} · Side: {side_txt} · {visit_seg}Evaluated trial: {mode}\n"
             f"1. WHO ICF FUNCTIONAL STATUS:\n"
             f"   • b770 (Gait pattern functions): {icf_pre_desc} → {icf_post_desc}\n"
             f"   • d450 (Walking stability): {icf_d_desc}\n\n"
@@ -180,7 +199,7 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
             f"   {limitations}"
         )
 
-    side_txt = "Левая сторона" if side == "LEFT" else "Правая сторона"
+    side_txt = "Левая сторона" if side == "LEFT" else ("Правая сторона" if side == "RIGHT" else "Не указана")
     icf_d_desc = (
         icf_desc_map.get(icf_d, icf_d)
         if icf_d is not None
@@ -188,7 +207,7 @@ def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> st
     )
     return (
         f"КЛИНИЧЕСКИЙ БИОМЕХАНИЧЕСКИЙ ПРОТОКОЛ (Libra СППР)\n"
-        f"Пациент: {subject} · Исследуемая сторона: {side_txt} · Активная проба: {mode}\n"
+        f"Пациент: {subject} · Исследуемая сторона: {side_txt} · {visit_seg}Активная проба: {mode}\n"
         f"1. СТАТУС ПО МКФ ВОЗ:\n"
         f"   • b770 (Стереотип походки): {icf_pre_desc} → {icf_post_desc}\n"
         f"   • d450 (Стабильность ходьбы): {icf_d_desc}\n\n"
@@ -215,6 +234,7 @@ def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
     """
     eff_lang = lang if lang in ("ru", "kz", "en") else "ru"
     subject = summary.get("subject", "N/A")
+    visit_seg = _format_visit_segment(summary, eff_lang)
     mode, _, post_gps, d_hip, d_pelvis, d_knee, d_ankle, d_pelvis_tilt = _resolve_active_comparison(summary)
 
     risk = analyze_compensation_risk(d_hip, d_pelvis, d_knee, d_ankle, delta_pelvis_term=d_pelvis_tilt)
@@ -238,7 +258,7 @@ def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
         )
         return (
             f"БАЛАНЫҢ ЖҮРІС ТӨЛҚҰЖАТЫ (Ата-аналарға арналған ақпараттық анықтама)\n"
-            f"Пациент коды: {subject} · Зерттеу түрі: {mode}\n"
+            f"Пациент коды: {subject} · {visit_seg}Зерттеу түрі: {mode}\n"
             f"1. ҚИМЫЛ-ҚОЗҒАЛЫС БАЙҚАУЫ:\n"
             f"   • {progress_text}\n"
             f"   • Жамбас пен бел қалпы: {posture_text}.\n"
@@ -261,7 +281,7 @@ def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
         )
         return (
             f"CHILD GAIT PASSPORT (Parent Information Summary)\n"
-            f"Patient code: {subject} · Session: {mode}\n"
+            f"Patient code: {subject} · {visit_seg}Session: {mode}\n"
             f"1. MOVEMENT OBSERVATIONS:\n"
             f"   • {progress_text}\n"
             f"   • Pelvis & posture: {posture_text}.\n"
@@ -283,7 +303,7 @@ def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
     )
     return (
         f"ПАСПОРТ ПОХОДКИ РЕБЕНКА (Информационная справка для родителей)\n"
-        f"Код пациента: {subject} · Тип исследования: {mode}\n"
+        f"Код пациента: {subject} · {visit_seg}Тип исследования: {mode}\n"
         f"1. НАБЛЮДЕНИЯ ЗА ДВИЖЕНИЕМ:\n"
         f"   • {progress_text}\n"
         f"   • Положение таза и спины: {posture_text}.\n"

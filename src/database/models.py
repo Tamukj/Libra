@@ -2,7 +2,7 @@
 
 import datetime
 from typing import Optional, List
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Text, UniqueConstraint, TypeDecorator
+from sqlalchemy import Boolean, String, Integer, Float, DateTime, ForeignKey, Text, UniqueConstraint, TypeDecorator
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -49,10 +49,12 @@ class Patient(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
-    side: Mapped[str] = mapped_column(String(16), nullable=False)  # LEFT or RIGHT
-    weight: Mapped[float] = mapped_column(Float, nullable=False)
-    height: Mapped[float] = mapped_column(Float, nullable=False)
-    leg_length: Mapped[float] = mapped_column(Float, nullable=False)
+    side: Mapped[str] = mapped_column(String(16), default="UNSPECIFIED", nullable=False)  # LEFT, RIGHT, or UNSPECIFIED
+    weight: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    height: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    leg_length: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    anthropometry_estimated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    side_estimated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     clinic_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("clinics.id"), index=True, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(UTCDateTime, default=_utcnow)
 
@@ -63,10 +65,13 @@ class Patient(Base):
 
 class GaitSession(Base):
     __tablename__ = "gait_sessions"
-    __table_args__ = (UniqueConstraint("patient_id", "condition", name="uq_patient_condition"),)
+    __table_args__ = (UniqueConstraint("patient_id", "visit_key", "condition", name="uq_patient_visit_condition"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     patient_id: Mapped[int] = mapped_column(Integer, ForeignKey("patients.id", ondelete="CASCADE"), index=True, nullable=False)
+    visit_key: Mapped[str] = mapped_column(String(64), default="visit-1", nullable=False)
+    visit_label: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    visit_date: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     condition: Mapped[str] = mapped_column(String(32), nullable=False)  # Baseline, Verbal, VR
     cycle_count: Mapped[int] = mapped_column(Integer, default=0)
     avg_gps: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -89,6 +94,7 @@ class ClinicalReport(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     patient_id: Mapped[int] = mapped_column(Integer, ForeignKey("patients.id", ondelete="CASCADE"), index=True, nullable=False)
+    visit_key: Mapped[str] = mapped_column(String(64), default="visit-1", nullable=False)
     icf_b770: Mapped[str] = mapped_column(String(16), nullable=False)
     icf_d450: Mapped[str] = mapped_column(String(16), nullable=False)
     tje: Mapped[float] = mapped_column(Float, nullable=False)

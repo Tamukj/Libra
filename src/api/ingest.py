@@ -1,5 +1,6 @@
 """CSV ingestion, Law 94-V PII validation, size limiting, and atomic database upsert."""
 
+import datetime
 import io
 import json
 import math
@@ -16,6 +17,7 @@ from src.core.biomechanics import compute_curve_gvs_gps, compute_kinematic_summa
 from src.core.data_loader import clean_identifier_value
 from src.core.normative_data import NORMATIVE_PROFILES
 from src.database.models import Clinic, GaitSession, Patient
+from src.api.services import default_visit_label, group_visits, parse_visit_suffix
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB cap per CSV upload
 
@@ -167,7 +169,7 @@ def _sanitize_json_matrix(arr: np.ndarray) -> List[List[Optional[float]]]:
 def _prepare_subject_payload(df_sub: pd.DataFrame, target_code: str) -> Dict[str, Any]:
     _validate_non_pii_subject_code(target_code)
 
-    def _parse_optional(canonical: str) -> Optional[float]:
+    def _parse_optional(canonical: str, require_positive: bool = False) -> Optional[float]:
         col = _find_col_by_aliases(df_sub, canonical)
         if not col:
             return None
@@ -176,22 +178,22 @@ def _prepare_subject_payload(df_sub: pd.DataFrame, target_code: str) -> Dict[str
             return None
         s_clean = pd.to_numeric(s.astype(str).str.replace(",", ".").str.strip(), errors="coerce").dropna()
         valid_nums = s_clean[np.isfinite(s_clean)]
-        return float(valid_nums.mean()) if not valid_nums.empty else None
+        if valid_nums.empty:
+            return None
+        if require_positive and (valid_nums <= 0).any():
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid physiological measurements: weight, height, and leg length must be positive numbers.",
+            )
+        return float(valid_nums.mean())
 
-    def _parse_val(canonical: str, default_val: float) -> Tuple[float, bool]:
-        val = _parse_optional(canonical)
-        return (val, True) if val is not None else (default_val, False)
-
-    raw_weight, has_weight = _parse_val("weight", 42.0)
-    raw_height, has_height = _parse_val("height", 1.38)
-    raw_leg, has_leg = _parse_val("leg_length", 0.71)
+    raw_weight = _parse_optional("weight", require_positive=True)
+    raw_height = _parse_optional("height", require_positive=True)
+    raw_leg = _parse_optional("leg_length", require_positive=True)
+    has_weight = raw_weight is not None
+    has_height = raw_height is not None
+    has_leg = raw_leg is not None
     anthropometry_estimated = not (has_weight and has_height and has_leg)
-
-    if raw_weight <= 0 or raw_height <= 0 or raw_leg <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid physiological measurements: weight, height, and leg length must be positive numbers.",
-        )
 
     side_col = _find_col_by_aliases(df_sub, "side")
     parsed_side: Optional[str] = None
@@ -206,6 +208,7 @@ def _prepare_subject_payload(df_sub: pd.DataFrame, target_code: str) -> Dict[str
             raise HTTPException(status_code=400, detail="Conflicting limb sides (LEFT and RIGHT) in same subject rows.")
         if mapped_sides:
             parsed_side = next(iter(mapped_sides))
+    side_estimated = parsed_side is None
 
     curves_by_joint: Dict[str, np.ndarray] = {}
     kin_joints_payload: Dict[str, Dict[str, List[Optional[float]]]] = {}
@@ -237,8 +240,7 @@ def _prepare_subject_payload(df_sub: pd.DataFrame, target_code: str) -> Dict[str
     derived_gvs = compute_curve_gvs_gps(curves_by_joint, NORMATIVE_PROFILES) if has_kin_waveforms else {}
     derived_kin_summary = compute_kinematic_summary_metrics(curves_by_joint) if has_kin_waveforms else {}
 
-    opt_gps = _parse_optional("GPS_a") or derived_gvs.get("GPS_a")
-    # Preserve explicit 0.0 if parsed! Only fall back when None.
+    # Preserve explicit 0.0 if parsed; fall back to curve-derived GPS only when None.
     raw_gps = _parse_optional("GPS_a")
     opt_gps = raw_gps if raw_gps is not None else derived_gvs.get("GPS_a")
 
@@ -299,6 +301,7 @@ def _prepare_subject_payload(df_sub: pd.DataFrame, target_code: str) -> Dict[str
     return {
         "code": target_code,
         "parsed_side": parsed_side,
+        "side_estimated": side_estimated,
         "raw_weight": raw_weight,
         "has_weight": has_weight,
         "raw_height": raw_height,
@@ -380,12 +383,97 @@ def prepare_csv_upload_payloads(
     return normalized_condition, len(df_upload), len(df_upload.columns), payloads
 
 
+def validate_visit_params(
+    visit_key: Optional[str],
+    visit_label: Optional[str],
+    visit_date: Optional[str],
+) -> Tuple[Optional[str], str, str]:
+    """Validates optional visit_key, visit_label, and visit_date upload parameters at API boundary."""
+    clean_vk = visit_key.strip() if visit_key is not None else ""
+    norm_vk: Optional[str] = clean_vk if clean_vk else None
+    if norm_vk is not None and norm_vk.lower() != "new":
+        if not re.fullmatch(r"[a-zA-Z0-9_\-]{1,64}", norm_vk):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid visit_key. Allowed characters: alphanumeric, hyphens, and underscores (max 64 chars).",
+            )
+    elif norm_vk is not None:
+        norm_vk = "new"
+
+    clean_vl = (visit_label or "").strip()[:128]
+    clean_vd = (visit_date or "").strip()
+    if clean_vd:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", clean_vd):
+            raise HTTPException(status_code=400, detail="Invalid visit_date. Expected YYYY-MM-DD format.")
+        try:
+            datetime.date.fromisoformat(clean_vd)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid visit_date. Expected valid YYYY-MM-DD calendar date.")
+
+    return norm_vk, clean_vl, clean_vd
+
+
+def _resolve_patient_visit_target(
+    existing_sessions: List[GaitSession],
+    req_visit_key: Optional[str],
+    req_visit_label: str,
+    req_visit_date: str,
+) -> Tuple[str, str, str, bool]:
+    today_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    grouped = group_visits(existing_sessions)
+    existing_by_key = dict(grouped)
+
+    if req_visit_key == "new":
+        existing_keys = set(existing_by_key.keys())
+        nums = [n for vk in existing_keys if (n := parse_visit_suffix(vk)) > 0]
+        next_n = (max(nums) if nums else len(existing_keys)) + 1
+        resolved_vk = f"visit-{next_n}"
+        while resolved_vk in existing_keys:
+            next_n += 1
+            resolved_vk = f"visit-{next_n}"
+        resolved_vl = req_visit_label or f"Визит {next_n}"
+        resolved_vd = req_visit_date or today_utc
+        return resolved_vk, resolved_vl, resolved_vd, True
+
+    if req_visit_key is None:
+        if grouped:
+            resolved_vk, target_sessions = grouped[-1]
+            prev_vl = next((s.visit_label for s in target_sessions if getattr(s, "visit_label", "")), "")
+            prev_vd = next((s.visit_date for s in target_sessions if getattr(s, "visit_date", "")), "")
+            is_seeded = any(getattr(s, "source", "seeded") == "seeded" for s in target_sessions)
+            resolved_vl = req_visit_label or prev_vl or default_visit_label(resolved_vk, is_seeded=is_seeded)
+            resolved_vd = req_visit_date or prev_vd
+            return resolved_vk, resolved_vl, resolved_vd, False
+        resolved_vk = "visit-1"
+        resolved_vl = req_visit_label or "Визит 1"
+        resolved_vd = req_visit_date or today_utc
+        return resolved_vk, resolved_vl, resolved_vd, True
+
+    resolved_vk = req_visit_key
+    target_sessions = existing_by_key.get(resolved_vk, [])
+    visit_created = len(target_sessions) == 0
+    if visit_created:
+        resolved_vl = req_visit_label or default_visit_label(resolved_vk)
+        resolved_vd = req_visit_date or today_utc
+    else:
+        prev_vl = next((s.visit_label for s in target_sessions if getattr(s, "visit_label", "")), "")
+        prev_vd = next((s.visit_date for s in target_sessions if getattr(s, "visit_date", "")), "")
+        is_seeded = any(getattr(s, "source", "seeded") == "seeded" for s in target_sessions)
+        resolved_vl = req_visit_label or prev_vl or default_visit_label(resolved_vk, is_seeded=is_seeded)
+        resolved_vd = req_visit_date or prev_vd
+    return resolved_vk, resolved_vl, resolved_vd, visit_created
+
+
 def persist_upload_payloads(
     db: Session,
     normalized_condition: str,
     payloads: List[Dict[str, Any]],
+    visit_key: Optional[str] = None,
+    visit_label: Optional[str] = None,
+    visit_date: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Atomically upserts Patient and GaitSession rows using dialect-native ON CONFLICT."""
+    """Atomically upserts Patient and longitudinal GaitSession rows using dialect-native ON CONFLICT."""
+    norm_vk, clean_vl, clean_vd = validate_visit_params(visit_key, visit_label, visit_date)
     clinic = db.query(Clinic).first()
     clinic_id = clinic.id if clinic else None
 
@@ -398,21 +486,26 @@ def persist_upload_payloads(
             target_code = item["code"]
             p_stmt = insert_fn(Patient).values(
                 code=target_code,
-                side=item["parsed_side"] or "RIGHT",
+                side=item["parsed_side"] or "UNSPECIFIED",
                 weight=item["raw_weight"],
                 height=item["raw_height"],
                 leg_length=item["raw_leg"],
+                anthropometry_estimated=item["anthropometry_estimated"],
+                side_estimated=item["side_estimated"],
                 clinic_id=clinic_id,
             )
             update_patient_cols: Dict[str, Any] = {}
             if item["parsed_side"] is not None:
                 update_patient_cols["side"] = item["parsed_side"]
+                update_patient_cols["side_estimated"] = False
             if item["has_weight"]:
                 update_patient_cols["weight"] = item["raw_weight"]
             if item["has_height"]:
                 update_patient_cols["height"] = item["raw_height"]
             if item["has_leg"]:
                 update_patient_cols["leg_length"] = item["raw_leg"]
+            if item["has_weight"] and item["has_height"] and item["has_leg"]:
+                update_patient_cols["anthropometry_estimated"] = False
 
             if update_patient_cols:
                 p_stmt = p_stmt.on_conflict_do_update(index_elements=["code"], set_=update_patient_cols)
@@ -421,10 +514,17 @@ def persist_upload_payloads(
             db.execute(p_stmt)
             db.flush()
 
-            patient = db.query(Patient).filter(Patient.code == target_code).one()
+            patient = db.query(Patient).populate_existing().filter(Patient.code == target_code).one()
+            existing_sessions = db.query(GaitSession).filter(GaitSession.patient_id == patient.id).all()
+            resolved_vk, resolved_vl, resolved_vd, visit_created = _resolve_patient_visit_target(
+                existing_sessions, norm_vk, clean_vl, clean_vd
+            )
 
             s_stmt = insert_fn(GaitSession).values(
                 patient_id=patient.id,
+                visit_key=resolved_vk,
+                visit_label=resolved_vl,
+                visit_date=resolved_vd,
                 condition=normalized_condition,
                 cycle_count=item["cycle_count"],
                 avg_gps=item["avg_gps"],
@@ -438,8 +538,10 @@ def persist_upload_payloads(
                 kinematics_json=item["kinematics_json"],
                 source="uploaded",
             ).on_conflict_do_update(
-                index_elements=["patient_id", "condition"],
+                index_elements=["patient_id", "visit_key", "condition"],
                 set_={
+                    "visit_label": resolved_vl,
+                    "visit_date": resolved_vd,
                     "cycle_count": item["cycle_count"],
                     "avg_gps": item["avg_gps"],
                     "avg_amin_sagh": item["avg_amin_sagh"],
@@ -454,10 +556,28 @@ def persist_upload_payloads(
                 },
             )
             db.execute(s_stmt)
+
+            if not visit_created and (clean_vl or clean_vd):
+                sync_fields: Dict[str, Any] = {}
+                if clean_vl:
+                    sync_fields["visit_label"] = resolved_vl
+                if clean_vd:
+                    sync_fields["visit_date"] = resolved_vd
+                if sync_fields:
+                    db.query(GaitSession).filter(
+                        GaitSession.patient_id == patient.id,
+                        GaitSession.visit_key == resolved_vk,
+                    ).update(sync_fields, synchronize_session=False)
+
             results.append({
                 "code": patient.code,
-                "anthropometry_estimated": item["anthropometry_estimated"],
+                "anthropometry_estimated": bool(patient.anthropometry_estimated),
+                "side_estimated": bool(patient.side_estimated),
                 "has_kinematics": item["has_kinematics"],
+                "visit_key": resolved_vk,
+                "visit_label": resolved_vl,
+                "visit_date": resolved_vd,
+                "visit_created": visit_created,
             })
 
         db.commit()

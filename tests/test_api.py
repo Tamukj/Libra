@@ -70,11 +70,17 @@ def test_list_patients(client):
     sample = next(p for p in patients if p["code"] == "s61520_22")
     for field in ("id", "code", "side", "weight", "height", "leg_length", "clinic_name",
                   "pcr", "tje", "status", "baseline_gps", "vr_gps", "delta_amin_sagh",
-                  "has_vr", "has_verbal"):
+                  "has_vr", "has_verbal", "visit_count", "latest_visit_key",
+                  "latest_visit_label", "latest_visit_date",
+                  "anthropometry_estimated", "side_estimated"):
         assert field in sample
     assert sample["status"] in ["green", "yellow", "red"]
     assert sample["has_vr"] is True
     assert sample["has_verbal"] is True
+    assert sample["visit_count"] >= 1
+    assert sample["latest_visit_key"] == "visit-1"
+    assert sample["anthropometry_estimated"] is False
+    assert sample["side_estimated"] is False
 
 def test_patient_analysis(client):
     response = client.get("/api/v1/patients/s61520_22/analysis")
@@ -592,6 +598,376 @@ def test_db_kinematics_precedence_and_atomic_concurrency(client):
         assert count[0] <= 5
     finally:
         event.remove(db_session.engine, "before_cursor_execute", _cnt)
+
+
+def test_honest_anthropometry_and_side_defaults(client):
+    _cleanup_patients("s_honest_1", "s_bad_anthro")
+    try:
+        # 1. Explicit <= 0 anthropometry must fail with 400
+        bad_csv = "subject;side;weight;height;leg_length;GPS_a\ns_bad_anthro;LEFT;0;1,35;0,70;9,0\n".encode("utf-8")
+        res_bad = client.post("/api/v1/patients/upload", files={"file": ("bad.csv", bad_csv, "text/csv")})
+        assert res_bad.status_code == 400
+
+        # 2. Missing weight/height/leg_length and missing side -> stored as None / UNSPECIFIED + flags True
+        bare_csv = "subject;GPS_a;aMinSagH;GVS_aSagP\ns_honest_1;11,2;-4,5;3,8\n".encode("utf-8")
+        res_up = client.post("/api/v1/patients/upload", files={"file": ("bare.csv", bare_csv, "text/csv")})
+        assert res_up.status_code == 200
+        up = res_up.json()
+        assert up["anthropometry_estimated"] is True
+        assert up["side_estimated"] is True
+
+        pts = client.get("/api/v1/patients").json()
+        p_row = next(p for p in pts if p["code"] == "s_honest_1")
+        assert p_row["weight"] is None
+        assert p_row["height"] is None
+        assert p_row["leg_length"] is None
+        assert p_row["side"] == "UNSPECIFIED"
+        assert p_row["anthropometry_estimated"] is True
+        assert p_row["side_estimated"] is True
+
+        rep_ru = client.post("/api/v1/patients/s_honest_1/report?lang=ru").json()
+        assert "Не указана" in rep_ru["narrative"]
+
+        # 3. Upload real anthropometry + side -> updates DB and flips flags False
+        full_csv = (
+            "subject;side;weight;height;leg_length;GPS_a;aMinSagH;GVS_aSagP\n"
+            "s_honest_1;LEFT;38,5;1,34;0,69;9,5;-5,5;4,0\n"
+        ).encode("utf-8")
+        res_full = client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("full.csv", full_csv, "text/csv")},
+            data={"condition": "VR"},
+        )
+        assert res_full.status_code == 200
+        assert res_full.json()["anthropometry_estimated"] is False
+        assert res_full.json()["side_estimated"] is False
+
+        # 4. Follow-up upload omitting anthropometry & side MUST preserve existing DB values
+        followup_csv = "subject;GPS_a;aMinSagH;GVS_aSagP\ns_honest_1;9,8;-5,0;4,1\n".encode("utf-8")
+        res_follow = client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("follow.csv", followup_csv, "text/csv")},
+            data={"condition": "Baseline", "visit_key": "new", "visit_date": "2026-11-26"},
+        )
+        assert res_follow.status_code == 200
+        assert res_follow.json()["anthropometry_estimated"] is False
+        assert res_follow.json()["side_estimated"] is False
+
+        pts_after = client.get("/api/v1/patients").json()
+        p_after = next(p for p in pts_after if p["code"] == "s_honest_1")
+        assert p_after["side"] == "LEFT"
+        assert p_after["weight"] == pytest.approx(38.5, abs=1e-4)
+        assert p_after["height"] == pytest.approx(1.34, abs=1e-4)
+        assert p_after["leg_length"] == pytest.approx(0.69, abs=1e-4)
+        assert p_after["anthropometry_estimated"] is False
+        assert p_after["side_estimated"] is False
+    finally:
+        _cleanup_patients("s_honest_1", "s_bad_anthro")
+
+
+def test_longitudinal_visits_lifecycle_and_endpoints(client):
+    import subprocess
+    import tempfile
+    from src.database.session import SessionLocal
+    from src.database.models import ClinicalReport
+
+    _cleanup_patients("s_long_1")
+    try:
+        tpl_res = client.get("/api/v1/ingest/template?format=kinematics")
+        assert tpl_res.status_code == 200
+        tpl_lines = tpl_res.text.strip().splitlines()
+        hdr = tpl_lines[0]
+        vals = tpl_lines[1].split(";")
+
+        # 1. Invalid visit_key / visit_date return 400
+        bad_vk = client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("v1.csv", (hdr + "\n" + ";".join(vals) + "\n").encode("utf-8"), "text/csv")},
+            data={"subject_code": "s_long_1", "visit_key": "bad visit!"},
+        )
+        assert bad_vk.status_code == 400
+
+        bad_vd = client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("v1.csv", (hdr + "\n" + ";".join(vals) + "\n").encode("utf-8"), "text/csv")},
+            data={"subject_code": "s_long_1", "visit_date": "2026-02-30"},
+        )
+        assert bad_vd.status_code == 400
+
+        # 2. Visit 1: Baseline + VR (attaches to visit-1 automatically when visit_key omitted)
+        v1_base_csv = (
+            "subject;side;weight;height;LegLength;GPS_a;GVS_aSagP;GVS_aSagH;GVS_aSagK;GVS_aSagA;aMinSagH\n"
+            "s_long_1;RIGHT;36,0;1,30;0,68;12,0;10,0;13,0;10,0;5,0;14,0\n"
+        ).encode("utf-8")
+        r1_b = client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("v1_b.csv", v1_base_csv, "text/csv")},
+            data={"condition": "Baseline", "visit_label": "Первичный курс", "visit_date": "2026-01-15"},
+        )
+        assert r1_b.status_code == 200
+        d1_b = r1_b.json()
+        assert d1_b["visit_key"] == "visit-1"
+        assert d1_b["visit_label"] == "Первичный курс"
+        assert d1_b["visit_date"] == "2026-01-15"
+        assert d1_b["visit_created"] is True
+
+        v1_vr_csv = (
+            "subject;GPS_a;GVS_aSagP;GVS_aSagH;GVS_aSagK;GVS_aSagA;aMinSagH\n"
+            "s_long_1;10,6;10,2;11,0;9,5;5,0;10,5\n"
+        ).encode("utf-8")
+        r1_vr = client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("v1_vr.csv", v1_vr_csv, "text/csv")},
+            data={"condition": "VR"},
+        )
+        assert r1_vr.status_code == 200
+        d1_vr = r1_vr.json()
+        assert d1_vr["visit_key"] == "visit-1"
+        assert d1_vr["visit_created"] is False
+
+        # 3. Visit 2: visit_key="new" with kinematics on Baseline + Verbal trial
+        r2_b = client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("v2_b.csv", (hdr + "\n" + ";".join(vals) + "\n").encode("utf-8"), "text/csv")},
+            data={
+                "condition": "Baseline",
+                "subject_code": "s_long_1",
+                "visit_key": "new",
+                "visit_label": "Контроль через 3 мес",
+                "visit_date": "2026-04-20",
+            },
+        )
+        assert r2_b.status_code == 200
+        d2_b = r2_b.json()
+        assert d2_b["visit_key"] == "visit-2"
+        assert d2_b["visit_label"] == "Контроль через 3 мес"
+        assert d2_b["visit_date"] == "2026-04-20"
+        assert d2_b["visit_created"] is True
+
+        v2_vb_csv = (
+            "subject;GPS_a;GVS_aSagP;GVS_aSagH;GVS_aSagK;GVS_aSagA;aMinSagH\n"
+            "s_long_1;7,2;7,0;8,0;7,0;4,0;5,0\n"
+        ).encode("utf-8")
+        r2_vb = client.post(
+            "/api/v1/patients/upload",
+            files={"file": ("v2_vb.csv", v2_vb_csv, "text/csv")},
+            data={"condition": "Verbal", "subject_code": "s_long_1"},
+        )
+        assert r2_vb.status_code == 200
+        assert r2_vb.json()["visit_key"] == "visit-2"
+        assert r2_vb.json()["visit_created"] is False
+
+        # 4. GET /visits lists both visits chronologically without overwriting visit-1
+        visits_res = client.get("/api/v1/patients/s_long_1/visits")
+        assert visits_res.status_code == 200
+        visits_payload = visits_res.json()
+        assert visits_payload["code"] == "s_long_1"
+        visits = visits_payload["visits"]
+        assert len(visits) == 2
+        assert visits[0]["visit_key"] == "visit-1"
+        assert visits[0]["is_latest"] is False
+        assert visits[0]["baseline_gps"] == pytest.approx(12.0, abs=1e-3)
+        assert visits[0]["vr_gps"] == pytest.approx(10.6, abs=1e-3)
+        assert visits[0]["conditions"] == ["Baseline", "VR"]
+        assert visits[1]["visit_key"] == "visit-2"
+        assert visits[1]["is_latest"] is True
+        assert visits[1]["verbal_gps"] == pytest.approx(7.2, abs=1e-3)
+        assert visits[1]["conditions"] == ["Baseline", "Verbal"]
+
+        # 5. GET /analysis scoped to visit-1 vs visit-2 (default latest)
+        an_v1 = client.get("/api/v1/patients/s_long_1/analysis?visit=visit-1").json()
+        assert an_v1["active_visit"]["visit_key"] == "visit-1"
+        assert len(an_v1["visits"]) == 2
+        assert an_v1["summary"]["baseline_gps"] == pytest.approx(12.0, abs=1e-3)
+        assert an_v1["summary"]["vr_gps"] == pytest.approx(10.6, abs=1e-3)
+        assert an_v1["icf"]["b770_post"] == "b770.2"
+        assert an_v1["icf"]["b770_post_condition"] == "VR"
+        assert an_v1["ml"]["active_condition_evaluated"] == "VR"
+        assert an_v1["ml"]["predicted_condition"] in ("VR", "Baseline")
+
+        an_v2 = client.get("/api/v1/patients/s_long_1/analysis").json()
+        assert an_v2["active_visit"]["visit_key"] == "visit-2"
+        assert an_v2["summary"]["active_modality"] == "Verbal"
+        assert an_v2["icf"]["b770_post"] == "b770.1"
+        assert an_v2["icf"]["b770_post_condition"] == "Verbal"
+        assert an_v2["ml"]["active_condition_evaluated"] == "Baseline"
+
+        # 6. GET /kinematics scoped to visit-1 (no curves) vs visit-2 (has Baseline curves)
+        kin_v1 = client.get("/api/v1/patients/s_long_1/kinematics?visit=visit-1").json()
+        assert kin_v1["visit_key"] == "visit-1"
+        assert kin_v1["has_curves"] is False
+
+        kin_v2 = client.get("/api/v1/patients/s_long_1/kinematics?visit=visit-2").json()
+        assert kin_v2["visit_key"] == "visit-2"
+        assert kin_v2["has_curves"] is True
+        assert kin_v2["available_conditions"] == ["Baseline"]
+
+        # 7. GET /diff across visits preserves visit labels
+        diff_res = client.get(
+            "/api/v1/patients/s_long_1/diff?visit_a=visit-1&visit_b=visit-2&session_a=VR&session_b=Verbal"
+        )
+        assert diff_res.status_code == 200
+        diff = diff_res.json()
+        assert diff["visit_a"] == "visit-1"
+        assert diff["visit_b"] == "visit-2"
+        assert "Первичный курс" in diff["session_a_label"]
+        assert "Контроль через 3 мес" in diff["session_b_label"]
+        assert diff["delta_gps"] == pytest.approx(7.2 - 10.6, abs=1e-2)
+
+        # 8. POST /report and GET /report.pdf scoped to visit-1
+        rep_res = client.post("/api/v1/patients/s_long_1/report?visit=visit-1&lang=ru")
+        assert rep_res.status_code == 200
+        rep = rep_res.json()
+        assert rep["visit_key"] == "visit-1"
+        assert "Первичный курс" in rep["narrative"]
+        assert "2026-01-15" in rep["narrative"]
+        with SessionLocal() as db:
+            db_rep = db.query(ClinicalReport).filter(ClinicalReport.id == rep["report_id"]).one()
+            assert db_rep.visit_key == "visit-1"
+
+        pdf_res = client.get("/api/v1/patients/s_long_1/report.pdf?visit=visit-1&lang=ru")
+        assert pdf_res.status_code == 200
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
+            f.write(pdf_res.content)
+            f.flush()
+            pdf_txt = subprocess.check_output(["pdftotext", f.name, "-"]).decode("utf-8", "replace")
+            assert "Первичный курс" in pdf_txt
+            assert "2026-01-15" in pdf_txt
+
+        # 9. Unknown visit returns 404
+        assert client.get("/api/v1/patients/s_long_1/analysis?visit=visit-999").status_code == 404
+        assert client.get("/api/v1/patients/s_long_1/kinematics?visit=visit-999").status_code == 404
+        assert client.get("/api/v1/patients/s_long_1/diff?visit=visit-999").status_code == 404
+        assert client.post("/api/v1/patients/s_long_1/report?visit=visit-999").status_code == 404
+        assert client.get("/api/v1/patients/s_long_1/report.pdf?visit=visit-999").status_code == 404
+    finally:
+        _cleanup_patients("s_long_1")
+
+
+def test_sqlite_legacy_schema_migration(tmp_path):
+    import sqlite3
+    from sqlalchemy.orm import sessionmaker
+    import src.database.session as db_session
+    from src.database.models import Patient, GaitSession, ClinicalReport
+
+    legacy_db = tmp_path / "legacy_libra.db"
+    conn = sqlite3.connect(str(legacy_db))
+    conn.executescript("""
+        CREATE TABLE clinics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name VARCHAR(255) NOT NULL,
+            city VARCHAR(100) DEFAULT '',
+            region VARCHAR(100) DEFAULT '',
+            created_at DATETIME
+        );
+        CREATE TABLE patients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code VARCHAR(64) NOT NULL UNIQUE,
+            side VARCHAR(16) NOT NULL,
+            weight FLOAT NOT NULL,
+            height FLOAT NOT NULL,
+            leg_length FLOAT NOT NULL,
+            clinic_id INTEGER REFERENCES clinics(id),
+            created_at DATETIME
+        );
+        CREATE TABLE gait_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+            condition VARCHAR(32) NOT NULL,
+            cycle_count INTEGER DEFAULT 0,
+            avg_gps FLOAT,
+            avg_amin_sagh FLOAT,
+            avg_gvs_pelvis FLOAT,
+            avg_gvs_hip FLOAT,
+            avg_gvs_knee FLOAT,
+            avg_gvs_ankle FLOAT,
+            source VARCHAR(32) DEFAULT 'seeded',
+            recorded_at DATETIME,
+            CONSTRAINT uq_patient_condition UNIQUE (patient_id, condition)
+        );
+        CREATE TABLE clinical_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+            icf_b770 VARCHAR(16) NOT NULL,
+            icf_d450 VARCHAR(16) NOT NULL,
+            tje FLOAT NOT NULL,
+            pcr FLOAT NOT NULL,
+            status VARCHAR(16) DEFAULT 'green',
+            narrative_ru TEXT NOT NULL,
+            narrative_kz TEXT NOT NULL,
+            audience VARCHAR(16) DEFAULT 'doctor',
+            created_at DATETIME
+        );
+        INSERT INTO clinics (id, name) VALUES (1, 'Legacy Clinic');
+        INSERT INTO patients (id, code, side, weight, height, leg_length, clinic_id)
+            VALUES (1, 's_seed_leg', 'RIGHT', 42.0, 1.38, 0.71, 1);
+        INSERT INTO patients (id, code, side, weight, height, leg_length, clinic_id)
+            VALUES (2, 's_up_leg', 'LEFT', 39.0, 1.32, 0.68, 1);
+        INSERT INTO gait_sessions (id, patient_id, condition, cycle_count, avg_gps, source)
+            VALUES (10, 1, 'Baseline', 15, 10.2, 'seeded');
+        INSERT INTO gait_sessions (id, patient_id, condition, cycle_count, avg_gps, source)
+            VALUES (11, 2, 'Baseline', 8, 11.4, 'uploaded');
+        INSERT INTO clinical_reports (id, patient_id, icf_b770, icf_d450, tje, pcr, narrative_ru, narrative_kz)
+            VALUES (5, 1, 'b770.2', 'd450.1', -2.0, 0.2, 'RU', 'KZ');
+    """)
+    conn.commit()
+    conn.close()
+
+    mig_url = f"sqlite:///{legacy_db}"
+    mig_engine = create_engine(mig_url, connect_args={"check_same_thread": False, "timeout": 30}, echo=False)
+    orig_url, orig_engine, orig_sl = db_session.DB_URL, db_session.engine, db_session.SessionLocal
+    try:
+        db_session.DB_URL = mig_url
+        db_session.engine = mig_engine
+        db_session.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=mig_engine)
+        db_session.init_db(seed_cohort=False)
+
+        with db_session.SessionLocal() as db:
+            p_seed = db.query(Patient).filter(Patient.code == "s_seed_leg").one()
+            p_up = db.query(Patient).filter(Patient.code == "s_up_leg").one()
+            assert p_seed.anthropometry_estimated is False
+            assert p_seed.side_estimated is False
+
+            gs_seed = db.query(GaitSession).filter(GaitSession.patient_id == p_seed.id).one()
+            gs_up = db.query(GaitSession).filter(GaitSession.patient_id == p_up.id).one()
+            assert gs_seed.visit_key == "visit-1"
+            assert gs_seed.visit_label == "Базовый курс (KU Leuven)"
+            assert gs_seed.visit_date == ""
+            assert gs_up.visit_key == "visit-1"
+            assert gs_up.visit_label == "Визит 1"
+            assert gs_up.visit_date == ""
+
+            rep = db.query(ClinicalReport).filter(ClinicalReport.id == 5).one()
+            assert rep.visit_key == "visit-1"
+
+            # Verify uq_patient_condition was replaced with uq_patient_visit_condition
+            db.add(GaitSession(
+                patient_id=p_seed.id,
+                visit_key="visit-2",
+                visit_label="Визит 2",
+                visit_date="2026-11-25",
+                condition="Baseline",
+                cycle_count=12,
+                avg_gps=9.1,
+                source="uploaded",
+            ))
+            # Verify nullable weight/height/leg_length on Patient
+            db.add(Patient(
+                code="s_nullable_after_mig",
+                side="UNSPECIFIED",
+                weight=None,
+                height=None,
+                leg_length=None,
+                anthropometry_estimated=True,
+                side_estimated=True,
+            ))
+            db.commit()
+    finally:
+        mig_engine.dispose()
+        db_session.DB_URL = orig_url
+        db_session.engine = orig_engine
+        db_session.SessionLocal = orig_sl
+
 
 
 
