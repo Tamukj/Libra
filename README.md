@@ -55,53 +55,60 @@ stateDiagram-v2
 
 ---
 
-## Quick start
+## Quick start & dependencies
 
-### Prerequisites
+### How ML models & data work on a fresh clone
+No pre-trained binary weights (`.pkl` / `.joblib`) are committed to Git. All 6 clinical CSV files from the open KU Leuven dataset (`gait-cp-dataset/`) are included in the repository. On backend startup (`src/api/app.py`), FastAPI automatically seeds the database and trains `GaitConditionClassifier`, `VRResponderPredictor`, and `KinematicPCAAnomalyDetector` in-memory from `gait-cp-dataset/` in a few seconds—offline, with zero external downloads.
 
-- Linux, macOS, or Windows
-- Python 3.10 or newer and Node.js 18 or newer
-- Or Docker and Docker Compose
+### Option A: Docker Compose (Recommended — no Python or Node.js required)
 
-### Option A: Local startup in one command (Linux / macOS)
-
-Run the startup script from the repository root:
+Only **Docker** and **Docker Compose** are required on the host machine. The containers install Python 3.12 (`pyproject.toml`), Node.js 24 (`web/package.json`), PostgreSQL 16, and Caddy automatically:
 
 ```bash
-./run_local.sh
+git clone https://github.com/Tamukj/Libra.git
+cd Libra
+docker compose up -d --build
 ```
 
-The script starts the FastAPI backend on port 8000 and the Next.js frontend on port 3000.
+Access the interface at http://localhost.
+
+### Option B: Local startup from source (Linux / macOS / Windows)
+
+#### 1. System & package dependencies
+- **Python 3.10+** (`pip`) — backend packages declared in `pyproject.toml`: `fastapi`, `uvicorn`, `pydantic`, `sqlalchemy`, `psycopg2-binary`, `pandas`, `numpy`, `scipy`, `scikit-learn`, `python-multipart`, `matplotlib` (plus `pytest` for tests).
+- **Node.js 18+** (`npm`) — frontend packages declared in `web/package.json` (`next`, `react`, `react-dom`, `lucide-react`, `zod`, `typescript`).
+
+#### 2. One-time dependency installation after `git clone`
+
+Linux / macOS:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install .
+cd web && npm install && cd ..
+```
+
+Windows (PowerShell):
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install .
+cd web; npm install; cd ..
+```
+
+#### 3. Start both servers in one command
+
+- **Linux / macOS:** `./run_local.sh`
+- **Windows (`cmd`):** `run_local.bat`
+- **Windows (PowerShell):** `.\run_local.ps1`
+
+The script starts the FastAPI backend on port 8000 and the Next.js frontend on port 3000:
 
 - Web interface: http://127.0.0.1:3000
 - REST API documentation (OpenAPI Swagger): http://127.0.0.1:8000/docs
 - Health check: http://127.0.0.1:8000/health
 
 To stop both services, press `Ctrl+C`.
-
-### Option B: Windows startup in one command
-
-On Windows using Command Prompt (`cmd`):
-
-```cmd
-run_local.bat
-```
-
-Or using PowerShell:
-
-```powershell
-.\run_local.ps1
-```
-
-### Option C: Docker Compose startup (Cross-platform)
-
-To run the containerized production stack with Caddy, FastAPI, and PostgreSQL:
-
-```bash
-docker compose up -d --build
-```
-
-Access the interface at http://localhost.
 
 ---
 
