@@ -1,0 +1,35 @@
+{
+  "app_name": "Libra — Clinical Gait Analysis & CDSS for Pediatric Cerebral Palsy",
+  "disclaimer": "This Clinical Decision Support System is advisory only; it does not establish diagnoses or prescribe medications. In emergencies call 103.",
+  "source_citation": "KU Leuven Clinical Movement Analysis Laboratory (DOI: 10.48804/JUNNWW, CC-BY-NC-SA-4.0)",
+  "conditions": {
+    "Baseline": "Baseline walking",
+    "Verbal": "Verbal cues",
+    "VR": "VR biofeedback"
+  },
+  "cdss_states": {
+    "green": "True hip extension without pelvic overload",
+    "yellow": "Moderate adaptation: clinician monitoring advised",
+    "red": "Compensatory anterior pelvic tilt: lumbar overload risk"
+  },
+  "icf": {
+    "b770": "Gait pattern functions (b770)",
+    "d450": "Walking and posture stability (d450)"
+  },
+  "icf_descriptions": {
+    "b770.0": "b770.0 (No impairment / Normal)",
+    "b770.1": "b770.1 (Mild gait pattern impairment)",
+    "b770.2": "b770.2 (Moderate gait pattern impairment)",
+    "b770.3": "b770.3 (Severe gait pattern impairment)",
+    "b770.4": "b770.4 (Complete gait pattern impairment)",
+    "d450.0": "d450.0 (No walking difficulty)",
+    "d450.1": "d450.1 (Mild walking difficulty)",
+    "d450.2": "d450.2 (Moderate walking difficulty)",
+    "d450.3": "d450.3 (Severe walking difficulty)",
+    "d450.4": "d450.4 (Complete walking difficulty)"
+  },
+  "pdf": {
+    "norm_legend": "TD Norm (±1 SD)",
+    "icf_label": "ICF"
+  }
+}

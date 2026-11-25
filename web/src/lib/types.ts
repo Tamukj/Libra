@@ -8,7 +8,7 @@ export interface Patient {
   clinic_name: string | null;
   pcr?: number | null;
   tje?: number | null;
-  status?: "green" | "yellow" | "red";
+  status?: "green" | "yellow" | "red" | "unassessed";
   baseline_gps?: number | null;
   vr_gps?: number | null;
   delta_amin_sagh?: number | null;
@@ -28,47 +28,51 @@ export interface DiscreteSummary {
   baseline_cycles?: number;
   vr_cycles?: number;
   verbal_cycles?: number;
+  has_baseline?: boolean;
+  has_vr?: boolean;
+  has_verbal?: boolean;
   baseline_pelvis_tilt?: number | null;
   vr_pelvis_tilt?: number | null;
   verbal_pelvis_tilt?: number | null;
   delta_pelvis_tilt?: number | null;
+  verbal_delta_pelvis_tilt?: number | null;
   baseline_hip_rom?: number | null;
-  baseline_gps: number;
-  baseline_amin_sagh: number;
-  baseline_gvs_pelvis: number;
-  baseline_gvs_hip: number;
-  baseline_gvs_knee: number;
-  baseline_gvs_ankle: number;
+  baseline_gps: number | null;
+  baseline_amin_sagh: number | null;
+  baseline_gvs_pelvis: number | null;
+  baseline_gvs_hip: number | null;
+  baseline_gvs_knee: number | null;
+  baseline_gvs_ankle: number | null;
   baseline_pctm_zero?: number | null;
-  vr_gps: number;
-  vr_amin_sagh: number;
-  vr_gvs_pelvis: number;
-  vr_gvs_hip: number;
-  vr_gvs_knee: number;
-  vr_gvs_ankle: number;
+  vr_gps: number | null;
+  vr_amin_sagh: number | null;
+  vr_gvs_pelvis: number | null;
+  vr_gvs_hip: number | null;
+  vr_gvs_knee: number | null;
+  vr_gvs_ankle: number | null;
   vr_pctm_zero?: number | null;
   verbal_gps?: number | null;
-  verbal_amin_sagh?: number;
-  verbal_gvs_pelvis?: number;
-  verbal_gvs_hip?: number;
-  verbal_gvs_knee?: number;
-  verbal_gvs_ankle?: number;
+  verbal_amin_sagh?: number | null;
+  verbal_gvs_pelvis?: number | null;
+  verbal_gvs_hip?: number | null;
+  verbal_gvs_knee?: number | null;
+  verbal_gvs_ankle?: number | null;
   verbal_pctm_zero?: number | null;
-  delta_gps: number;
-  delta_amin_sagh: number;
-  delta_gvs_pelvis: number;
-  delta_gvs_hip: number;
-  delta_gvs_knee: number;
-  delta_gvs_ankle: number;
+  delta_gps: number | null;
+  delta_amin_sagh: number | null;
+  delta_gvs_pelvis: number | null;
+  delta_gvs_hip: number | null;
+  delta_gvs_knee: number | null;
+  delta_gvs_ankle: number | null;
   delta_pctm_zero?: number | null;
-  baseline_gdi?: number;
-  vr_gdi?: number;
+  baseline_gdi?: number | null;
+  vr_gdi?: number | null;
   verbal_gdi?: number | null;
-  delta_gdi?: number;
+  delta_gdi?: number | null;
 }
 
 export interface CdssRisk {
-  status: "green" | "yellow" | "red";
+  status: "green" | "yellow" | "red" | "unassessed";
   pcr: number | null;
   tje: number | null;
   label_ru: string;
@@ -79,14 +83,14 @@ export interface CdssRisk {
 
 export interface ModalitiesComparison {
   best_method: "VR" | "Verbal" | "Baseline";
-  tje_vr: number;
-  tje_verbal: number;
-  pcr_vr: number;
-  pcr_verbal: number;
-  delta_hip_vr: number;
-  delta_hip_verbal: number;
-  delta_pelvis_vr: number;
-  delta_pelvis_verbal: number;
+  tje_vr: number | null;
+  tje_verbal: number | null;
+  pcr_vr: number | null;
+  pcr_verbal: number | null;
+  delta_hip_vr: number | null;
+  delta_hip_verbal: number | null;
+  delta_pelvis_vr: number | null;
+  delta_pelvis_verbal: number | null;
   verdict_ru: string;
   verdict_kz: string;
 }
@@ -143,9 +147,9 @@ export interface JointKinematics {
   name_kz: string;
   unit: string;
   time_percent: number[];
-  baseline: JointCurveSeries;
-  vr: JointCurveSeries;
-  verbal: JointCurveSeries;
+  baseline: JointCurveSeries | null;
+  vr: JointCurveSeries | null;
+  verbal: JointCurveSeries | null;
   norm_td: JointCurveSeries;
 }
 
@@ -153,11 +157,14 @@ export interface KinematicsResponse {
   subject: string;
   is_surrogate?: boolean;
   is_fallback?: boolean;
+  has_curves?: boolean;
+  available_conditions?: Array<"Baseline" | "Verbal" | "VR">;
   joints: {
-    aSagP: JointKinematics;
-    aSagH: JointKinematics;
-    aSagK: JointKinematics;
-    aSagA: JointKinematics;
+    aSagP?: JointKinematics;
+    aSagH?: JointKinematics;
+    aSagK?: JointKinematics;
+    aSagA?: JointKinematics;
+    mSagH?: JointKinematics;
   };
 }
 
@@ -269,6 +276,7 @@ export interface VrResponderMetrics {
   n_compensators: number;
   feature_mode?: string;
   note?: string;
+  note_kz?: string;
 }
 
 export interface MLMetrics {
@@ -289,6 +297,8 @@ export interface MLMetrics {
 export interface CsvUploadResponse {
   status: string;
   code: string;
+  codes?: string[];
+  patients_updated?: number;
   condition?: "Baseline" | "Verbal" | "VR";
   has_kinematics?: boolean;
   rows?: number;

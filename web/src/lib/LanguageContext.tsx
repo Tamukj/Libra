@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { translations } from "./translations";
 
-export type Lang = "ru" | "kz" | "en";
+export type Lang = "ru" | "kz";
 
 interface LanguageContextType {
   lang: Lang;
@@ -20,32 +20,37 @@ const LanguageContext = createContext<LanguageContextType>({
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>("ru");
 
+  const applyDomLanguage = (targetLang: Lang) => {
+    if (typeof document === "undefined") return;
+    document.documentElement.lang = targetLang === "kz" ? "kk" : "ru";
+    document.title =
+      targetLang === "kz"
+        ? "Libra — БЦП кезіндегі жүрісті талдау жүйесі"
+        : "Libra — Клиническая система анализа походки при ДЦП";
+  };
+
   useEffect(() => {
     try {
-      const saved = (localStorage.getItem("libra_lang") || localStorage.getItem("gaitai_lang")) as Lang | null;
-      if (saved === "ru" || saved === "kz" || saved === "en") {
+      const saved = localStorage.getItem("libra_lang") || localStorage.getItem("gaitai_lang");
+      if (saved === "ru" || saved === "kz") {
         setLangState(saved);
-        if (typeof document !== "undefined") {
-          document.documentElement.lang = saved;
-        }
+        applyDomLanguage(saved);
         return;
       }
       const urlParams = new URLSearchParams(window.location.search);
-      const urlLang = urlParams.get("lang") as Lang | null;
-      if (urlLang === "ru" || urlLang === "kz" || urlLang === "en") {
+      const urlLang = urlParams.get("lang");
+      if (urlLang === "ru" || urlLang === "kz") {
         setLangState(urlLang);
-        if (typeof document !== "undefined") {
-          document.documentElement.lang = urlLang;
-        }
+        applyDomLanguage(urlLang);
+        return;
       }
+      applyDomLanguage("ru");
     } catch {}
   }, []);
 
   const setLang = (newLang: Lang) => {
     setLangState(newLang);
-    if (typeof document !== "undefined") {
-      document.documentElement.lang = newLang;
-    }
+    applyDomLanguage(newLang);
     try {
       localStorage.setItem("libra_lang", newLang);
     } catch {}

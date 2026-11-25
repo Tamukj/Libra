@@ -1,243 +1,294 @@
 """Deterministic Rule-Based Clinical Protocol Synthesizer.
-Generates structured, bilingual (KZ / RU) medical summaries for clinicians without generative
+Generates structured, trilingual (RU / KZ / EN) medical summaries for clinicians without generative
 hallucinations, mapped to WHO ICF (b770 / d450) and Clinical Decision Support (CDSS) standards.
 """
 
-from typing import Dict, Any
-import numpy as np
-import pandas as pd
-
-def _safe_float(val: Any, default: float = 0.0) -> float:
-    if val is None:
-        return default
-    try:
-        f = float(val)
-        return default if (np.isnan(f) or pd.isna(f)) else f
-    except (ValueError, TypeError):
-        return default
+from typing import Dict, Any, Tuple, Optional
 from src.core.biomechanics import (
-    compute_true_joint_extension,
-    compute_pcr,
+    _safe_float,
+    is_finite_number,
+    opt_float,
+    get_solution_limitations,
     classify_icf_b770,
     classify_icf_d450,
     analyze_compensation_risk,
     compare_modalities,
+    compute_sagittal_gdi,
 )
+from src.core.i18n import get_locale
 
-ICF_DESCRIPTIONS_RU = {
-    "b770.0": "b770.0 (Нарушений нет / Норма)",
-    "b770.1": "b770.1 (Легкие нарушения стереотипа походки)",
-    "b770.2": "b770.2 (Умеренные нарушения стереотипа походки)",
-    "b770.3": "b770.3 (Тяжелые нарушения стереотипа походки)",
-    "b770.4": "b770.4 (Абсолютные нарушения стереотипа походки)",
-    "d450.0": "d450.0 (Ходьба без ограничений)",
-    "d450.1": "d450.1 (Легкие затруднения при ходьбе)",
-    "d450.2": "d450.2 (Умеренные затруднения при ходьбе)",
-    "d450.3": "d450.3 (Тяжелые затруднения при ходьбе)",
-    "d450.4": "d450.4 (Невозможность самостоятельной ходьбы)",
-}
 
-ICF_DESCRIPTIONS_KZ = {
-    "b770.0": "b770.0 (Бұзылыстар жоқ / Қалыпты)",
-    "b770.1": "b770.1 (Жүріс стереотипінің жеңіл бұзылуы)",
-    "b770.2": "b770.2 (Жүріс стереотипінің орташа бұзылуы)",
-    "b770.3": "b770.3 (Жүріс стереотипінің ауыр бұзылуы)",
-    "b770.4": "b770.4 (Жүріс стереотипінің айқын/толық бұзылуы)",
-    "d450.0": "d450.0 (Жүруде шектеулер жоқ)",
-    "d450.1": "d450.1 (Жүрудегі жеңіл қиындықтар)",
-    "d450.2": "d450.2 (Жүрудегі орташа қиындықтар)",
-    "d450.3": "d450.3 (Жүрудегі ауыр қиындықтар)",
-    "d450.4": "d450.4 (Өздігінен жүрудің мүмкін еместігі)",
-}
+def _resolve_active_comparison(summary: Dict[str, Any]) -> Tuple[str, Optional[float], Optional[float], float, float, float, float, Optional[float]]:
+    """
+    Determines the active post-baseline comparison condition:
+    VR if recorded, else Verbal if recorded, else Baseline-only.
+    """
+    has_vr = bool(summary.get("has_vr")) and is_finite_number(summary.get("vr_amin_sagh"))
+    has_vb = bool(summary.get("has_verbal")) and is_finite_number(summary.get("verbal_amin_sagh"))
+
+    b_gps = opt_float(summary.get("baseline_gps"))
+    b_hip = _safe_float(summary.get("baseline_amin_sagh"), 0.0)
+    b_p = _safe_float(summary.get("baseline_gvs_pelvis"), 0.0)
+    b_k = _safe_float(summary.get("baseline_gvs_knee"), 0.0)
+    b_a = _safe_float(summary.get("baseline_gvs_ankle"), 0.0)
+
+    if has_vr:
+        vr_gps = opt_float(summary.get("vr_gps"))
+        d_hip = opt_float(summary.get("delta_amin_sagh"))
+        if d_hip is None:
+            d_hip = float(summary["vr_amin_sagh"]) - b_hip
+        d_p = opt_float(summary.get("delta_gvs_pelvis"))
+        if d_p is None:
+            d_p = _safe_float(summary.get("vr_gvs_pelvis"), b_p) - b_p
+        d_k = opt_float(summary.get("delta_gvs_knee"))
+        if d_k is None:
+            d_k = _safe_float(summary.get("vr_gvs_knee"), b_k) - b_k
+        d_a = opt_float(summary.get("delta_gvs_ankle"))
+        if d_a is None:
+            d_a = _safe_float(summary.get("vr_gvs_ankle"), b_a) - b_a
+        d_tilt = opt_float(summary.get("delta_pelvis_tilt"))
+        return "VR", b_gps, vr_gps, d_hip, d_p, d_k, d_a, d_tilt
+
+    if has_vb:
+        vb_gps = opt_float(summary.get("verbal_gps"))
+        d_hip = float(summary["verbal_amin_sagh"]) - b_hip
+        d_p = _safe_float(summary.get("verbal_gvs_pelvis"), b_p) - b_p
+        d_k = _safe_float(summary.get("verbal_gvs_knee"), b_k) - b_k
+        d_a = _safe_float(summary.get("verbal_gvs_ankle"), b_a) - b_a
+        d_tilt = opt_float(summary.get("verbal_delta_pelvis_tilt"))
+        return "Verbal", b_gps, vb_gps, d_hip, d_p, d_k, d_a, d_tilt
+
+    return "Baseline", b_gps, b_gps, 0.0, 0.0, 0.0, 0.0, None
+
+
+def _resolve_anomaly_pct(summary: Dict[str, Any]) -> Optional[float]:
+    raw_pct = opt_float(summary.get("anomaly_pct"))
+    if raw_pct is not None:
+        return raw_pct
+    raw_rate = opt_float(summary.get("anomaly_rate"))
+    if raw_rate is None:
+        return None
+    # Ratios in [0, 1) convert to percentage; explicit 1.0 without anomaly_pct means 1.0%
+    return raw_rate * 100.0 if raw_rate < 1.0 else raw_rate
+
 
 def generate_clinical_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
     """
     Generates an executive medical narrative based on biomechanical metrics and ML output.
-    Supports Russian ('ru') and Kazakh ('kz').
+    Supports Russian ('ru'), Kazakh ('kz'), and English ('en').
     """
-    subject = summary.get("subject", "N/A")
-    side = summary.get("side", "RIGHT")
-    
-    b_gps = _safe_float(summary.get("baseline_gps"), 10.0)
-    vr_gps = _safe_float(summary.get("vr_gps"), b_gps)
-    d_hip = _safe_float(summary.get("delta_amin_sagh"), 0.0)
-    d_pelvis = _safe_float(summary.get("delta_gvs_pelvis"), 0.0)
-    d_knee = _safe_float(summary.get("delta_gvs_knee"), 0.0)
-    d_ankle = _safe_float(summary.get("delta_gvs_ankle"), 0.0)
+    eff_lang = lang if lang in ("ru", "kz", "en") else "ru"
+    loc = get_locale(eff_lang)
+    icf_desc_map = loc.get("icf_descriptions", {})
+    conditions_map = loc.get("conditions", {})
 
-    # Compute advanced metrics
-    raw_tilt = summary.get("delta_pelvis_tilt")
-    d_pelvis_tilt = _safe_float(raw_tilt) if raw_tilt is not None else None
-    risk = analyze_compensation_risk(d_hip, d_pelvis, d_knee, d_ankle, delta_pelvis_term=d_pelvis_tilt)
-    pcr = risk["pcr"]
-    tje = risk["tje"]
-    has_vr = summary.get("has_vr", summary.get("cycles_vr", 0) > 0)
-    has_vb = summary.get("has_verbal", summary.get("cycles_verbal", 0) > 0)
-    if not has_vr and not has_vb:
+    subject = summary.get("subject", "N/A")
+    side = str(summary.get("side", "RIGHT")).upper()
+
+    mode, b_gps, post_gps, d_hip, d_pelvis, d_knee, d_ankle, d_pelvis_tilt = _resolve_active_comparison(summary)
+
+    if mode == "Baseline":
+        risk = {
+            "status": "unassessed",
+            "pcr": 0.0,
+            "tje": 0.0,
+            "label_ru": "Базовая биомеханическая оценка (Baseline)",
+            "label_kz": "Базалық биомеханикалық бағалау (Baseline)",
+            "label_en": "Baseline biomechanical assessment",
+            "recommendation_ru": "Сессии VR / Verbal еще не проводились. Зафиксирован исходный стереотип походки (Baseline).",
+            "recommendation_kz": "VR / Verbal сессиялары әлі өткізілмеді. Бастапқы жүріс стереотипі (Baseline) тіркелді.",
+            "recommendation_en": "VR / Verbal feedback trials have not been conducted yet. Baseline gait pattern recorded.",
+        }
         modalities = {
             "best_method": "Baseline",
             "verdict_ru": "Зафиксирован исходный шаг (Baseline). Тестирование режимов биообратной связи (VR / Verbal) еще не проводилось.",
-            "verdict_kz": "Бастапқы жүріс (Baseline) тіркелді. Кері байланыс сынамалары (VR / Verbal) әлі өткізілмеді."
+            "verdict_kz": "Бастапқы жүріс (Baseline) тіркелді. Кері байланыс сынамалары (VR / Verbal) әлі өткізілмеді.",
+            "verdict_en": "Baseline walking recorded. Biofeedback trials (VR / Verbal) have not been conducted yet.",
         }
     else:
+        risk = analyze_compensation_risk(d_hip, d_pelvis, d_knee, d_ankle, delta_pelvis_term=d_pelvis_tilt)
         modalities = compare_modalities(summary)
-    if not has_vr and not has_vb:
-        risk["label_ru"] = "Базовая биомеханическая оценка (Baseline)"
-        risk["label_kz"] = "Базалық биомеханикалық бағалау (Baseline)"
-        risk["recommendation_ru"] = "Сессия VR-терапии еще не проводилась. Зафиксирован исходный стереотип походки (Baseline)."
-        risk["recommendation_kz"] = "VR-терапия сессиясы әлі өткізілмеді. Бастапқы жүріс стереотипі (Baseline) тіркелді."
-    elif not has_vr and has_vb:
-        risk["label_ru"] = f"Оценка вербальной биообратной связи (Verbal): {modalities['best_method']}"
-        risk["label_kz"] = f"Вербалды кері байланысты бағалау (Verbal): {modalities['best_method']}"
-        risk["recommendation_ru"] = modalities["verdict_ru"]
-        risk["recommendation_kz"] = modalities["verdict_kz"]
+
+    pcr = risk["pcr"] if risk.get("pcr") is not None else 0.0
+    tje = risk["tje"] if risk.get("tje") is not None else 0.0
 
     icf_b_pre = classify_icf_b770(b_gps)
-    icf_b_post = classify_icf_b770(vr_gps)
-
-    raw_anomaly = summary.get("anomaly_rate")
-    anomaly_pct = None
-    if raw_anomaly is not None:
-        try:
-            f_anom = float(raw_anomaly)
-            if not np.isnan(f_anom) and np.isfinite(f_anom):
-                anomaly_pct = f_anom * 100.0 if f_anom <= 1.0 else f_anom
-        except (ValueError, TypeError):
-            anomaly_pct = None
+    icf_b_post = classify_icf_b770(post_gps)
+    anomaly_pct = _resolve_anomaly_pct(summary)
     icf_d = classify_icf_d450(anomaly_pct) if anomaly_pct is not None else None
 
-    if lang == "kz":
-        icf_pre_desc = ICF_DESCRIPTIONS_KZ.get(icf_b_pre, icf_b_pre)
-        icf_post_desc = ICF_DESCRIPTIONS_KZ.get(icf_b_post, icf_b_post)
+    icf_pre_desc = icf_desc_map.get(icf_b_pre, icf_b_pre)
+    icf_post_desc = icf_desc_map.get(icf_b_post, icf_b_post)
+
+    best_method_key = modalities["best_method"]
+    best_method_label = conditions_map.get(best_method_key, best_method_key)
+    limitations = get_solution_limitations(eff_lang)
+
+    if eff_lang == "kz":
+        side_txt = "Сол аяқ" if side == "LEFT" else "Оң аяқ"
         icf_d_desc = (
-            ICF_DESCRIPTIONS_KZ.get(icf_d, icf_d)
+            icf_desc_map.get(icf_d, icf_d)
             if icf_d is not None
             else "Бағаланбады (51 нүктелі кинематикалық қисықтар жоқ)"
         )
-
-        narrative = (
-            f"КЛИНИКАЛЫҚ БИОМЕХАНИКАЛЫҚ ҚОРЫТЫНДЫ (Libra CDSS)\n"
-            f"Пациент: {subject} | Зерттелген аяқ: {side}\n"
-            f"--------------------------------------------------\n"
-            f"1. ДДҰ ХҚЖ (МКФ/ICF) БОЙЫНША СТАТУС:\n"
-            f"   • b770 (Жүріс стереотипі): {icf_pre_desc} -> {icf_post_desc}\n"
+        return (
+            f"КЛИНИКАЛЫҚ БИОМЕХАНИКАЛЫҚ ҚОРЫТЫНДЫ (Libra СППР)\n"
+            f"Пациент: {subject} · Зерттелген аяқ: {side_txt} · Белсенді сынама: {mode}\n"
+            f"1. ДДҰ ХҚЖ (МКФ) БОЙЫНША СТАТУС:\n"
+            f"   • b770 (Жүріс стереотипі): {icf_pre_desc} → {icf_post_desc}\n"
             f"   • d450 (Жүру тұрақтылығы): {icf_d_desc}\n\n"
             f"2. БИОМЕХАНИКА ЖӘНЕ БЕЙІМДЕЛУ ТАЛДАУЫ:\n"
-            f"   • Санның жазылу бұрышының өзгерісі: {d_hip:+.2f}°\n"
+            f"   • Санның жазылу бұрышының өзгерісі (aMinSagH): {d_hip:+.2f}°\n"
             f"   • Шынайы буындық жазылу (TJE): {tje:+.2f}°\n"
-            f"   • Патологиялық компенсация коэффициенті (PCR): {pcr:.2f}\n"
-            f"   • Жамбастың еңкею девиациясы (GVS Pelvis): {d_pelvis:+.2f}°\n\n"
-            f"3. ТЕРАПИЯЛЫҚ ӘДІСТІ ТАҢДАУ (Verbal vs VR):\n"
-            f"   • Таңдалған тиімді әдіс: {modalities['best_method']}\n"
-            f"   • Сараптама: {modalities['verdict_kz']}\n\n"
-            f"4. ДӘРІГЕРГЕ АРНАЛҒАН ИИ-ҰСЫНЫМЫ:\n"
-            f"   Статус: {risk['label_kz']}\n"
-            f"   Нұсқаулық: {risk['recommendation_kz']}\n"
-            f"--------------------------------------------------\n"
-            f"НАЗАР АУДАРЫҢЫЗ (Ереже 8.4-бабы): Libra дәрігерлік шешімді қолдау жүйесі (CDSS) "
-            f"болып табылады, диагноз қоймайды және емдеу препараттарын тағайындамайды. Қорытынды емдеуші "
-            f"дәрігердің тексеруіне жатады. Шұғыл жағдайларда және денсаулыққа қауіп "
-            f"төнгенде 103 нөмірі бойынша жедел медициналық көмекке хабарласыңыз."
+            f"   • Жамбас компенсациясы коэффициенті (PCR): {pcr:.2f}\n"
+            f"   • Жамбастың ауытқу өзгерісі (GVS Таз): {d_pelvis:+.2f}°\n\n"
+            f"3. ОҢАЛТУ ӘДІСІН ТАҢДАУ (Ауызша нұсқау / VR):\n"
+            f"   • Ұсынылған әдіс: {best_method_label}\n"
+            f"   • Негіздеме: {modalities['verdict_kz']}\n\n"
+            f"4. ОҢАЛТУ ДӘРІГЕРІНЕ АРНАЛҒАН ҰСЫНЫМ:\n"
+            f"   Мәртебе: {risk['label_kz']}\n"
+            f"   Тактика: {risk['recommendation_kz']}\n\n"
+            f"5. ШЕШІМНІҢ ШЕКТЕУЛЕРІ ЖӘНЕ ЖАУАПКЕРШІЛІК (Ереже 8.2-т.):\n"
+            f"   {limitations}"
         )
-    else:
-        icf_pre_desc = ICF_DESCRIPTIONS_RU.get(icf_b_pre, icf_b_pre)
-        icf_post_desc = ICF_DESCRIPTIONS_RU.get(icf_b_post, icf_b_post)
+
+    if eff_lang == "en":
+        side_txt = "Left limb" if side == "LEFT" else "Right limb"
         icf_d_desc = (
-            ICF_DESCRIPTIONS_RU.get(icf_d, icf_d)
+            icf_desc_map.get(icf_d, icf_d)
             if icf_d is not None
-            else "Не оценивался (отсутствуют 51-точечные кривые кинематики)"
+            else "Not evaluated (51-point kinematic curves unavailable)"
+        )
+        return (
+            f"CLINICAL BIOMECHANICAL REPORT (Libra CDSS)\n"
+            f"Patient: {subject} · Side: {side_txt} · Evaluated trial: {mode}\n"
+            f"1. WHO ICF FUNCTIONAL STATUS:\n"
+            f"   • b770 (Gait pattern functions): {icf_pre_desc} → {icf_post_desc}\n"
+            f"   • d450 (Walking stability): {icf_d_desc}\n\n"
+            f"2. BIOMECHANICS & COMPENSATION ANALYSIS:\n"
+            f"   • Hip extension delta (aMinSagH): {d_hip:+.2f}°\n"
+            f"   • True Joint Extension (TJE): {tje:+.2f}°\n"
+            f"   • Pathological Compensation Ratio (PCR): {pcr:.2f}\n"
+            f"   • Pelvic deviation delta (GVS Pelvis): {d_pelvis:+.2f}°\n\n"
+            f"3. REHABILITATION TACTICS (Verbal / VR):\n"
+            f"   • Optimal mode: {best_method_label}\n"
+            f"   • Rationale: {modalities['verdict_en']}\n\n"
+            f"4. CLINICAL GUIDANCE FOR PHYSICIAN:\n"
+            f"   Status: {risk['label_en']}\n"
+            f"   Guidance: {risk['recommendation_en']}\n\n"
+            f"5. SOLUTION LIMITATIONS & SAFETY NOTICE (Rule 8.2):\n"
+            f"   {limitations}"
         )
 
-        narrative = (
-            f"КЛИНИЧЕСКИЙ БИОМЕХАНИЧЕСКИЙ ПРОТОКОЛ (Libra CDSS)\n"
-            f"Пациент: {subject} | Исследуемая сторона: {side}\n"
-            f"--------------------------------------------------\n"
-            f"1. СТАТУС ПО МКФ ВОЗ (ICF CLASSIFICATION):\n"
-            f"   • b770 (Стереотип походки): {icf_pre_desc} -> {icf_post_desc}\n"
-            f"   • d450 (Стабильность ходьбы): {icf_d_desc}\n\n"
-            f"2. АНАЛИЗ БИОМЕХАНИКИ И КОМПЕНСАЦИЙ:\n"
-            f"   • Дельта угла разгибания бедра: {d_hip:+.2f}°\n"
-            f"   • Истинное суставное разгибание (TJE): {tje:+.2f}°\n"
-            f"   • Коэффициент компенсации таза (PCR): {pcr:.2f}\n"
-            f"   • Смещение наклона таза (GVS Pelvis): {d_pelvis:+.2f}°\n\n"
-            f"3. ВЫБОР ОПТИМАЛЬНОЙ МЕТОДИКИ (Verbal vs VR):\n"
-            f"   • Рекомендованный метод: {modalities['best_method']}\n"
-            f"   • Обоснование: {modalities['verdict_ru']}\n\n"
-            f"4. РЕКОМЕНДАЦИЯ ИИ ДЛЯ ВРАЧА-РЕАБИЛИТОЛОГА:\n"
-            f"   Статус: {risk['label_ru']}\n"
-            f"   Тактика: {risk['recommendation_ru']}\n"
-            f"--------------------------------------------------\n"
-            f"ВНИМАНИЕ (ст. 8.4 Положения): Libra является системой поддержки принятия врачебных решений (CDSS), "
-            f"не ставит диагноз и не назначает лекарственные средства. Заключение подлежит обязательной верификации "
-            f"лечащим врачом-реабилитологом. В экстренных случаях и опасных ситуациях "
-            f"незамедлительно обращайтесь к врачу или вызывайте скорую помощь по номеру 103."
-        )
-
-    return narrative
+    side_txt = "Левая сторона" if side == "LEFT" else "Правая сторона"
+    icf_d_desc = (
+        icf_desc_map.get(icf_d, icf_d)
+        if icf_d is not None
+        else "Не оценивался (отсутствуют 51-точечные кривые кинематики)"
+    )
+    return (
+        f"КЛИНИЧЕСКИЙ БИОМЕХАНИЧЕСКИЙ ПРОТОКОЛ (Libra СППР)\n"
+        f"Пациент: {subject} · Исследуемая сторона: {side_txt} · Активная проба: {mode}\n"
+        f"1. СТАТУС ПО МКФ ВОЗ:\n"
+        f"   • b770 (Стереотип походки): {icf_pre_desc} → {icf_post_desc}\n"
+        f"   • d450 (Стабильность ходьбы): {icf_d_desc}\n\n"
+        f"2. АНАЛИЗ БИОМЕХАНИКИ И КОМПЕНСАЦИЙ:\n"
+        f"   • Изменение угла разгибания бедра (aMinSagH): {d_hip:+.2f}°\n"
+        f"   • Истинное суставное разгибание (TJE): {tje:+.2f}°\n"
+        f"   • Коэффициент компенсации таза (PCR): {pcr:.2f}\n"
+        f"   • Отклонение наклона таза (GVS Таза): {d_pelvis:+.2f}°\n\n"
+        f"3. ВЫБОР ТАКТИКИ РЕАБИЛИТАЦИИ (Голосовые инструкции / VR):\n"
+        f"   • Рекомендованный режим: {best_method_label}\n"
+        f"   • Клиническое обоснование: {modalities['verdict_ru']}\n\n"
+        f"4. РЕКОМЕНДАЦИЯ ДЛЯ ВРАЧА-РЕАБИЛИТОЛОГА:\n"
+        f"   Статус: {risk['label_ru']}\n"
+        f"   Тактика: {risk['recommendation_ru']}\n\n"
+        f"5. ОГРАНИЧЕНИЯ РЕШЕНИЯ И БЕЗОПАСНОСТЬ (п. 8.2 Положения):\n"
+        f"   {limitations}"
+    )
 
 
 def generate_parent_narrative(summary: Dict[str, Any], lang: str = "ru") -> str:
     """
     Generates an empathetic, plain-language summary for parents ('Баланың жүріс төлқұжаты').
-    Provides descriptive observational feedback without prescribing medical treatments (Rule 8.4 compliance).
+    Provides descriptive observational feedback without prescribing medical treatments (Rule 8.2).
     """
+    eff_lang = lang if lang in ("ru", "kz", "en") else "ru"
     subject = summary.get("subject", "N/A")
-    d_hip = _safe_float(summary.get("delta_amin_sagh"), 0.0)
-    d_pelvis = _safe_float(summary.get("delta_gvs_pelvis"), 0.0)
-    b_gps = _safe_float(summary.get("baseline_gps"), 10.0)
-    vr_gps = _safe_float(summary.get("vr_gps"), b_gps)
+    mode, _, post_gps, d_hip, d_pelvis, d_knee, d_ankle, d_pelvis_tilt = _resolve_active_comparison(summary)
 
-    from src.core.biomechanics import compute_sagittal_gdi, analyze_compensation_risk
-    d_knee = _safe_float(summary.get("delta_gvs_knee"), 0.0)
-    d_ankle = _safe_float(summary.get("delta_gvs_ankle"), 0.0)
-    raw_tilt = summary.get("delta_pelvis_tilt")
-    d_pelvis_tilt = _safe_float(raw_tilt) if raw_tilt is not None else None
     risk = analyze_compensation_risk(d_hip, d_pelvis, d_knee, d_ankle, delta_pelvis_term=d_pelvis_tilt)
-    gdi_val = compute_sagittal_gdi(vr_gps)
+    gdi_val = compute_sagittal_gdi(post_gps) if post_gps is not None else float("nan")
+    gdi_txt = f"{gdi_val:.0f}" if is_finite_number(gdi_val) else "—"
 
-    # Hip improvement in degrees
     hip_straightening = abs(d_hip) if d_hip < -0.5 else 0.0
     posture_safe = risk["status"] != "red"
+    limitations = get_solution_limitations(eff_lang)
 
-    if lang == "kz":
-        posture_text = "Қалыпты, жамбастың патологиялық алға еңкеюі тіркелмеді" if posture_safe else "Назар аударыңыз: бала қадам басқанда жамбасын алға тым қатты еңкейтеді, белге жүктеме түседі"
-        progress_text = f"Аяқтың жазылу динамикасы: жазылу бұрышы шамамен {hip_straightening:.1f}° жақсарды." if hip_straightening > 0 else "Аяқтың жазылу динамикасы: бұл сессияда айтарлықтай өзгеріс тіркелмеді."
-        narrative = (
+    if eff_lang == "kz":
+        posture_text = (
+            "Қалыпты, жамбастың патологиялық алға еңкеюі тіркелмеді"
+            if posture_safe
+            else "Назар аударыңыз: бала қадам басқанда жамбасын алға тым қатты еңкейтеді, белге жүктеме түседі"
+        )
+        progress_text = (
+            f"Аяқтың жазылу динамикасы ({mode}): жазылу бұрышы шамамен {hip_straightening:.1f}° жақсарды."
+            if hip_straightening > 0
+            else "Аяқтың жазылу динамикасы: бұл сессияда айтарлықтай өзгеріс тіркелмеді."
+        )
+        return (
             f"БАЛАНЫҢ ЖҮРІС ТӨЛҚҰЖАТЫ (Ата-аналарға арналған ақпараттық анықтама)\n"
-            f"Пациент коды: {subject} | Зерттеу түрі: Кері байланыс сынамасы (Verbal / VR)\n"
-            f"--------------------------------------------------\n"
+            f"Пациент коды: {subject} · Зерттеу түрі: {mode}\n"
             f"1. ҚИМЫЛ-ҚОЗҒАЛЫС БАЙҚАУЫ:\n"
             f"   • {progress_text}\n"
             f"   • Жамбас пен бел қалпы: {posture_text}.\n"
-            f"   • Жүрістің үйлесімділік көрсеткіші (GDI): {gdi_val:.0f} / 100 балл.\n\n"
-            f"2. ҚАУІПСІЗДІК ПЕН БАҚЫЛАУ:\n"
-            f"   • Жүріс параметрлері жүйе арқылы тіркелді. Шаршау белгілері дәрігерге жолданды.\n\n"
-            f"3. МАҢЫЗДЫ ЕСКЕРТУ (Ереже 8.4-бабы):\n"
-            f"   • Жаттығулар жиынтығы мен емдік жүктемені тек емдеуші дәрігер-реабилитолог тағайындайды.\n"
-            f"   • Үйде өз бетінше емдеу жаттығуларын тағайындауға болмайды.\n"
-            f"--------------------------------------------------\n"
-            f"Сұрақтар туындаған жағдайда емдеуші дәрігермен кеңесіңіз. "
-            f"Шұғыл жағдайларда дереу 103 жедел жәрдем қызметіне хабарласыңыз."
-        )
-    else:
-        posture_text = "Осанка стабильная, патологического наклона таза вперед не зафиксировано" if posture_safe else "Внимание: при шаге ребенок наклоняет таз вперед, создавая нагрузку на поясницу"
-        progress_text = f"Разгибание ножки: угол раскрытия сустава улучшился примерно на {hip_straightening:.1f}°." if hip_straightening > 0 else "Разгибание ножки: в данной сессии выраженной динамики не зафиксировано."
-        narrative = (
-            f"ПАСПОРТ ПОХОДКИ РЕБЕНКА (Информационная справка для родителей)\n"
-            f"Код пациента: {subject} | Тип исследования: Проба с обратной связью (Verbal / VR)\n"
-            f"--------------------------------------------------\n"
-            f"1. НАБЛЮДЕНИЯ ЗА ДВИЖЕНИЕМ:\n"
-            f"   • {progress_text}\n"
-            f"   • Положение таза и спины: {posture_text}.\n"
-            f"   • Индекс гармоничности походки (GDI): {gdi_val:.0f} из 100 баллов.\n\n"
-            f"2. БЕЗОПАСНОСТЬ И УТОМЛЕНИЕ:\n"
-            f"   • Параметры стабильности зафиксированы сенсорами и переданы лечащему специалисту.\n\n"
-            f"3. ВАЖНОЕ ПРЕДУПРЕЖДЕНИЕ (ст. 8.4 Положения):\n"
-            f"   • Двигательный режим и лечебную гимнастику назначает исключительно лечащий врач-реабилитолог на очном приеме.\n"
-            f"   • Самостоятельное назначение нагрузок без согласования с врачом не допускается.\n"
-            f"--------------------------------------------------\n"
-            f"При любых вопросах обращайтесь к вашему лечащему врачу-реабилитологу. "
-            f"В экстренных ситуациях незамедлительно звоните по номеру 103."
+            f"   • Жүрістің үйлесімділік көрсеткіші (GDI): {gdi_txt} / 100 балл.\n\n"
+            f"2. ҚАУІПСІЗДІК ПЕН ШЕКТЕУЛЕР (Ереже 8.2-т.):\n"
+            f"   • {limitations}\n"
+            f"   • Жаттығулар жиынтығы мен емдік жүктемені тек емдеуші дәрігер-реабилитолог тағайындайды."
         )
 
-    return narrative
+    if eff_lang == "en":
+        posture_text = (
+            "Stable posture with no excessive anterior pelvic tilt observed"
+            if posture_safe
+            else "Attention: the child tilts the pelvis forward excessively during steps, adding lumbar strain"
+        )
+        progress_text = (
+            f"Leg extension observation ({mode}): hip extension improved by approximately {hip_straightening:.1f}°."
+            if hip_straightening > 0
+            else "Leg extension observation: no marked angle change recorded in this session."
+        )
+        return (
+            f"CHILD GAIT PASSPORT (Parent Information Summary)\n"
+            f"Patient code: {subject} · Session: {mode}\n"
+            f"1. MOVEMENT OBSERVATIONS:\n"
+            f"   • {progress_text}\n"
+            f"   • Pelvis & posture: {posture_text}.\n"
+            f"   • Gait Deviation Index (GDI): {gdi_txt} / 100.\n\n"
+            f"2. SAFETY & LIMITATIONS (Rule 8.2):\n"
+            f"   • {limitations}\n"
+            f"   • Only the attending physician prescribes exercises or rehabilitation loads."
+        )
+
+    posture_text = (
+        "Осанка стабильная, патологического наклона таза вперед не зафиксировано"
+        if posture_safe
+        else "Внимание: при шаге ребенок наклоняет таз вперед, создавая нагрузку на поясницу"
+    )
+    progress_text = (
+        f"Разгибание ножки ({mode}): угол раскрытия сустава улучшился примерно на {hip_straightening:.1f}°."
+        if hip_straightening > 0
+        else "Разгибание ножки: в данной сессии выраженной динамики не зафиксировано."
+    )
+    return (
+        f"ПАСПОРТ ПОХОДКИ РЕБЕНКА (Информационная справка для родителей)\n"
+        f"Код пациента: {subject} · Тип исследования: {mode}\n"
+        f"1. НАБЛЮДЕНИЯ ЗА ДВИЖЕНИЕМ:\n"
+        f"   • {progress_text}\n"
+        f"   • Положение таза и спины: {posture_text}.\n"
+        f"   • Индекс гармоничности походки (GDI): {gdi_txt} из 100 баллов.\n\n"
+        f"2. ВАЖНЫЕ ОГРАНИЧЕНИЯ И БЕЗОПАСНОСТЬ (п. 8.2 Положения):\n"
+        f"   • {limitations}\n"
+        f"   • Двигательный режим и лечебную гимнастику назначает исключительно лечащий врач-реабилитолог."
+    )

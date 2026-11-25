@@ -9,44 +9,69 @@ from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import GroupKFold
 
+
 class KinematicPCAAnomalyDetector:
     """
     Unsupervised gait stability guardian.
     Models normal multi-joint kinematic manifolds using Principal Component Analysis (PCA).
     Unstable or fatigued steps deviate from the manifold, exhibiting high reconstruction error.
     """
+
     def __init__(self, n_components: int = 6, percentile_threshold: float = 95.0):
         self.n_components = n_components
         self.percentile_threshold = percentile_threshold
         self.pca = PCA(n_components=n_components, random_state=42)
-        self.imputer = SimpleImputer(strategy="median")
+        self.imputer = SimpleImputer(strategy="median", keep_empty_features=True)
         self.threshold: Optional[float] = None
+        self._single_sample_center: Optional[np.ndarray] = None
 
     def fit(self, curves: np.ndarray):
         """
         Fits PCA on baseline stable gait cycle curves.
         curves: 2D array of shape (n_cycles, n_points), e.g. (870, 51).
         """
-        clean_curves = self.imputer.fit_transform(curves)
+        arr = np.atleast_2d(np.asarray(curves, dtype=float))
+        if arr.size == 0 or arr.shape[0] == 0:
+            raise ValueError("Cannot fit KinematicPCAAnomalyDetector on 0 gait cycles.")
+
+        # Drop cycles that are completely NaN across all time points
+        valid_rows = ~np.isnan(arr).all(axis=1)
+        arr = arr[valid_rows]
+        if arr.shape[0] == 0:
+            raise ValueError("Cannot fit KinematicPCAAnomalyDetector: all gait cycles are NaN.")
+
+        clean_curves = self.imputer.fit_transform(arr)
         n_samples, n_features = clean_curves.shape
+
+        if n_samples == 1:
+            # Degenerate 1-cycle manifold: store center and avoid NaN explained_variance_
+            self._single_sample_center = clean_curves[0].copy()
+            self.pca = PCA(n_components=1, random_state=42)
+            self.pca.mean_ = clean_curves[0].copy()
+            self.pca.components_ = np.zeros((1, n_features), dtype=float)
+            self.pca.explained_variance_ = np.array([0.0], dtype=float)
+            self.pca.explained_variance_ratio_ = np.array([0.0], dtype=float)
+            self.pca.n_features_in_ = n_features
+            self.threshold = 0.0
+            return self
+
+        self._single_sample_center = None
         n_comp = min(self.n_components, max(1, n_samples - 1), n_features)
         self.pca = PCA(n_components=n_comp, random_state=42)
         projected = self.pca.fit_transform(clean_curves)
         reconstructed = self.pca.inverse_transform(projected)
 
-        # Squared Prediction Error (SPE)
         spe = np.sum((clean_curves - reconstructed) ** 2, axis=1)
         self.threshold = float(np.percentile(spe, self.percentile_threshold))
         return self
 
     def detect(self, curves: np.ndarray) -> Dict[str, Any]:
-        """
-        Evaluates test gait cycles and flags anomalies exceeding the threshold.
-        """
+        """Evaluates test gait cycles and flags anomalies exceeding the threshold."""
         if self.threshold is None:
             raise RuntimeError("Anomaly detector must be fitted before running detection.")
 
-        if len(curves) == 0:
+        arr = np.asarray(curves, dtype=float)
+        if arr.size == 0 or len(arr) == 0:
             return {
                 "is_anomaly": np.array([], dtype=bool),
                 "reconstruction_error": np.array([], dtype=float),
@@ -56,11 +81,21 @@ class KinematicPCAAnomalyDetector:
                 "n_total": 0,
             }
 
-        clean_curves = self.imputer.transform(np.atleast_2d(np.asarray(curves, dtype=float)))
-        projected = self.pca.transform(clean_curves)
-        reconstructed = self.pca.inverse_transform(projected)
+        arr_2d = np.atleast_2d(arr)
+        all_nan_mask = np.isnan(arr_2d).all(axis=1)
+        clean_curves = self.imputer.transform(arr_2d)
 
-        spe = np.sum((clean_curves - reconstructed) ** 2, axis=1)
+        if self._single_sample_center is not None:
+            spe = np.sum((clean_curves - self._single_sample_center[None, :]) ** 2, axis=1)
+        else:
+            projected = self.pca.transform(clean_curves)
+            reconstructed = self.pca.inverse_transform(projected)
+            spe = np.sum((clean_curves - reconstructed) ** 2, axis=1)
+
+        if all_nan_mask.any():
+            spe = spe.astype(float)
+            spe[all_nan_mask] = np.inf
+
         is_anomaly = spe > self.threshold
 
         return {
@@ -78,9 +113,7 @@ class KinematicPCAAnomalyDetector:
         groups: np.ndarray,
         n_splits: int = 5,
     ) -> Dict[str, Any]:
-        """
-        Evaluates out-of-fold Baseline anomaly rate under strict subject-level GroupKFold isolation.
-        """
+        """Evaluates out-of-fold Baseline anomaly rate under strict subject-level GroupKFold isolation."""
         unique_groups = np.unique(groups)
         n_subjects = len(unique_groups)
         if n_subjects < 2:

@@ -4,13 +4,17 @@ import React, { useState, useEffect } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { getPatientDiff } from "@/lib/api";
 import { GaitDiffResponse } from "@/lib/types";
-import { GitCompare, TrendingUp, TrendingDown, ArrowRight, CheckCircle2, AlertTriangle, ShieldAlert } from "lucide-react";
+import { ArrowRight, CheckCircle2, AlertTriangle, ShieldAlert, ArrowLeftRight } from "lucide-react";
 
 interface Props {
   patientCode: string;
 }
 
 export function GaitDiffViewer({ patientCode }: Props) {
+  const fmtFixed = (v: number | null | undefined, d = 1, unit = "") =>
+    typeof v === "number" && Number.isFinite(v) ? `${v.toFixed(d)}${unit}` : "—";
+  const fmtDiffSigned = (v: number | null | undefined, d = 1, unit = "") =>
+    typeof v === "number" && Number.isFinite(v) ? `${v > 0 ? `+${v.toFixed(d)}` : v.toFixed(d)}${unit}` : "—";
   const { lang } = useLanguage();
   const [diff, setDiff] = useState<GaitDiffResponse | null>(null);
   const [sessionB, setSessionB] = useState<"VR" | "Verbal">("VR");
@@ -18,245 +22,243 @@ export function GaitDiffViewer({ patientCode }: Props) {
   const [diffError, setDiffError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     async function loadDiff() {
       setLoading(true);
       setDiffError(null);
       try {
-        const res = await getPatientDiff(patientCode, "Baseline", sessionB);
-        setDiff(res);
+        const res = await getPatientDiff(patientCode, "Baseline", sessionB, lang);
+        if (active) setDiff(res);
       } catch (err) {
-        console.error("Failed to load patient diff:", err);
-        setDiff(null);
-        setDiffError(err instanceof Error ? err.message : String(err));
+        if (active) {
+          setDiff(null);
+          setDiffError(err instanceof Error ? err.message : String(err));
+        }
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
     loadDiff();
-  }, [patientCode, sessionB]);
+    return () => {
+      active = false;
+    };
+  }, [patientCode, sessionB, lang]);
 
   return (
-    <div className="card" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
-      
-      {/* Header with Comparison Switcher */}
+    <section className="surface" aria-label={lang === "kz" ? "Режимдер арасындағы динамика" : "Динамика между пробами"} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <GitCompare size={20} color="var(--teal)" />
+          <ArrowLeftRight size={18} strokeWidth={1.6} color="var(--teal)" />
           <div>
-            <h2 style={{ fontSize: "16px", fontWeight: 700, margin: 0 }}>
-              {lang === "kz" ? "Биомеханикалық Дифф (Git Diff динамикасы)" : "Биомеханический Diff динамики лечения"}
+            <h2 style={{ fontSize: "16px", fontWeight: 600 }}>
+              {lang === "kz" ? "Зерттеу режимдері арасындағы клиникалық динамика" : "Динамика показателей между пробами обследования"}
             </h2>
-            <p style={{ fontSize: "12px", color: "var(--muted)", margin: "2px 0 0" }}>
+            <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>
               {lang === "kz"
-                ? "Базалық күй мен реабилитация курсынан кейінгі өзгерістерді салыстыру"
-                : "Лонгитюдное сопоставление сессий: прирост TJE, устранение наклона таза и сдвиг МКФ ВОЗ"}
+                ? "Қалыпты жүріс пен кері байланыс сынамасы арасындағы GDI, GPS, TJE, PCR және МКФ өзгерістері"
+                : "Сопоставление исходного стереотипа с пробой обратной связи по индексам GDI, GPS, TJE, PCR и МКФ ВОЗ"}
             </p>
           </div>
         </div>
 
-        {/* Target Session Toggle */}
-        <div style={{ display: "inline-flex", background: "var(--linen)", padding: "3px", borderRadius: "8px", border: "1px solid var(--line)" }}>
+        <div style={{ display: "inline-flex", background: "var(--sidebar)", padding: "3px", borderRadius: "8px", border: "1px solid var(--line)" }}>
           <button
+            type="button"
             onClick={() => setSessionB("VR")}
-            className="btn"
             style={{
-              padding: "4px 10px",
-              fontSize: "11px",
+              padding: "5px 12px",
+              fontSize: "12px",
               fontWeight: 500,
               border: "none",
               borderRadius: "6px",
               background: sessionB === "VR" ? "var(--ink)" : "transparent",
-              color: sessionB === "VR" ? "var(--white)" : "var(--ink)"
+              color: sessionB === "VR" ? "var(--white)" : "var(--ink)",
+              cursor: "pointer",
             }}
           >
-            {lang === "kz" ? "Baseline → VR (Көру кері байланысы)" : "Baseline → VR (Зрительная ОС)"}
+            {lang === "kz" ? "Қалыпты → VR" : "Обычная → VR"}
           </button>
           <button
+            type="button"
             onClick={() => setSessionB("Verbal")}
-            className="btn"
             style={{
-              padding: "4px 10px",
-              fontSize: "11px",
+              padding: "5px 12px",
+              fontSize: "12px",
               fontWeight: 500,
               border: "none",
               borderRadius: "6px",
               background: sessionB === "Verbal" ? "var(--ink)" : "transparent",
-              color: sessionB === "Verbal" ? "var(--white)" : "var(--ink)"
+              color: sessionB === "Verbal" ? "var(--white)" : "var(--ink)",
+              cursor: "pointer",
             }}
           >
-            {lang === "kz" ? "Baseline → Verbal (Дауыс нұсқауы)" : "Baseline → Verbal (Голосовая ОС)"}
+            {lang === "kz" ? "Қалыпты → Ауызша" : "Обычная → Голос"}
           </button>
         </div>
       </div>
 
       {loading ? (
-        <div style={{ padding: "40px", textAlign: "center", color: "var(--muted)", fontSize: "13px" }}>
-          {lang === "kz" ? "Сессиялар арасындағы дифф есептелуде..." : "Расчет биомеханического диффа между сессиями..."}
+        <div style={{ padding: "24px", textAlign: "center", color: "var(--muted)", fontSize: "13px" }}>
+          {lang === "kz" ? "Салыстырмалы көрсеткіштер есептелуде..." : "Расчёт динамики показателей..."}
         </div>
       ) : diff ? (
         <>
-          {/* Main Git-Like Status Ribbon */}
-          <div style={{
-            padding: "14px 16px",
-            borderRadius: "8px",
-            background: diff.status === "improved" ? "var(--teal-bg)" : (diff.status === "regressed" ? "var(--red-bg)" : "var(--amber-bg)"),
-            border: `1px solid ${diff.status === "improved" ? "var(--teal-border)" : (diff.status === "regressed" ? "var(--red-border)" : "var(--amber-border)")}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "10px"
-          }}>
+          {/* Clean status strip (flat, no nested pill card) */}
+          <div
+            style={{
+              padding: "12px 14px",
+              borderRadius: "8px",
+              background:
+                diff.status === "improved"
+                  ? "var(--teal-bg)"
+                  : diff.status === "regressed"
+                  ? "var(--red-bg)"
+                  : "var(--amber-bg)",
+              border: `1px solid ${
+                diff.status === "improved"
+                  ? "var(--teal-border)"
+                  : diff.status === "regressed"
+                  ? "var(--red-border)"
+                  : "var(--amber-border)"
+              }`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               {diff.status === "improved" ? (
-                <CheckCircle2 size={22} color="var(--teal)" />
+                <CheckCircle2 size={18} color="var(--teal)" />
               ) : diff.status === "regressed" ? (
-                <ShieldAlert size={22} color="var(--red)" />
+                <ShieldAlert size={18} color="var(--red)" />
               ) : (
-                <AlertTriangle size={22} color="var(--amber)" />
+                <AlertTriangle size={18} color="var(--amber)" />
               )}
               <div>
-                <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--ink)" }}>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--ink)" }}>
                   {diff.status === "improved"
-                    ? (lang === "kz" ? "Оң динамика: клиникалық прогресс" : "Положительная динамика: истинный прогресс")
+                    ? lang === "kz"
+                      ? "Оң динамика"
+                      : "Положительная динамика"
                     : diff.status === "regressed"
-                    ? (lang === "kz" ? "Ескерту: патологиялық компенсация өсті" : "Внимание: рост патологической компенсации")
-                    : (lang === "kz" ? "Тұрақты қимыл-қозғалыс статусы" : "Стабильный двигательный статус")}
+                    ? lang === "kz"
+                      ? "Жамбас компенсациясының өсуі"
+                      : "Рост патологической компенсации"
+                    : lang === "kz"
+                    ? "Тұрақты қозғалыс статусы"
+                    : "Стабильный двигательный статус"}
                 </div>
-                <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>
+                <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "2px" }}>
                   {lang === "kz" ? diff.verdict_kz : diff.verdict_ru}
                 </div>
               </div>
             </div>
 
-            {/* WHO ICF Transition Badge */}
-            <div style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "5px 12px",
-              borderRadius: "6px",
-              background: "var(--white)",
-              border: "1px solid var(--line)",
-              fontSize: "12px",
-              fontWeight: 700
-            }}>
+            <div className="tabular-nums" style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", fontFamily: "var(--mono)", fontWeight: 500 }}>
               <span style={{ color: "var(--muted)" }}>МКФ b770:</span>
-              <span style={{ color: "var(--red)" }}>{diff.icf_a}</span>
+              <span>{diff.icf_a}</span>
               <ArrowRight size={13} color="var(--muted)" />
-              <span style={{ color: diff.icf_improved ? "var(--teal)" : "var(--ink)" }}>{diff.icf_b}</span>
-              {diff.icf_improved && (
-                <span className="badge badge-green" style={{ fontSize: "10px", padding: "1px 6px" }}>
-                  {lang === "kz" ? "+1 санат" : "+1 уровень"}
-                </span>
-              )}
+              <span style={{ color: diff.icf_improved ? "var(--teal)" : "var(--ink)", fontWeight: 600 }}>{diff.icf_b}</span>
             </div>
           </div>
 
-          {/* 4 Quantitative Git-Diff Cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "10px" }}>
-            
-            {/* 1. GDI Index */}
-            <div style={{ padding: "12px", background: "var(--paper)", borderRadius: "6px", border: "1px solid var(--line)" }}>
-              <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 600 }}>
-                {lang === "kz" ? "Сагитталды GDI индексі" : "Индекс походки GDI (0-100)"}
+          {/* 4-column hairline-separated comparison row (not nested cards!) */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: "1px",
+              background: "var(--line)",
+              border: "1px solid var(--line)",
+              borderRadius: "8px",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: "14px", background: "var(--paper)" }}>
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {lang === "kz" ? "Жүріс индексі (GDI)" : "Индекс походки (GDI)"}
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }} className="tabular-nums">
-                <span style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink)" }}>{diff.gdi_b.toFixed(0)}</span>
+              <div className="tabular-nums" style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
+                <span style={{ fontSize: "20px", fontWeight: 600 }}>{fmtFixed(diff.gdi_b, 0)}</span>
                 <span style={{ fontSize: "12px", color: "var(--muted)" }}>/ 100</span>
-                <span style={{
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: diff.delta_gdi >= 0 ? "var(--teal)" : "var(--red)",
-                  marginLeft: "auto"
-                }}>
-                  {diff.delta_gdi >= 0 ? `+${diff.delta_gdi.toFixed(1)}` : `${diff.delta_gdi.toFixed(1)}`}
+                <span style={{ fontSize: "12px", fontWeight: 600, marginLeft: "auto", color: (diff.delta_gdi ?? 0) >= 0 ? "var(--teal)" : "var(--red)" }}>
+                  {fmtDiffSigned(diff.delta_gdi, 1)}
                 </span>
               </div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-                {lang === "kz" ? `Бастапқы: ${diff.gdi_a.toFixed(0)} ұпай` : `Базовый: ${diff.gdi_a.toFixed(0)} баллов`}
+              <div className="tabular-nums" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
+                {lang === "kz" ? `Бастапқы: ${fmtFixed(diff.gdi_a, 0)}` : `Исходно: ${fmtFixed(diff.gdi_a, 0)}`}
               </div>
             </div>
 
-            {/* 2. True Joint Extension (TJE) */}
-            <div style={{ padding: "12px", background: "var(--paper)", borderRadius: "6px", border: "1px solid var(--line)" }}>
-              <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 500 }}>
-                {lang === "kz" ? "Шынайы буын жазылуы (TJE)" : "Истинное разгибание (TJE)"}
+            <div style={{ padding: "14px", background: "var(--paper)" }}>
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {lang === "kz" ? "Шынайы жазылу (TJE)" : "Истинное разгибание (TJE)"}
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }} className="tabular-nums">
-                <span style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink)" }}>{diff.tje_b.toFixed(1)}°</span>
-                <span style={{
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: diff.tje_b < 0 ? "var(--teal)" : "var(--amber)",
-                  marginLeft: "auto"
-                }}>
-                  {diff.delta_tje.toFixed(1)}°
+              <div className="tabular-nums" style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
+                <span style={{ fontSize: "20px", fontWeight: 600 }}>{fmtDiffSigned(diff.tje_b, 1, "°")}</span>
+                <span style={{ fontSize: "12px", fontWeight: 600, marginLeft: "auto", color: (diff.tje_b ?? 0) < 0 ? "var(--teal)" : "var(--amber)" }}>
+                  {fmtDiffSigned(diff.delta_tje, 1, "°")}
                 </span>
               </div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-                {lang === "kz" ? "Жамбас ауытқуынсыз" : "Без наклона таза"}
+              <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
+                {lang === "kz" ? "Жамбасты ескере отырып" : "С поправкой на таз"}
               </div>
             </div>
 
-            {/* 3. Pathological Compensation Ratio (PCR) */}
-            <div style={{ padding: "12px", background: "var(--paper)", borderRadius: "6px", border: "1px solid var(--line)" }}>
-              <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 500 }}>
-                {lang === "kz" ? "Компенсация коэфф. (PCR)" : "Коэфф. компенсации (PCR)"}
+            <div style={{ padding: "14px", background: "var(--paper)" }}>
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {lang === "kz" ? "Компенсация (PCR)" : "Компенсация (PCR)"}
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }} className="tabular-nums">
-                <span style={{ fontSize: "20px", fontWeight: 600, color: diff.pcr_b > 0.8 ? "var(--red)" : diff.pcr_b >= 0.4 ? "var(--amber)" : "var(--teal)" }}>
-                  {diff.pcr_b.toFixed(2)}
+              <div className="tabular-nums" style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
+                <span style={{ fontSize: "20px", fontWeight: 600, color: (diff.pcr_b ?? 0) > 0.8 ? "var(--red)" : (diff.pcr_b ?? 0) >= 0.4 ? "var(--amber)" : "var(--teal)" }}>
+                  {fmtFixed(diff.pcr_b, 2)}
                 </span>
-                <span style={{
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  color: diff.pcr_b > 0.8 ? "var(--red)" : diff.pcr_b >= 0.4 ? "var(--amber)" : "var(--teal)",
-                  marginLeft: "auto"
-                }}>
-                  {diff.pcr_b > 0.8
-                    ? (lang === "kz" ? "Қауіп (>0.8)" : "Риск (>0.8)")
+                <span style={{ fontSize: "11px", fontWeight: 600, marginLeft: "auto", color: (diff.pcr_b ?? 0) > 0.8 ? "var(--red)" : (diff.pcr_b ?? 0) >= 0.4 ? "var(--amber)" : "var(--teal)" }}>
+                  {typeof diff.pcr_b !== "number"
+                    ? "—"
+                    : diff.pcr_b > 0.8
+                    ? lang === "kz"
+                      ? "Қауіп"
+                      : "Риск"
                     : diff.pcr_b >= 0.4
-                    ? (lang === "kz" ? "Орташа (0.4-0.8)" : "Умеренно (0.4-0.8)")
-                    : (lang === "kz" ? "Қалыпты (<0.4)" : "Норма (<0.4)")}
+                    ? lang === "kz"
+                      ? "Орташа"
+                      : "Умеренно"
+                    : lang === "kz"
+                    ? "Қалыпты"
+                    : "Норма"}
                 </span>
               </div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-                {lang === "kz" ? "Шекті мән: 0.80" : "Порог риска: 0.80"}
+              <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
+                {lang === "kz" ? "Қауіп шегі: 0,80" : "Порог риска: 0,80"}
               </div>
             </div>
 
-            {/* 4. Gait Profile Score (GPS) */}
-            <div style={{ padding: "12px", background: "var(--paper)", borderRadius: "6px", border: "1px solid var(--line)" }}>
-              <div style={{ fontSize: "11px", color: "var(--muted)", fontWeight: 500 }}>
-                {lang === "kz" ? "Жүріс девиациясы (GPS)" : "Девиация шага (GPS)"}
+            <div style={{ padding: "14px", background: "var(--paper)" }}>
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {lang === "kz" ? "Жүріс девиациясы (GPS)" : "Индекс девиации (GPS)"}
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0" }} className="tabular-nums">
-                <span style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink)" }}>{diff.gps_b.toFixed(1)}°</span>
-                <span style={{
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: diff.delta_gps < 0 ? "var(--teal)" : "var(--red)",
-                  marginLeft: "auto"
-                }}>
-                  {diff.delta_gps < 0 ? `${diff.delta_gps.toFixed(1)}°` : `+${diff.delta_gps.toFixed(1)}°`}
+              <div className="tabular-nums" style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
+                <span style={{ fontSize: "20px", fontWeight: 600 }}>{fmtFixed(diff.gps_b, 1, "°")}</span>
+                <span style={{ fontSize: "12px", fontWeight: 600, marginLeft: "auto", color: (diff.delta_gps ?? 0) < 0 ? "var(--teal)" : "var(--red)" }}>
+                  {fmtDiffSigned(diff.delta_gps, 1, "°")}
                 </span>
               </div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-                {lang === "kz" ? `Бастапқы: ${diff.gps_a.toFixed(1)}°` : `Базовый: ${diff.gps_a.toFixed(1)}°`}
+              <div className="tabular-nums" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
+                {lang === "kz" ? `Бастапқы: ${fmtFixed(diff.gps_a, 1, "°")}` : `Исходно: ${fmtFixed(diff.gps_a, 1, "°")}`}
               </div>
             </div>
-
           </div>
         </>
       ) : diffError ? (
-        <div style={{ padding: "14px", background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "6px", color: "var(--muted)", fontSize: "12.5px" }}>
+        <div style={{ padding: "14px", background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", color: "var(--muted)", fontSize: "13px" }}>
           {lang === "kz"
-            ? `Салыстыру үшін ${sessionB} сессиясы тіркелмеген.`
-            : `Сессия ${sessionB} не записана для сравнения с Baseline.`}
+            ? `Салыстыру үшін ${sessionB === "VR" ? "VR" : "ауызша нұсқау"} сынамасы жүктелмеген.`
+            : `Проба (${sessionB === "VR" ? "VR" : "голосовые инструкции"}) для данного пациента не записана.`}
         </div>
       ) : null}
-
-    </div>
+    </section>
   );
 }

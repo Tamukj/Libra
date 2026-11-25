@@ -1,29 +1,30 @@
 "use client";
 
 import React from "react";
-import { AlertTriangle, CheckCircle2, AlertOctagon, HelpCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, AlertOctagon } from "lucide-react";
 import { PatientAnalysis } from "@/lib/types";
 import { translations } from "@/lib/translations";
 
 interface CdssProps {
   analysis: PatientAnalysis;
-  lang: "ru" | "kz" | "en";
+  lang: "ru" | "kz";
 }
 
 export function CdssTrafficLight({ analysis, lang }: CdssProps) {
   const t = translations[lang];
-  const cdss_risk = analysis.cdss_risk || (analysis as any)?.cdss || {
-    status: "yellow",
+  const cdss_risk = analysis.cdss_risk || analysis.cdss || {
+    status: "yellow" as const,
     pcr: 0.0,
     tje: 0.0,
-    label_ru: "Данные анализируются",
-    label_kz: "Деректер өңделуде",
+    label_ru: "Оценка данных",
+    label_kz: "Деректерді бағалау",
     recommendation_ru: "Ожидание результатов биомеханического анализа.",
-    recommendation_kz: "Биомеханикалық талдау нәтижелерін күту."
+    recommendation_kz: "Биомеханикалық талдау нәтижелерін күту.",
   };
+
   const { summary, icf } = analysis;
-  const safeTje = typeof cdss_risk.tje === "number" && !isNaN(cdss_risk.tje) ? cdss_risk.tje : 0.0;
-  const safePcr = typeof cdss_risk.pcr === "number" && !isNaN(cdss_risk.pcr) ? cdss_risk.pcr : 0.0;
+  const safeTje = typeof cdss_risk.tje === "number" && isFinite(cdss_risk.tje) ? cdss_risk.tje : 0.0;
+  const safePcr = typeof cdss_risk.pcr === "number" && isFinite(cdss_risk.pcr) ? cdss_risk.pcr : 0.0;
 
   const statusConfig = {
     green: {
@@ -32,15 +33,15 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
       color: "var(--teal)",
       badgeClass: "badge-green",
       icon: CheckCircle2,
-      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru
+      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru,
     },
     yellow: {
-      bg: "var(--amber-light)",
+      bg: "var(--amber-bg)",
       border: "var(--amber-border)",
       color: "var(--amber)",
       badgeClass: "badge-yellow",
       icon: AlertTriangle,
-      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru
+      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru,
     },
     red: {
       bg: "var(--red-bg)",
@@ -48,154 +49,212 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
       color: "var(--red)",
       badgeClass: "badge-red",
       icon: AlertOctagon,
-      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru
-    }
-  }[cdss_risk?.status] || {
-    bg: "var(--linen)",
+      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru,
+    },
+    unassessed: {
+      bg: "var(--sidebar)",
+      border: "var(--line)",
+      color: "var(--ink)",
+      badgeClass: "badge-neutral",
+      icon: AlertTriangle,
+      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru,
+    },
+  }[cdss_risk.status] || {
+    bg: "var(--sidebar)",
     border: "var(--line)",
     color: "var(--ink)",
     badgeClass: "badge-neutral",
     icon: AlertTriangle,
-    title: lang === "kz" ? (cdss_risk?.label_kz || "Белгісіз статус") : (cdss_risk?.label_ru || "Неопределенный статус")
+    title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru,
   };
 
   const StatusIcon = statusConfig.icon;
-  const recommendationText = lang === "kz" ? cdss_risk?.recommendation_kz : cdss_risk?.recommendation_ru;
+  const recommendationText = lang === "kz" ? cdss_risk.recommendation_kz : cdss_risk.recommendation_ru;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-      
-      {/* Top Banner: Traffic Light Status */}
-      <div style={{
-        background: statusConfig.bg,
-        border: `1px solid ${statusConfig.border}`,
-        borderRadius: "8px",
-        padding: "14px 18px",
-        display: "flex",
-        alignItems: "flex-start",
-        gap: "12px"
-      }}>
+    <section aria-label={lang === "kz" ? "Қауіпсіздік бағдаршамы" : "Клинический светофор"} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Top Status Banner */}
+      <div
+        style={{
+          background: statusConfig.bg,
+          border: `1px solid ${statusConfig.border}`,
+          borderRadius: "12px",
+          padding: "16px 20px",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "12px",
+        }}
+      >
         <div style={{ color: statusConfig.color, marginTop: "2px", flexShrink: 0 }}>
-          <StatusIcon size={22} />
+          <StatusIcon size={20} strokeWidth={1.7} />
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "14px", fontWeight: 600, color: statusConfig.color }}>
+            <span style={{ fontSize: "15px", fontWeight: 600, color: statusConfig.color }}>
               {statusConfig.title}
             </span>
-            <span className={`badge ${statusConfig.badgeClass}`}>
+            <span className={`badge ${statusConfig.badgeClass} tabular-nums`}>
               PCR = {safePcr.toFixed(2)}
             </span>
           </div>
-          <div style={{ fontSize: "13px", color: "var(--ink)", lineHeight: "1.5" }}>
+          <p style={{ fontSize: "13px", color: "var(--ink)", lineHeight: 1.55 }}>
             <strong>{t.recommendation}:</strong> {recommendationText}
-          </div>
+          </p>
           {cdss_risk.status === "red" && (
-            <div style={{ marginTop: "8px", fontSize: "11px", color: "var(--critical)", fontWeight: 600 }}>
+            <p style={{ marginTop: "6px", fontSize: "12px", color: "var(--red)", fontWeight: 500 }}>
               {lang === "kz"
-                ? "ШҰҒЫЛ ЖАҒДАЙДА: 103 нөміріне қоңырау шалыңыз. Libra диагноз қоймайды (СППР, 8.4-бап)."
-                : "ВНИМАНИЕ: В экстренных ситуациях вызывайте 103. Libra является СППР и не ставит диагноз (ст. 8.4)."}
-            </div>
+                ? "Назар аударыңыз: шұғыл жағдайларда 103 нөміріне қоңырау шалыңыз. Жүйе диагноз қоймайды (Ереже 8.2-т.)."
+                : "В экстренных ситуациях вызывайте скорую помощь 103. СППР не ставит диагноз (п. 8.2 Положения)."}
+            </p>
           )}
         </div>
       </div>
 
-      {/* 4 Quantitative Biomarker Cards with Disciplined Spacing */}
+      {/* 4 Unified Metric Cells */}
       <div className="grid-kpi-4">
-        
-        {/* Metric 1: Delta aMinSagH (Target) */}
-        <div className="card" style={{ padding: "14px 16px" }} title={t.tooltip_delta_hip || "Угол минимального сагиттального разгибания бедра."}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-            <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>
-              {lang === "kz" ? "Санның жазылуы" : "Разгибание бедра"}
-            </span>
-            <HelpCircle size={13} color="var(--muted)" style={{ cursor: "help" }} />
+        <div className="surface" style={{ padding: "16px" }} title={t.tooltip_delta_hip}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+            {lang === "kz" ? "Санның жазылу өсімі" : "Разгибание бедра (ΔaMinSagH)"}
           </div>
-          <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: summary.delta_amin_sagh <= -1.0 ? "var(--teal)" : "var(--muted)", margin: "4px 0 2px" }}>
-            {summary.delta_amin_sagh > 0 ? `+${summary.delta_amin_sagh.toFixed(1)}` : summary.delta_amin_sagh.toFixed(1)}°
-            <span style={{ fontSize: "11px", fontWeight: 400, color: "var(--muted)", marginLeft: "6px" }}>
-              ({summary.baseline_amin_sagh.toFixed(1)}° → {summary.vr_amin_sagh.toFixed(1)}°)
-            </span>
+          <div
+            className="tabular-nums"
+            style={{
+              fontSize: "24px",
+              fontWeight: 600,
+              lineHeight: 1.15,
+              color: typeof summary.delta_amin_sagh === "number" && summary.delta_amin_sagh <= -1.0 ? "var(--teal)" : "var(--ink)",
+            }}
+          >
+            {typeof summary.delta_amin_sagh === "number" && isFinite(summary.delta_amin_sagh)
+              ? `${summary.delta_amin_sagh > 0 ? `+${summary.delta_amin_sagh.toFixed(1)}` : summary.delta_amin_sagh.toFixed(1)}°`
+              : "—"}
           </div>
-          <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-            {summary.delta_amin_sagh <= -2.0
-              ? (lang === "kz" ? "Күйі: MCID (≤ -2.0°) қол жеткізілді" : "Статус: MCID (≤ -2.0°) достигнут")
+          <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
+            {typeof summary.baseline_amin_sagh === "number" ? `${summary.baseline_amin_sagh.toFixed(1)}°` : "—"} →{" "}
+            {typeof summary.vr_amin_sagh === "number" ? `${summary.vr_amin_sagh.toFixed(1)}°` : "—"} ·{" "}
+            {typeof summary.delta_amin_sagh !== "number" || !isFinite(summary.delta_amin_sagh)
+              ? lang === "kz"
+                ? "VR сынамасы жоқ"
+                : "Нет VR-пробы"
+              : summary.delta_amin_sagh <= -2.0
+              ? lang === "kz"
+                ? "Айқын оң нәтиже"
+                : "Клинически значимо"
               : summary.delta_amin_sagh <= -1.0
-              ? (lang === "kz" ? "Күйі: орташа жақсару (≤ -1.0°)" : "Статус: умеренный отклик (≤ -1.0°)")
-              : (lang === "kz" ? "Күйі: динамикасыз" : "Статус: без динамики")}
+              ? lang === "kz"
+                ? "Орташа жақсару"
+                : "Умеренный отклик"
+              : lang === "kz"
+              ? "Динамикасыз"
+              : "Без динамики"}
           </div>
         </div>
 
-        {/* Metric 2: True Joint Extension (TJE) */}
-        <div className="card" style={{ padding: "14px 16px" }} title={t.tooltip_tje}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-            <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>
-              {t.tje_title}
-            </span>
-            <HelpCircle size={13} color="var(--muted)" style={{ cursor: "help" }} />
+        <div className="surface" style={{ padding: "16px" }} title={t.tooltip_tje}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+            {t.tje_title}
           </div>
-          <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: safeTje <= -1.0 ? "var(--teal)" : "var(--amber)", margin: "4px 0 2px" }}>
+          <div
+            className="tabular-nums"
+            style={{
+              fontSize: "24px",
+              fontWeight: 600,
+              lineHeight: 1.15,
+              color: safeTje <= -1.0 ? "var(--teal)" : safeTje > 0.5 ? "var(--red)" : "var(--amber)",
+            }}
+          >
             {safeTje > 0 ? `+${safeTje.toFixed(1)}` : safeTje.toFixed(1)}°
           </div>
-          <div style={{ fontSize: "11px", color: "var(--muted)" }}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
             {t.tje_desc}
           </div>
         </div>
 
-        {/* Metric 3: Pathological Compensation Ratio (PCR) */}
-        <div className="card" style={{ padding: "14px 16px" }} title={t.tooltip_pcr}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-            <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>
-              {t.pcr_title}
-            </span>
-            <HelpCircle size={13} color="var(--muted)" style={{ cursor: "help" }} />
+        <div className="surface" style={{ padding: "16px" }} title={t.tooltip_pcr}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+            {t.pcr_title}
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "6px", margin: "4px 0 2px" }}>
-            <span className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: safePcr > 0.8 ? "var(--red)" : safePcr >= 0.4 ? "var(--amber)" : "var(--teal)" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+            <span
+              className="tabular-nums"
+              style={{
+                fontSize: "24px",
+                fontWeight: 600,
+                lineHeight: 1.15,
+                color: safePcr > 0.8 ? "var(--red)" : safePcr >= 0.4 ? "var(--amber)" : "var(--teal)",
+              }}
+            >
               {safePcr.toFixed(2)}
             </span>
-            <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+            <span style={{ fontSize: "12px", color: "var(--muted)" }}>
               {safePcr > 0.8
-                ? (lang === "kz" ? "Қауіпті" : "Критично")
+                ? lang === "kz"
+                  ? "Жоғары"
+                  : "Высокий риск"
                 : safePcr >= 0.4
-                ? (lang === "kz" ? "Орташа" : "Умеренно")
-                : (lang === "kz" ? "Қалыпты" : "Норма")}
+                ? lang === "kz"
+                  ? "Орташа"
+                  : "Умеренно"
+                : lang === "kz"
+                ? "Қалыпты"
+                : "В норме"}
             </span>
           </div>
-          <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-            {lang === "kz"
-              ? `Жамбас: ${summary.delta_gvs_pelvis > 0 ? `+${summary.delta_gvs_pelvis.toFixed(1)}` : summary.delta_gvs_pelvis.toFixed(1)}° ауытқу`
-              : `Таз: ${summary.delta_gvs_pelvis > 0 ? `+${summary.delta_gvs_pelvis.toFixed(1)}` : summary.delta_gvs_pelvis.toFixed(1)}° девиации`}
+          <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
+            {typeof summary.delta_gvs_pelvis === "number" && isFinite(summary.delta_gvs_pelvis)
+              ? lang === "kz"
+                ? `Жамбас ауытқуы: ${summary.delta_gvs_pelvis > 0 ? `+${summary.delta_gvs_pelvis.toFixed(1)}` : summary.delta_gvs_pelvis.toFixed(1)}°`
+                : `Отклонение таза: ${summary.delta_gvs_pelvis > 0 ? `+${summary.delta_gvs_pelvis.toFixed(1)}` : summary.delta_gvs_pelvis.toFixed(1)}°`
+              : lang === "kz"
+              ? "Жамбас ауытқуы: —"
+              : "Отклонение таза: —"}
           </div>
         </div>
 
-        {/* Metric 4: WHO ICF Status */}
-        <div className="card" style={{ padding: "14px 16px" }} title={t.tooltip_icf}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-            <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>
-              {t.icf_title}
-            </span>
-            <HelpCircle size={13} color="var(--muted)" style={{ cursor: "help" }} />
+        <div className="surface" style={{ padding: "16px" }} title={t.tooltip_icf}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+            {t.icf_title}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "2px", margin: "4px 0 2px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-              <span style={{ color: "var(--muted)" }}>b770:</span>
-              <strong style={{ fontFamily: "var(--mono)" }}>{icf.b770_baseline} → {icf.b770_vr}</strong>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "13px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ color: "var(--muted)" }}>b770</span>
+              <span className="tabular-nums" style={{ fontFamily: "var(--mono)", fontWeight: 500 }}>
+                {icf.b770_baseline} → {icf.b770_vr}
+              </span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-              <span style={{ color: "var(--muted)" }}>d450:</span>
-              <strong style={{ fontFamily: "var(--mono)" }}>{icf.d450}</strong>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ color: "var(--muted)" }}>d450</span>
+              <span className="tabular-nums" style={{ fontFamily: "var(--mono)", fontWeight: 500 }}>
+                {icf.d450 === "N/A" ? (lang === "kz" ? "Бағаланбады" : "Нет кривых") : icf.d450}
+              </span>
             </div>
           </div>
-          <div style={{ fontSize: "11px", color: summary.vr_gps < summary.baseline_gps ? "var(--teal)" : "var(--red)" }}>
-            {summary.vr_gps < summary.baseline_gps
-              ? (lang === "kz" ? "GPS жақсарды" : "GPS улучшен")
-              : (lang === "kz" ? "Ауытқу ұлғайды" : "Девиация увеличена")}
+          <div
+            style={{
+              fontSize: "12px",
+              color:
+                typeof summary.vr_gps === "number" &&
+                typeof summary.baseline_gps === "number" &&
+                summary.vr_gps < summary.baseline_gps
+                  ? "var(--teal)"
+                  : "var(--muted)",
+              marginTop: "6px",
+            }}
+          >
+            {typeof summary.vr_gps !== "number" || typeof summary.baseline_gps !== "number"
+              ? lang === "kz"
+                ? "Салыстырмалы VR дерегі жоқ"
+                : "Нет парной VR-пробы"
+              : summary.vr_gps < summary.baseline_gps
+              ? lang === "kz"
+                ? "Жүріс профилі (GPS) жақсарды"
+                : "Индекс походки GPS улучшился"
+              : lang === "kz"
+              ? "Ауытқу сақталған"
+              : "Отклонение GPS сохраняется"}
           </div>
         </div>
-
       </div>
-
-    </div>
+    </section>
   );
 }

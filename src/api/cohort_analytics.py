@@ -12,11 +12,13 @@ def _mean_finite(vals: List[float]) -> float | None:
 
 def build_cohort_analytics(patient_records: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Aggregates real, non-hardcoded cohort metrics across all patients currently in the database
-    and dataset (KU Leuven Open CP Gait Dataset + any user-uploaded CSV sessions).
+    Aggregates live cohort metrics across all patients currently in the database.
+    Source provenance reflects whether seeded KU Leuven records are actually present.
+    Baseline-only patients ('unassessed') are excluded from yellow/green/red VR risk counts.
     """
     total_patients = len(patient_records)
     cdss_counts = {"green": 0, "yellow": 0, "red": 0}
+    unassessed_count = 0
     best_method_counts = {"VR": 0, "Verbal": 0, "Baseline": 0}
     side_counts = {"LEFT": 0, "RIGHT": 0}
 
@@ -34,10 +36,20 @@ def build_cohort_analytics(patient_records: List[Dict[str, Any]]) -> Dict[str, A
     heights: List[float] = []
     leg_lengths: List[float] = []
 
+    seeded_count = 0
+    uploaded_count = 0
+
     for rec in patient_records:
-        status = rec.get("status", "yellow")
+        if rec.get("has_seeded"):
+            seeded_count += 1
+        else:
+            uploaded_count += 1
+
+        status = rec.get("status")
         if status in cdss_counts:
             cdss_counts[status] += 1
+        else:
+            unassessed_count += 1
 
         bm = rec.get("best_method", "Baseline")
         if bm in best_method_counts:
@@ -51,18 +63,19 @@ def build_cohort_analytics(patient_records: List[Dict[str, Any]]) -> Dict[str, A
         cycles_vb += int(rec.get("cycles_verbal") or 0)
         cycles_vr += int(rec.get("cycles_vr") or 0)
 
-        if rec.get("baseline_gps") is not None:
+        if rec.get("has_baseline", True) and rec.get("baseline_gps") is not None:
             b_gps_list.append(rec["baseline_gps"])
-        if rec.get("verbal_gps") is not None:
+        if rec.get("has_verbal") and rec.get("verbal_gps") is not None:
             vb_gps_list.append(rec["verbal_gps"])
-        if rec.get("vr_gps") is not None and rec.get("has_vr"):
+        if rec.get("has_vr") and rec.get("vr_gps") is not None:
             vr_gps_list.append(rec["vr_gps"])
-        if rec.get("delta_amin_sagh") is not None and rec.get("has_vr"):
-            d_hip_list.append(rec["delta_amin_sagh"])
-        if rec.get("tje") is not None and rec.get("has_vr"):
-            tje_list.append(rec["tje"])
-        if rec.get("pcr") is not None and rec.get("has_vr"):
-            pcr_list.append(rec["pcr"])
+        if rec.get("has_vr") and rec.get("has_baseline", True):
+            if rec.get("delta_amin_sagh") is not None:
+                d_hip_list.append(rec["delta_amin_sagh"])
+            if rec.get("tje") is not None:
+                tje_list.append(rec["tje"])
+            if rec.get("pcr") is not None:
+                pcr_list.append(rec["pcr"])
 
         if rec.get("weight") and rec["weight"] > 0:
             weights.append(float(rec["weight"]))
@@ -71,14 +84,32 @@ def build_cohort_analytics(patient_records: List[Dict[str, Any]]) -> Dict[str, A
         if rec.get("leg_length") and rec["leg_length"] > 0:
             leg_lengths.append(float(rec["leg_length"]))
 
-    return {
-        "source": {
+    if seeded_count > 0 and uploaded_count == 0:
+        source_meta = {
             "name": "KU Leuven Pediatric Cerebral Palsy Gait Dataset",
             "citation": "De Mulder et al., Children 2024, 11(5), 524",
             "doi": "10.48804/JUNNWW",
             "license": "CC-BY-NC-SA-4.0",
-        },
+        }
+    elif seeded_count > 0:
+        source_meta = {
+            "name": "KU Leuven Pediatric CP Gait Dataset + Uploaded Clinical Sessions",
+            "citation": "De Mulder et al., Children 2024, 11(5), 524 & clinic CSV imports",
+            "doi": "10.48804/JUNNWW",
+            "license": "CC-BY-NC-SA-4.0 (open subset)",
+        }
+    else:
+        source_meta = {
+            "name": "Custom Uploaded Clinical Cohort",
+            "citation": "Clinic-submitted anonymized gait sessions (Law of RK No. 94-V)",
+            "doi": "N/A",
+            "license": "Internal Clinical Data",
+        }
+
+    return {
+        "source": source_meta,
         "total_patients": total_patients,
+        "unassessed_patients": unassessed_count,
         "cycles": {
             "baseline": cycles_base,
             "verbal": cycles_vb,

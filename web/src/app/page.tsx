@@ -1,422 +1,394 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { ArrowRight, Eye, ShieldCheck, Activity, FileText } from "lucide-react";
 import { LibraLogo } from "@/components/LibraLogo";
 import { useLanguage } from "@/lib/LanguageContext";
-import { ArrowRight, Stethoscope, ChevronRight, CheckCircle2, AlertOctagon, Activity } from "lucide-react";
+import { getCohortAnalytics } from "@/lib/api";
+import { CohortAnalytics } from "@/lib/types";
 
 export default function LandingPage() {
-  const { lang, setLang } = useLanguage();
+  const { lang, setLang, t } = useLanguage();
+  const isKz = lang === "kz";
+  const [largeFont, setLargeFont] = useState(false);
+  const [cohort, setCohort] = useState<CohortAnalytics | null>(null);
+
+  useEffect(() => {
+    try {
+      const enabled = localStorage.getItem("libra_a11y_large") === "1";
+      setLargeFont(enabled);
+      document.documentElement.classList.toggle("a11y-large", enabled);
+    } catch {}
+    getCohortAnalytics()
+      .then((d) => setCohort(d))
+      .catch(() => {});
+  }, []);
+
+  const toggleLargeFont = () => {
+    const next = !largeFont;
+    setLargeFont(next);
+    document.documentElement.classList.toggle("a11y-large", next);
+    try {
+      localStorage.setItem("libra_a11y_large", next ? "1" : "0");
+    } catch {}
+  };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
-      
-      {/* 1. Public Header */}
-      <header style={{ borderBottom: "1px solid var(--line)", background: "var(--paper)", position: "sticky", top: 0, zIndex: 40 }}>
-        <div className="container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", height: "68px" }}>
-          
-          <LibraLogo size="md" />
+    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
+      <a href="#main-landing" className="skip-link visually-hidden">
+        {isKz ? "Негізгі мазмұнға өту" : "Перейти к содержимому"}
+      </a>
 
-          <nav style={{ display: "flex", gap: "24px", fontSize: "13px", fontWeight: "600" }} className="hide-on-mobile">
-            <Link href="#problem" style={{ color: "var(--muted)" }}>{lang === "kz" ? "Клиникалық міндет" : "Клиническая задача"}</Link>
-            <Link href="#technology" style={{ color: "var(--muted)" }}>{lang === "kz" ? "Биомеханика" : "Биомеханика"}</Link>
-            <Link href="/portal/analytics" style={{ color: "var(--muted)" }}>{lang === "kz" ? "Когорта талдауы" : "Аналитика когорты"}</Link>
-            <Link href="/portal" style={{ color: "var(--muted)" }}>{lang === "kz" ? "Демо-портал" : "Демо-портал"}</Link>
+      {/* Quiet Editorial Header */}
+      <header
+        style={{
+          borderBottom: "1px solid var(--line)",
+          background: "var(--paper)",
+          position: "sticky",
+          top: 0,
+          zIndex: 20,
+        }}
+      >
+        <div
+          className="container"
+          style={{
+            minBlockSize: "64px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "16px",
+            flexWrap: "wrap",
+            paddingBlock: "10px",
+          }}
+        >
+          <LibraLogo size="md" href="/" subtitle={t.brand_sub} />
+
+          <nav
+            aria-label={isKz ? "Бет бөлімдері" : "Навигация по странице"}
+            className="hide-on-mobile"
+            style={{ display: "flex", alignItems: "center", gap: "24px", fontSize: "14px", color: "var(--secondary)" }}
+          >
+            <a href="#methodology" style={{ fontWeight: 500 }}>
+              {isKz ? "Әдістеме" : "Методика"}
+            </a>
+            <a href="#workflow" style={{ fontWeight: 500 }}>
+              {isKz ? "Дәрігерге арналған" : "Для врача"}
+            </a>
+            <Link href="/portal/safety" style={{ fontWeight: 500 }}>
+              {isKz ? "Этика және шектеулер" : "Этика и 103"}
+            </Link>
           </nav>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {/* Bilingual Switcher */}
-            <div style={{ display: "inline-flex", border: "1px solid var(--line)", borderRadius: "6px", overflow: "hidden", background: "var(--white)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <div
+              role="group"
+              aria-label={isKz ? "Тілді таңдау" : "Выбор языка"}
+              style={{
+                display: "inline-flex",
+                background: "var(--sidebar)",
+                border: "1px solid var(--line)",
+                borderRadius: "8px",
+                padding: "2px",
+                gap: "2px",
+              }}
+            >
               <button
-                onClick={() => setLang("kz")}
+                type="button"
+                onClick={() => setLang("ru")}
+                aria-pressed={lang === "ru"}
                 style={{
-                  padding: "5px 10px",
-                  fontSize: "11px",
-                  fontWeight: 700,
+                  minBlockSize: "30px",
+                  padding: "4px 10px",
+                  borderRadius: "6px",
                   border: "none",
-                  background: lang === "kz" ? "var(--linen)" : "transparent",
-                  color: "var(--ink)",
-                  cursor: "pointer"
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  fontWeight: lang === "ru" ? 600 : 500,
+                  background: lang === "ru" ? "var(--white)" : "transparent",
+                  color: lang === "ru" ? "var(--ink)" : "var(--secondary)",
                 }}
               >
-                ҚАЗ
+                Рус
               </button>
               <button
-                onClick={() => setLang("ru")}
+                type="button"
+                onClick={() => setLang("kz")}
+                aria-pressed={lang === "kz"}
                 style={{
-                  padding: "5px 10px",
-                  fontSize: "11px",
-                  fontWeight: 700,
+                  minBlockSize: "30px",
+                  padding: "4px 10px",
+                  borderRadius: "6px",
                   border: "none",
-                  borderLeft: "1px solid var(--line)",
-                  background: lang === "ru" ? "var(--linen)" : "transparent",
-                  color: "var(--ink)",
-                  cursor: "pointer"
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  fontWeight: lang === "kz" ? 600 : 500,
+                  background: lang === "kz" ? "var(--white)" : "transparent",
+                  color: lang === "kz" ? "var(--ink)" : "var(--secondary)",
                 }}
               >
-                РУС
+                Қаз
               </button>
             </div>
 
-            <Link href="/login" className="btn btn-primary" style={{ padding: "8px 16px" }}>
-              <Stethoscope size={15} />
-              <span>{lang === "kz" ? "Дәрігерлер кіруі" : "Вход для врачей"}</span>
+            <button
+              type="button"
+              onClick={toggleLargeFont}
+              aria-pressed={largeFont}
+              title={isKz ? "Ірі қаріп режимі" : "Версия для слабовидящих"}
+              className="btn"
+              style={{ minBlockSize: "34px", padding: "6px 10px" }}
+            >
+              <Eye size={14} strokeWidth={1.6} />
+              <span className="hide-on-mobile" style={{ fontSize: "12px" }}>
+                {largeFont ? (isKz ? "Қалыпты" : "Обычный") : (isKz ? "Ірі қаріп" : "А+")}
+              </span>
+            </button>
+
+            <Link href="/portal" className="btn btn-primary" style={{ minBlockSize: "36px" }}>
+              <span>{isKz ? "Дәрігер кабинеті" : "Кабинет врача"}</span>
+              <ArrowRight size={14} strokeWidth={1.7} />
             </Link>
           </div>
-
         </div>
       </header>
 
-      {/* 2. Hero Section */}
-      <section style={{ padding: "56px 0 64px", borderBottom: "1px solid var(--line)" }}>
-        <div className="container">
+      {/* Main Content */}
+      <main id="main-landing" tabIndex={-1} style={{ flex: 1 }}>
+        {/* Hero */}
+        <section className="container" style={{ paddingBlock: "clamp(40px, 6vw, 76px)" }}>
           <div className="grid-hero">
-            
-            <div>
-              <h1 style={{ fontSize: "clamp(34px, 4.2vw, 56px)", lineHeight: 1.1, marginBottom: "18px" }}>
-                {lang === "kz"
-                  ? "Балалар церебралды параличіндегі жүрістің клиникалық биомеханикалық талдауы"
-                  : "Клинический анализ походки по CSV-данным при детском церебральном параличе"}
-              </h1>
-
-              <p style={{ fontSize: "15px", color: "var(--muted)", lineHeight: "1.6", maxWidth: "52ch", marginBottom: "28px" }}>
-                {lang === "kz"
-                  ? "CSV-деректері бойынша Baseline, Verbal және VR режимдеріндегі жүрісті клиникалық салыстыру. Жамбастың жасырын компенсациясын (PCR / TJE) анықтайды, МКФ b770/d450 кодтарын есептейді және дайын PDF-есеп қалыптастырады."
-                  : "Клиническое сравнение походки по CSV-данным в условиях Baseline, Verbal и VR. Выявляет скрытую компенсацию таза (PCR / TJE), рассчитывает коды МКФ ВОЗ (b770 / d450) и формирует готовый PDF-отчёт для врача и родителей."}
+            <div style={{ display: "flex", flexDirection: "column", gap: "18px", maxWidth: "560px" }}>
+              <p style={{ fontSize: "13px", fontWeight: 500, color: "var(--teal)" }}>
+                {isKz
+                  ? "БЦП бар балалардың жүріс биомеханикасын клиникалық талдау"
+                  : "Клиническая оценка VR-реабилитации при детском церебральном параличе"}
               </p>
 
-              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                <Link href="/login" className="btn btn-amber" style={{ padding: "11px 22px", fontSize: "14px" }}>
-                  <span>{lang === "kz" ? "Дәрігердің жұмыс үстеліне өту" : "Открыть рабочий стол врача"}</span>
-                  <ArrowRight size={15} />
+              <h1 className="font-display" style={{ fontSize: "clamp(32px, 4.2vw, 50px)", lineHeight: 1.08 }}>
+                {isKz
+                  ? "Жамбасқа артық жүктемесіз сан буынының шынайы жазылуы."
+                  : "Истинное разгибание бедра без скрытой перегрузки таза."}
+              </h1>
+
+              <p style={{ fontSize: "16px", color: "var(--secondary)", lineHeight: 1.6 }}>
+                {isKz
+                  ? "Libra қалыпты жүріс, ауызша нұсқау және VR-кері байланыс сынақтарын салыстырып, буынның нақты прогресін (TJE) жамбастың компенсаторлық еңкеюінен (PCR) ажыратады."
+                  : "Libra сравнивает обычную ходьбу, голосовые инструкции и VR-обратную связь, отделяя истинное суставное движение (TJE) от компенсации тазом (PCR)."}
+              </p>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", paddingTop: "4px" }}>
+                <Link href="/portal" className="btn btn-primary" style={{ minBlockSize: "42px", paddingInline: "20px", fontSize: "14px" }}>
+                  <span>
+                    {cohort
+                      ? isKz
+                        ? `Тізілімді ашу (${cohort.total_patients} пациент)`
+                        : `Открыть реестр (${cohort.total_patients} пациентов)`
+                      : isKz
+                      ? "Дәрігер кабинетін ашу"
+                      : "Открыть кабинет врача"}
+                  </span>
+                  <ArrowRight size={15} strokeWidth={1.7} />
                 </Link>
-                <Link href="/portal" className="btn" style={{ padding: "11px 18px", fontSize: "14px" }}>
-                  <span>{lang === "kz" ? "Консилиумға арналған демо-қолжетімділік" : "Демо-доступ для консилиума"}</span>
+
+                <Link href="/portal/patients/s61520_8" className="btn" style={{ minBlockSize: "42px", paddingInline: "18px", fontSize: "14px" }}>
+                  {isKz ? "Клиникалық жағдайды қарау" : "Разобрать клинический случай"}
                 </Link>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginTop: "36px", paddingTop: "24px", borderTop: "1px solid var(--line)" }}>
-                <div>
-                  <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-                    {lang === "kz" ? "Пациенттер таңдамасы" : "Выборка пациентов"}
-                  </div>
-                  <div className="tabular-nums" style={{ fontSize: "18px", fontWeight: "600", marginTop: "2px" }}>
-                    {lang === "kz" ? "29 бала" : "29 детей"}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-                    {lang === "kz" ? "Бағалау стандарты" : "Стандарт оценки"}
-                  </div>
-                  <div style={{ fontSize: "18px", fontWeight: "600", marginTop: "2px" }}>
-                    {lang === "kz" ? "Бейкер (GVS)" : "Бейкер (GVS)"}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-                    {lang === "kz" ? "ДДҰ классификациясы" : "Классификация ВОЗ"}
-                  </div>
-                  <div style={{ fontSize: "18px", fontWeight: "600", marginTop: "2px" }}>
-                    {lang === "kz" ? "МКФ b770" : "МКФ b770"}
-                  </div>
-                </div>
-              </div>
+              <p className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {cohort
+                  ? isKz
+                    ? `Дерекқор: KU Leuven (DOI 10.48804/JUNNWW · CC-BY-NC-SA-4.0) · ${cohort.total_patients} науқас · ${cohort.cycles.total} қадам циклі`
+                    : `Данные KU Leuven (DOI 10.48804/JUNNWW · CC-BY-NC-SA-4.0) · ${cohort.total_patients} пациентов · ${cohort.cycles.total} циклов шага`
+                  : isKz
+                  ? "KU Leuven ашық клиникалық деректер базасы (CC-BY-NC-SA-4.0)"
+                  : "Открытая клиническая база KU Leuven (DOI 10.48804/JUNNWW · CC-BY-NC-SA-4.0)"}
+              </p>
             </div>
 
-            {/* Hero Visual Card with Clinical Telemetry */}
-            <div style={{
-              background: "var(--white)",
-              border: "1px solid var(--line)",
-              borderRadius: "8px",
-              overflow: "hidden",
-              boxShadow: "0 1px 3px rgba(28, 25, 23, 0.04)"
-            }}>
-              <div style={{
-                background: "var(--linen)",
-                padding: "10px 16px",
-                borderBottom: "1px solid var(--line)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                fontSize: "12px",
-                fontWeight: "600",
-                color: "var(--ink)"
-              }}>
-                <span>{lang === "kz" ? "CSV бойынша жүрісті биомеханикалық талдау кешені" : "Комплекс биомеханического анализа походки по CSV"}</span>
-              </div>
-
-              <div style={{ position: "relative", height: "280px" }}>
-                <img
-                  src="/assets/images/clinical-lab.jpg"
-                  alt="Клинический комплекс анализа походки"
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-                <div style={{
-                  position: "absolute",
-                  bottom: "12px",
-                  left: "12px",
-                  right: "12px",
-                  background: "rgba(255, 254, 250, 0.95)",
-                  border: "1px solid var(--line)",
-                  borderRadius: "6px",
-                  padding: "10px 14px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center"
-                }}>
-                  <div>
-                    <div style={{ fontSize: "11px", color: "var(--muted)" }}>
-                      {lang === "kz" ? "Терапиялық әсерді бақылау" : "Контроль терапевтического эффекта"}
-                    </div>
-                    <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--ink)", marginTop: "2px" }}>
-                      {lang === "kz" ? "Санның шынайы жазылуы vs жамбас компенсациясы" : "Истинное разгибание бедра vs компенсация таза"}
-                    </div>
-                  </div>
-                  <span className="badge badge-yellow" style={{ fontSize: "11px" }}>
-                    {lang === "kz" ? "TJE / PCR бейіні" : "Профиль TJE / PCR"}
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ padding: "14px 16px", background: "var(--white)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "12px" }}>
-                <div>
-                  <span style={{ color: "var(--muted)", display: "block", fontSize: "11px" }}>
-                    {lang === "kz" ? "Консилиум құралы" : "Инструмент консилиума"}
-                  </span>
-                  <strong>{lang === "kz" ? "Қадам циклінің 0-100% клиникалық профилі" : "Клинический профиль 0-100% цикла шага"}</strong>
-                </div>
-                <div>
-                  <span style={{ color: "var(--muted)", display: "block", fontSize: "11px" }}>
-                    {lang === "kz" ? "Медициналық есеп" : "Клинический отчёт"}
-                  </span>
-                  <strong>{lang === "kz" ? "МКФ ВОЗ бар PDF-құжат" : "Готовый PDF-документ с МКФ ВОЗ"}</strong>
-                </div>
-              </div>
-
+            <div
+              style={{
+                borderRadius: "14px",
+                border: "1px solid var(--line)",
+                background: "var(--paper)",
+                overflow: "hidden",
+              }}
+            >
+              <img
+                src="/assets/images/gait-editorial-hero.webp"
+                alt={
+                  isKz
+                    ? "Сагитталды жазықтықта жүріс жолындағы баланың қадам фазалары: жамбас, сан және тізе бұрыштарының сызбасы"
+                    : "Клиническая иллюстрация анализа походки ребёнка в сагиттальной плоскости: фазы шага и дуги углов таза, бедра и колена"
+                }
+                width={1264}
+                height={848}
+                style={{ width: "100%", height: "auto", display: "block" }}
+              />
             </div>
-
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* 3. Section: Dataset & Clinical Scope (Real Verified Facts) */}
-      <section id="problem" style={{ padding: "56px 0", borderBottom: "1px solid var(--line)", background: "var(--white)" }}>
-        <div className="container">
-          
-          <div style={{ maxWidth: "640px", marginBottom: "36px" }}>
-            <h2 style={{ fontSize: "28px", marginBottom: "10px" }}>
-              {lang === "kz" ? "Үш жүріс жағдайын салыстырмалы талдау" : "Сравнительный анализ трёх условий ходьбы"}
+        {/* Methodology: What Standard Evaluation Misses vs Libra */}
+        <section
+          id="methodology"
+          style={{
+            borderTop: "1px solid var(--line)",
+            background: "var(--white)",
+            paddingBlock: "56px",
+          }}
+        >
+          <div className="container" style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
+            <div style={{ maxWidth: "68ch" }}>
+              <h2 className="font-display" style={{ fontSize: "clamp(24px, 2.8vw, 32px)" }}>
+                {isKz
+                  ? "Неліктен буын бұрышының өзі жеткіліксіз"
+                  : "Почему одного угла разгибания бедра недостаточно"}
+              </h2>
+              <p style={{ color: "var(--secondary)", marginTop: "8px", fontSize: "15px" }}>
+                {isKz
+                  ? "VR-жаттығуда бала жамбасын алға еңкейтіп, бел омыртқасына жүктеме түсіру арқылы бейнені орындай алады. Libra бұл бүркемеленген компенсацияны сандық түрде бөліп көрсетеді."
+                  : "На дорожке с VR-экраном ребёнок нередко выводит бедро за счёт гиперлордоза и переднего наклона таза. Интегральный показатель и сырая разница углов скрывают перегрузку поясницы."}
+              </p>
+            </div>
+
+            <div className="grid-problem">
+              <div className="surface-muted" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <Activity size={18} strokeWidth={1.6} color="var(--teal)" />
+                <h3 style={{ fontSize: "16px", fontWeight: 600 }}>
+                  {isKz ? "Шынайы буын жазылуы (TJE)" : "Истинное разгибание (TJE)"}
+                </h3>
+                <p style={{ fontSize: "13px", color: "var(--secondary)", lineHeight: 1.55 }}>
+                  {isKz
+                    ? "Сан буынының тірек фазасындағы өзгерісін (aMinSagH) жамбастың сагитталды еңкеюіне түзетеді. TJE ≤ −1,0° буын ішілік нақты прогресті растайды."
+                    : "Корректирует прирост разгибания бедра в фазе опоры на изменение наклона таза. Значение ≤ −1,0° подтверждает анатомическую коррекцию."}
+                </p>
+              </div>
+
+              <div className="surface-muted" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <ShieldCheck size={18} strokeWidth={1.6} color="var(--amber)" />
+                <h3 style={{ fontSize: "16px", fontWeight: 600 }}>
+                  {isKz ? "Компенсация индексі (PCR)" : "Индекс компенсации (PCR)"}
+                </h3>
+                <p style={{ fontSize: "13px", color: "var(--secondary)", lineHeight: 1.55 }}>
+                  {isKz
+                    ? "Сабақтас буындар ауытқуын сан нәтижесіне бөледі. PCR > 0,80 немесе жамбас еңкеюі > +2,0° болса, жүйе жүктемені төмендетуді ескертеді."
+                    : "Соотносит избыточный наклон таза, колена и стопы к выигрышу в бедре. Порог PCR > 0,80 или завал таза > +2,0° блокирует рекомендацию агрессивного VR."}
+                </p>
+              </div>
+
+              <div className="surface-muted" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <FileText size={18} strokeWidth={1.6} color="var(--ink)" />
+                <h3 style={{ fontSize: "16px", fontWeight: 600 }}>
+                  {isKz ? "Қалып · Ауызша · VR және МКФ" : "Обычная · Голос · VR и МКФ ВОЗ"}
+                </h3>
+                <p style={{ fontSize: "13px", color: "var(--secondary)", lineHeight: 1.55 }}>
+                  {isKz
+                    ? "Үш режимді қатар салыстырып, науқасқа ең қауіпсіз әдісті таңдайды және ДДҰ МКФ (b770, d450) бойынша қос тілді PDF есеп қалыптастырады."
+                    : "Сопоставляет три режима проб, выбирает оптимальный протокол и формирует двуязычную выписку в PDF с кодами МКФ ВОЗ b770 и d450."}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Doctor Workflow */}
+        <section id="workflow" className="container" style={{ paddingBlock: "56px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: "16px", marginBottom: "28px" }}>
+            <h2 className="font-display" style={{ fontSize: "clamp(24px, 2.8vw, 32px)" }}>
+              {isKz ? "Дәрігер жұмысының үш қадамы" : "Три шага на приёме врача-реабилитолога"}
             </h2>
-            <p style={{ color: "var(--muted)", fontSize: "14px", lineHeight: "1.6" }}>
-              {lang === "kz"
-                ? "KU Leuven ашық педиатриялық когортасы (29 бала, 2 606 қадам циклі) негізінде Libra жүйесі қарапайым жүрісті (Baseline), вербалды нұсқауды (Verbal) және VR кері байланысты (VR) объективті түрде салыстырады."
-                : "На основе открытой педиатрической когорты KU Leuven (29 детей, 2 606 циклов шага) Libra объективно сопоставляет обычную ходьбу (Baseline), вербальные команды (Verbal) и VR-обратную связь (VR)."}
-            </p>
+            <Link href="/portal/ml-validation" className="btn">
+              {isKz ? "GroupKFold және PCA валидациясы" : "Валидация моделей GroupKFold"}
+            </Link>
           </div>
 
           <div className="grid-problem">
-            
-            <div className="card-raised">
-              <div style={{ fontFamily: "var(--serif)", fontSize: "40px", fontWeight: "500", color: "var(--ink)", lineHeight: 1 }}>
-                2 606
+            {[
+              {
+                num: "01",
+                title: isKz ? "Иесіздендірілген CSV жүктеу" : "Загрузка обезличенного CSV",
+                text: isKz
+                  ? "Бөлгіш «;» және ондық үтірмен бірыңғай немесе көп пациенттік кестелерді импорттау. ЖСН, ТАӘ бағандары ҚР № 94-V заңына сай автоматты түрде бұғатталады."
+                  : "Импорт одно- и многосубъектных файлов («;», запятая, LEFT/RIGHT). Столбцы ФИО и ИИН автоматически блокируются по Закону РК № 94-V.",
+              },
+              {
+                num: "02",
+                title: isKz ? "Буын қисықтары мен бағдаршам" : "Кривые суставов и светофор риска",
+                text: isKz
+                  ? "Сау балалар нормативтік дәлізі аясында жамбас, сан, тізе, тобық бұрыштары мен сан моментін талдау және LOO-калибрленген болжам алу."
+                  : "Графики углов и момента бедра на фоне нормативного коридора здоровых детей, индекс GPS и прогноз ответа без перегрузки поясницы.",
+              },
+              {
+                num: "03",
+                title: isKz ? "Қазақ және орыс тілді PDF" : "Клинический отчёт на РУС / ҚАЗ",
+                text: isKz
+                  ? "Оңалту орталықтары мен ата-аналарға түсінікті клиникалық қорытынды, шұғыл 103 ескертуі және МКФ b770/d450 статусын экспорттау."
+                  : "Готовый PDF-протокол с кинематикой, тактикой по методу и обязательным консультативным дисклеймером по пункту 8.2.",
+              },
+            ].map((step) => (
+              <div
+                key={step.num}
+                style={{
+                  borderTop: "2px solid var(--ink)",
+                  paddingTop: "16px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px",
+                }}
+              >
+                <span className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600, color: "var(--teal)" }}>
+                  {step.num}
+                </span>
+                <h3 style={{ fontSize: "17px", fontWeight: 600 }}>{step.title}</h3>
+                <p style={{ fontSize: "14px", color: "var(--secondary)", lineHeight: 1.6 }}>{step.text}</p>
               </div>
-              <div style={{ fontWeight: "700", marginTop: "10px", fontSize: "14px" }}>
-                {lang === "kz" ? "Талданған қадам циклдері" : "Проанализированных циклов шага"}
-              </div>
-              <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-                {lang === "kz"
-                  ? "Baseline (866), Verbal (870) және VR (870) режимдеріндегі 51 нүктелі кинематика мен дискретті параметрлер."
-                  : "51-точечные кинематические кривые и дискретные параметры в условиях Baseline (866), Verbal (870) и VR (870)."}
-              </p>
-            </div>
-
-            <div className="card-raised">
-              <div style={{ fontFamily: "var(--serif)", fontSize: "40px", fontWeight: "500", color: "var(--amber)", lineHeight: 1 }}>
-                GroupKFold
-              </div>
-              <div style={{ fontWeight: "700", marginTop: "10px", fontSize: "14px" }}>
-                {lang === "kz" ? "Деректер ағып кетуінсіз ML" : "ML без утечки по пациентам"}
-              </div>
-              <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-                {lang === "kz"
-                  ? "Бір пациенттің қадамдары train және test іріктемелерінде ешқашан араласпайды (k=5, AUC 0.772)."
-                  : "Циклы одного ребёнка строго разделены между обучением и проверкой (5 фолдов по subject, ROC-AUC 0.772)."}
-              </p>
-            </div>
-
-            <div className="card-raised">
-              <div style={{ fontFamily: "var(--serif)", fontSize: "40px", fontWeight: "500", color: "var(--teal)", lineHeight: 1 }}>
-                PDF + МКФ
-              </div>
-              <div style={{ fontWeight: "700", marginTop: "10px", fontSize: "14px" }}>
-                {lang === "kz" ? "Екі тілдегі дайын есеп" : "Двуязычный PDF-отчёт"}
-              </div>
-              <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-                {lang === "kz"
-                  ? "Қазақ және орыс тілдеріндегі b770 / d450 кодтары, кестелері және қисықтары бар жүктелетін A4 PDF-құжат."
-                  : "Скачиваемый A4 PDF-документ с таблицей дельт, графиком бедра и кодами МКФ b770 / d450 на русском и казахском."}
-              </p>
-            </div>
-
+            ))}
           </div>
+        </section>
+      </main>
 
-        </div>
-      </section>
-
-      {/* 4. Section: Biomechanics - Clean Native Clinical Cards */}
-      <section id="technology" style={{ padding: "56px 0", borderBottom: "1px solid var(--line)" }}>
-        <div className="container">
-          
-          <div style={{ maxWidth: "680px", marginBottom: "32px" }}>
-            <h2 style={{ fontSize: "28px", marginBottom: "10px" }}>
-              {lang === "kz" ? "Биомеханикалық қақтығыс: шынайы жазылу мен жамбас" : "Биомеханический конфликт: истинное разгибание против наклона таза"}
-            </h2>
-            <p style={{ color: "var(--muted)", lineHeight: "1.6", fontSize: "14px" }}>
-              {lang === "kz"
-                ? "Виртуалды шындықта жаттығу кезінде бала нысанаға жетуге тырысып, қадамын ұзартады. Көбінесе бұл сан бұлшықеттерінің есебінен емес, жамбастың компенсаторлық алға еңкеюі арқылы орындалып, бел гиперлордозын тудырады."
-                : "При тренировках в виртуальной реальности ребенок стремится дотянуться до цели и удлиняет шаг. Часто это происходит не мышцами бедра, а за счет компенсаторного переднего наклона таза, провоцируя поясничный гиперлордоз."}
-            </p>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
-            
-            {/* Card 1: True Hip Extension */}
-            <div className="card" style={{ borderLeft: "4px solid var(--teal)", padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--teal)", fontWeight: 700, fontSize: "13px" }}>
-                    <CheckCircle2 size={16} />
-                    <span>{lang === "kz" ? "Физиологиялық қадам (TJE ≤ -1°)" : "Физиологический шаг (TJE ≤ -1°)"}</span>
-                  </div>
-                  <div style={{ fontSize: "18px", fontWeight: 600, marginTop: "4px" }}>
-                    {lang === "kz" ? "Шынайы буын жазылуы" : "Истинное разгибание сустава"}
-                  </div>
-                </div>
-                <span className="badge badge-green">PCR &lt; 0.40</span>
-              </div>
-
-              <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "6px", padding: "12px 14px", fontSize: "12px", display: "flex", flexDirection: "column", gap: "6px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--muted)" }}>{lang === "kz" ? "Жамбас қалпы:" : "Положение таза:"}</span>
-                  <strong>{lang === "kz" ? "Тұрақты (ΔSagP ≈ 0°)" : "Стабильно (ΔSagP ≈ 0°)"}</strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--muted)" }}>{lang === "kz" ? "Биомеханика:" : "Биомеханика:"}</span>
-                  <strong style={{ color: "var(--teal)" }}>{lang === "kz" ? "Санның белсенді жазылуы" : "Активное отведение бедра"}</strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--muted)" }}>{lang === "kz" ? "Омыртқа:" : "Позвоночник:"}</span>
-                  <strong>{lang === "kz" ? "Физиологиялық ось" : "Физиологическая ось"}</strong>
-                </div>
-              </div>
-
-              <p style={{ fontSize: "13px", color: "var(--muted)", lineHeight: "1.6", margin: 0 }}>
-                {lang === "kz"
-                  ? "Қозғалыс жамбасты алға еңкейтпей, жамбас-сан буынында орындалады. Виртуалды шындықтағы жаттығулар қауіпсіз және дұрыс қадамды қалпына келтіруге ықпал етеді."
-                  : "Движение совершается в тазобедренном суставе без наклона таза вперед. Тренировки в виртуальной реальности безопасны и способствуют восстановлению правильного шага."}
-              </p>
-            </div>
-
-            {/* Card 2: Pathological Pelvic Compensation */}
-            <div className="card" style={{ borderLeft: "4px solid var(--red)", padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--red)", fontWeight: 700, fontSize: "13px" }}>
-                    <AlertOctagon size={16} />
-                    <span>{lang === "kz" ? "Патологиялық компенсация (PCR > 0.80)" : "Патологическая компенсация (PCR > 0.80)"}</span>
-                  </div>
-                  <div style={{ fontSize: "18px", fontWeight: 600, marginTop: "4px" }}>
-                    {lang === "kz" ? "Гиперлордоз қаупі" : "Угроза гиперлордоза"}
-                  </div>
-                </div>
-                <span className="badge badge-red">PCR = 1.21</span>
-              </div>
-
-              <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "6px", padding: "12px 14px", fontSize: "12px", display: "flex", flexDirection: "column", gap: "6px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--muted)" }}>{lang === "kz" ? "Жамбас еңкеюі:" : "Наклон таза:"}</span>
-                  <strong style={{ color: "var(--red)" }}>{lang === "kz" ? "Патологиялық (+5.36° ΔSagP)" : "Патологический (+5.36° ΔSagP)"}</strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--muted)" }}>{lang === "kz" ? "Биомеханика:" : "Биомеханика:"}</span>
-                  <strong>{lang === "kz" ? "Бел бүгілуімен қадамды еліктеу" : "Имитация шага прогибом"}</strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--muted)" }}>{lang === "kz" ? "Ұсыным:" : "Рекомендация:"}</span>
-                  <strong style={{ color: "var(--amber)" }}>{lang === "kz" ? "VR түзету / Verbal-ға көшу" : "Коррекция VR / переход на Verbal"}</strong>
-                </div>
-              </div>
-
-              <p style={{ fontSize: "13px", color: "var(--muted)", lineHeight: "1.6", margin: 0 }}>
-                {lang === "kz"
-                  ? "Бала сан бұлшықеттерінің әлсіздігін жамбасты алға еңкейту арқылы өтейді, бұл белге артық жүктеме түсіреді. Жүйе дәрігерге сөздік нұсқауларға көшу қажеттігін хабарлайды."
-                  : "Ребенок компенсирует слабость разгибателей бедра наклоном таза вперед, перегружая поясницу. Система сигнализирует врачу о необходимости перехода на словесные команды."}
-              </p>
-            </div>
-
-          </div>
-
-          <div style={{ marginTop: "24px" }}>
-            <Link href="/portal" className="btn btn-primary">
-              <span>{lang === "kz" ? "Пациенттер тізіліміне өту" : "Перейти к реестру пациентов"}</span>
-              <ChevronRight size={15} />
-            </Link>
-          </div>
-
-        </div>
-      </section>
-
-      {/* 5. CTA Section */}
-      <section style={{ padding: "56px 0", background: "var(--linen)", borderBottom: "1px solid var(--line)" }}>
-        <div className="container" style={{ textAlign: "center", maxWidth: "600px" }}>
-          <h2 style={{ fontSize: "28px", marginBottom: "10px" }}>
-            {lang === "kz" ? "Дәрігер-маманның жұмыс ортасы" : "Рабочая среда врача-специалиста"}
-          </h2>
-          <p style={{ color: "var(--muted)", marginBottom: "24px", fontSize: "14px" }}>
-            {lang === "kz"
-              ? "Пациенттердің диагностикалық профильдеріне қол жеткізу және клиникалық хаттамаларды дайындау үшін клиникалық порталға кіріңіз."
-              : "Авторизуйтесь в клиническом портале для доступа к диагностическим профилям пациентов и формированию выписок."}
-          </p>
-          <div style={{ display: "flex", justifyContent: "center", gap: "10px", flexWrap: "wrap" }}>
-            <Link href="/login" className="btn btn-primary" style={{ padding: "11px 24px", fontSize: "14px" }}>
-              {lang === "kz" ? "Тіркелгі бойынша кіру" : "Вход по учетной записи"}
-            </Link>
-            <Link href="/portal" className="btn" style={{ padding: "11px 18px", fontSize: "14px" }}>
-              {lang === "kz" ? "Демо-қолжетімділік" : "Демо-доступ"}
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* 6. Legal & Regulatory Footer */}
-      <footer style={{ padding: "32px 0", background: "var(--paper)", fontSize: "12px", color: "var(--muted)" }}>
-        <div className="container" style={{ textAlign: "center", marginBottom: "16px", fontSize: "11px", color: "var(--critical)" }}>
-          {lang === "kz"
-            ? "ШҰҒЫЛ ЖАҒДАЙДА: 103 нөміріне қоңырау шалыңыз. Libra диагноз қоймайды және дәрігерді алмастырмайды (СППР, 8.4-бап)."
-            : "ВНИМАНИЕ: В экстренных ситуациях вызывайте скорую помощь 103. Libra является СППР, не ставит диагноз и не заменяет очного приема врача (ст. 8.4)."}
-        </div>
-        <div className="container" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <LibraLogo size="sm" />
-            <span>{lang === "kz" ? "Жүрісті клиникалық талдау платформасы" : "Платформа клинического анализа походки"}</span>
+      {/* Quiet Clinical Footer */}
+      <footer
+        style={{
+          borderTop: "1px solid var(--line)",
+          background: "var(--white)",
+          paddingBlock: "24px",
+        }}
+      >
+        <div
+          className="container"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            gap: "20px",
+            fontSize: "12px",
+            color: "var(--muted)",
+          }}
+        >
+          <div style={{ maxWidth: "64ch", lineHeight: 1.6 }}>
+            <strong style={{ color: "var(--ink)" }}>Libra</strong> ·{" "}
+            {isKz
+              ? "Дәрігерлік шешімдерді қолдау жүйесі (СППР). Дербес диагноз қоймайды, дәрі тағайындамайды. Жедел жағдайда 103 нөміріне қоңырау шалыңыз."
+              : "Система поддержки врачебных решений при ДЦП. Не ставит диагноз и не назначает лечение. В экстренных случаях звоните 103."}
           </div>
 
           <div style={{ display: "flex", gap: "18px", flexWrap: "wrap" }}>
-            <Link href="/privacy" style={{ textDecoration: "underline", color: "var(--muted)" }}>
-              {lang === "kz" ? "Құпиялылық саясаты (ҚР Заңы № 94-V)" : "Политика конфиденциальности (Закон РК № 94-V)"}
+            <Link href="/portal/safety" style={{ color: "var(--ink)", fontWeight: 500 }}>
+              {t.nav_safety}
             </Link>
-            <Link href="/terms" style={{ textDecoration: "underline", color: "var(--muted)" }}>
-              {lang === "kz" ? "Пайдалану шарттары" : "Условия использования"}
+            <Link href="/privacy" style={{ color: "var(--ink)", fontWeight: 500 }}>
+              {isKz ? "Дербес деректер (94-V)" : "Конфиденциальность"}
             </Link>
-          </div>
-
-          <div>
-            {lang === "kz" ? "© 2026 Libra. Барлық құқықтар қорғалған." : "© 2026 Libra. Все права защищены."}
+            <Link href="/terms" style={{ color: "var(--ink)", fontWeight: 500 }}>
+              {isKz ? "Қолдану шарттары" : "Ограничения СППР"}
+            </Link>
           </div>
         </div>
       </footer>
-
     </div>
   );
 }

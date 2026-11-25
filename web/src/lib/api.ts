@@ -5,7 +5,7 @@ import {
   CohortAnalytics,
   MLMetrics,
   GaitDiffResponse,
-  CsvUploadResponse
+  CsvUploadResponse,
 } from "./types";
 
 const API_BASE =
@@ -17,19 +17,31 @@ export function getApiBase(): string {
   return API_BASE;
 }
 
+function getAuthHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const key = sessionStorage.getItem("libra_api_key");
+    if (key && key.trim()) {
+      return { "X-API-Key": key.trim() };
+    }
+  } catch {}
+  return {};
+}
+
 async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
   const res = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(options?.headers || {})
-    }
+      ...getAuthHeaders(),
+      ...(options?.headers || {}),
+    },
   });
 
   if (!res.ok) {
     const errorBody = await res.text().catch(() => "");
-    throw new Error(`API error [${res.status}] ${res.statusText}: ${errorBody}`);
+    throw new Error(`HTTP ${res.status}: ${errorBody || res.statusText}`);
   }
 
   return res.json();
@@ -57,14 +69,14 @@ export async function getMLMetrics(): Promise<MLMetrics> {
 
 export async function createReport(
   code: string,
-  lang: "ru" | "kz" | "en",
+  lang: "ru" | "kz",
   audience: "doctor" | "parent" = "doctor"
 ) {
   const url = `${API_BASE}/api/v1/patients/${encodeURIComponent(code)}/report?lang=${lang}&audience=${audience}`;
-  const res = await fetch(url, { method: "POST" });
+  const res = await fetch(url, { method: "POST", headers: getAuthHeaders() });
   if (!res.ok) {
     const errorBody = await res.text().catch(() => "");
-    throw new Error(`Report error [${res.status}] ${res.statusText}: ${errorBody}`);
+    throw new Error(`HTTP ${res.status}: ${errorBody || res.statusText}`);
   }
   return res.json();
 }
@@ -72,9 +84,10 @@ export async function createReport(
 export async function getPatientDiff(
   code: string,
   sessionA: string = "Baseline",
-  sessionB: string = "VR"
+  sessionB: string = "VR",
+  lang: "ru" | "kz" = "ru"
 ): Promise<GaitDiffResponse> {
-  const endpoint = `/api/v1/patients/${encodeURIComponent(code)}/diff?session_a=${encodeURIComponent(sessionA)}&session_b=${encodeURIComponent(sessionB)}`;
+  const endpoint = `/api/v1/patients/${encodeURIComponent(code)}/diff?session_a=${encodeURIComponent(sessionA)}&session_b=${encodeURIComponent(sessionB)}&lang=${lang}`;
   return fetchJson<GaitDiffResponse>(endpoint);
 }
 
@@ -92,10 +105,14 @@ export async function uploadPatientCSV(
     formData.append("subject_code", subjectCode.trim());
   }
   const url = `${API_BASE}/api/v1/patients/upload`;
-  const res = await fetch(url, { method: "POST", body: formData });
+  const res = await fetch(url, {
+    method: "POST",
+    body: formData,
+    headers: getAuthHeaders(),
+  });
   if (res.ok) return await res.json();
   const errText = await res.text().catch(() => "");
-  throw new Error(`Upload failed [${res.status}]: ${errText}`);
+  throw new Error(`HTTP ${res.status}: ${errText || res.statusText}`);
 }
 
 export function getCsvTemplateUrl(format: "vicon" | "imu" | "kinematics"): string {
@@ -104,7 +121,7 @@ export function getCsvTemplateUrl(format: "vicon" | "imu" | "kinematics"): strin
 
 export function getReportPdfUrl(
   code: string,
-  lang: "ru" | "kz" | "en",
+  lang: "ru" | "kz",
   audience: "doctor" | "parent" = "doctor"
 ): string {
   return `${API_BASE}/api/v1/patients/${encodeURIComponent(code)}/report.pdf?lang=${lang}&audience=${audience}`;
@@ -112,14 +129,14 @@ export function getReportPdfUrl(
 
 export async function downloadReportPdf(
   code: string,
-  lang: "ru" | "kz" | "en",
+  lang: "ru" | "kz",
   audience: "doctor" | "parent" = "doctor"
 ): Promise<void> {
   const url = getReportPdfUrl(code, lang, audience);
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: getAuthHeaders() });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
-    throw new Error(`PDF export failed [${res.status}]: ${errText}`);
+    throw new Error(`HTTP ${res.status}: ${errText || res.statusText}`);
   }
   const blob = await res.blob();
   const objectUrl = URL.createObjectURL(blob);

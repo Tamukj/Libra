@@ -9,30 +9,32 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
+import numpy as np
+
+from src.core.biomechanics import is_finite_number
+from src.core.i18n import get_locale
 
 
 def _fmt_num(val: Any, digits: int = 2, suffix: str = "") -> str:
-    if val is None:
+    if not is_finite_number(val):
         return "—"
-    try:
-        f = float(val)
-        if f != f:  # NaN
-            return "—"
-        return f"{f:.{digits}f}{suffix}"
-    except (ValueError, TypeError):
-        return "—"
+    return f"{float(val):.{digits}f}{suffix}"
 
 
 def _fmt_signed(val: Any, digits: int = 2, suffix: str = "") -> str:
-    if val is None:
+    if not is_finite_number(val):
         return "—"
-    try:
-        f = float(val)
-        if f != f:
-            return "—"
-        return f"{f:+.{digits}f}{suffix}"
-    except (ValueError, TypeError):
-        return "—"
+    return f"{float(val):+.{digits}f}{suffix}"
+
+
+def _wrap_text(text: str, width: int) -> list[str]:
+    lines: list[str] = []
+    for raw in text.splitlines():
+        if not raw.strip():
+            lines.append("")
+        else:
+            lines.extend(textwrap.wrap(raw, width=width, break_long_words=True))
+    return lines
 
 
 def generate_pdf_report(
@@ -48,19 +50,23 @@ def generate_pdf_report(
     hip_curves: Optional[Dict[str, Any]] = None,
 ) -> bytes:
     """
-    Renders a structured A4 PDF report with bilingual Cyrillic support (RU / KZ),
+    Renders a structured A4 PDF report with trilingual support (RU / KZ / EN),
     metric table, optional sagittal hip curve comparison, clinical narrative,
-    and mandatory Rule 8.4 disclaimer.
+    and mandatory Rule 8.2 disclaimer + model limitations.
     """
-    is_kz = lang == "kz"
+    eff_lang = lang if lang in ("ru", "kz", "en") else "ru"
+    is_kz = eff_lang == "kz"
+    is_en = eff_lang == "en"
+    loc = get_locale(eff_lang)
+    pdf_loc = loc.get("pdf", {})
+
     subject = str(summary.get("subject", "N/A"))
-    side = str(summary.get("side", "RIGHT"))
+    side = str(summary.get("side", "RIGHT")).upper()
     now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     fig = plt.figure(figsize=(8.27, 11.69), dpi=150)  # A4 portrait
     fig.patch.set_facecolor("#FFFFFF")
 
-    # Main page canvas axes in normalized [0..1] coordinates
     ax = fig.add_axes([0.0, 0.0, 1.0, 1.0])
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
@@ -72,21 +78,35 @@ def generate_pdf_report(
     ax.add_patch(FancyBboxPatch(
         (0.05, 0.905), 0.90, 0.06,
         boxstyle="round,pad=0.004,rounding_size=0.008",
-        facecolor="#F7F5F0", edgecolor="#DDD8CE", linewidth=1.0
+        facecolor="#F7F5F0", edgecolor="#DDD8CE", linewidth=1.0,
     ))
-    title = (
-        f"LIBRA · {'Баланың жүріс төлқұжаты' if audience == 'parent' else 'Клиникалық биомеханикалық есеп'}"
-        if is_kz
-        else f"LIBRA · {'Паспорт походки ребенка' if audience == 'parent' else 'Клинический биомеханический отчёт'}"
-    )
-    ax.text(0.07, 0.943, title, fontsize=13, fontweight="bold", color="#1C1917", family=font_family)
+    if is_kz:
+        title = f"LIBRA · {'Баланың жүріс төлқұжаты' if audience == 'parent' else 'Клиникалық биомеханикалық есеп'}"
+        side_display = "Сол жақ" if side == "LEFT" else "Оң жақ"
+        meta_line = (
+            f"Пациент: {subject} | Аяқ: {side_display} | "
+            f"Салмақ: {_fmt_num(summary.get('weight'), 1, ' кг')} | "
+            f"Бой: {_fmt_num(summary.get('height'), 2, ' м')} | {now_str}"
+        )
+    elif is_en:
+        title = f"LIBRA · {'Child Gait Passport' if audience == 'parent' else 'Clinical Biomechanical Report'}"
+        side_display = "Left" if side == "LEFT" else "Right"
+        meta_line = (
+            f"Patient: {subject} | Side: {side_display} | "
+            f"Weight: {_fmt_num(summary.get('weight'), 1, ' kg')} | "
+            f"Height: {_fmt_num(summary.get('height'), 2, ' m')} | {now_str}"
+        )
+    else:
+        title = f"LIBRA · {'Паспорт походки ребенка' if audience == 'parent' else 'Клинический биомеханический отчёт'}"
+        side_display = "Левая" if side == "LEFT" else "Правая"
+        meta_line = (
+            f"Пациент: {subject} | Сторона: {side_display} | "
+            f"Вес: {_fmt_num(summary.get('weight'), 1, ' кг')} | "
+            f"Рост: {_fmt_num(summary.get('height'), 2, ' м')} | {now_str}"
+        )
 
-    meta_line = (
-        f"Пациент: {subject}  |  {'Аяқ' if is_kz else 'Сторона'}: {side}  |  "
-        f"{'Салмағы' if is_kz else 'Вес'}: {_fmt_num(summary.get('weight'), 1, ' кг')}  |  "
-        f"{'Бойы' if is_kz else 'Рост'}: {_fmt_num(summary.get('height'), 2, ' м')}  |  {now_str}"
-    )
-    ax.text(0.07, 0.917, meta_line, fontsize=8.5, color="#57534E", family=font_family)
+    ax.text(0.065, 0.943, title[:70], fontsize=12.0, fontweight="bold", color="#1C1917", family=font_family)
+    ax.text(0.065, 0.917, meta_line[:95], fontsize=7.8, color="#57534E", family=font_family)
 
     # 2. CDSS Status Banner
     status = risk.get("status", "yellow")
@@ -94,178 +114,246 @@ def generate_pdf_report(
         "green": ("#ECFDF5", "#0F766E"),
         "yellow": ("#FFFBEB", "#B45309"),
         "red": ("#FEF2F2", "#B91C1C"),
+        "unassessed": ("#F5F5F4", "#44403C"),
     }
     bg_col, fg_col = status_palette.get(status, ("#F5F5F4", "#44403C"))
     ax.add_patch(FancyBboxPatch(
-        (0.05, 0.825), 0.90, 0.065,
+        (0.05, 0.822), 0.90, 0.068,
         boxstyle="round,pad=0.004,rounding_size=0.008",
-        facecolor=bg_col, edgecolor=fg_col, linewidth=1.2
+        facecolor=bg_col, edgecolor=fg_col, linewidth=1.2,
     ))
-    status_label = risk.get("label_kz" if is_kz else "label_ru", "")
-    icf_d_txt = icf_d450 or ("жоқ" if is_kz else "нет данных")
-    ax.text(0.07, 0.868, f"CDSS: {status_label}", fontsize=10, fontweight="bold", color=fg_col, family=font_family)
+    status_label = risk.get(f"label_{eff_lang}") or risk.get("label_ru") or ""
+    icf_d_txt = icf_d450 or ("жоқ" if is_kz else ("N/A" if is_en else "нет данных"))
+    icf_tag = pdf_loc.get("icf_label", "ICF" if is_en else ("ХҚЖ" if is_kz else "МКФ"))
+    ax.text(0.065, 0.868, f"CDSS: {status_label[:72]}", fontsize=9.2, fontweight="bold", color=fg_col, family=font_family)
+    method_label = "Ұсыныс" if is_kz else ("Best" if is_en else "Метод")
     metrics_pill = (
-        f"TJE: {_fmt_signed(risk.get('tje'), 2, '°')}   |   "
-        f"PCR: {_fmt_num(risk.get('pcr'), 2)}   |   "
-        f"{'Ұсынылған әдіс' if is_kz else 'Оптимальный метод'}: {modalities.get('best_method', 'Baseline')}   |   "
-        f"ICF: {icf_b770_base} -> {icf_b770_vr}, d450: {icf_d_txt}"
+        f"TJE: {_fmt_signed(risk.get('tje'), 2, '°')}  |  "
+        f"PCR: {_fmt_num(risk.get('pcr'), 2)}  |  "
+        f"{method_label}: {modalities.get('best_method', 'Baseline')}  |  "
+        f"{icf_tag}: {icf_b770_base} -> {icf_b770_vr}, d450: {icf_d_txt}"
     )
-    ax.text(0.07, 0.840, metrics_pill, fontsize=8.5, color="#1C1917", family=font_family)
+    ax.text(0.065, 0.838, metrics_pill[:92], fontsize=7.8, color="#1C1917", family=font_family)
 
     # 3. Quantitative Metrics Table
-    y_top = 0.800
-    ax.text(
-        0.05, y_top,
-        "Салыстырмалы биомеханикалық кесте (Baseline / Verbal / VR)" if is_kz else "Сравнительная таблица параметров походки (Baseline / Verbal / VR)",
-        fontsize=10, fontweight="bold", color="#1C1917", family=font_family
+    y_top = 0.798
+    table_title = (
+        "Салыстырмалы биомеханикалық кесте (Baseline / Verbal / VR)"
+        if is_kz
+        else ("Comparative Biomechanical Table (Baseline / Verbal / VR)" if is_en else "Сравнительная таблица параметров походки (Baseline / Verbal / VR)")
     )
+    ax.text(0.05, y_top, table_title, fontsize=9.5, fontweight="bold", color="#1C1917", family=font_family)
+
+    has_base = bool(summary.get("has_baseline", True)) and int(summary.get("cycles_baseline") or 0) > 0 or summary.get("baseline_gps") is not None
+    has_vr = bool(summary.get("has_vr")) and (int(summary.get("cycles_vr") or 0) > 0)
+    has_vb = bool(summary.get("has_verbal")) and (int(summary.get("cycles_verbal") or 0) > 0)
+
+    if has_vr:
+        delta_col_hdr = "Δ (VR - Base)"
+    elif has_vb:
+        delta_col_hdr = "Δ (Vb - Base)"
+    else:
+        delta_col_hdr = "Δ"
 
     headers = (
-        ["Көрсеткіш", "Baseline", "Verbal", "VR", "Δ (VR - Base)"]
+        ["Көрсеткіш", "Baseline", "Verbal", "VR", delta_col_hdr]
         if is_kz
-        else ["Параметр", "Baseline", "Verbal", "VR", "Δ (VR - Base)"]
+        else (["Parameter", "Baseline", "Verbal", "VR", delta_col_hdr] if is_en else ["Параметр", "Baseline", "Verbal", "VR", delta_col_hdr])
     )
+
+    def _row_vals(label: str, key_suffix: str, unit: str = "°") -> list[str]:
+        b_v = summary.get(f"baseline_{key_suffix}") if has_base else None
+        vb_v = summary.get(f"verbal_{key_suffix}") if has_vb else None
+        vr_v = summary.get(f"vr_{key_suffix}") if has_vr else None
+        if has_vr:
+            d_v = summary.get(f"delta_{key_suffix}")
+            if d_v is None and is_finite_number(vr_v) and is_finite_number(b_v):
+                d_v = float(vr_v) - float(b_v)
+        elif has_vb and is_finite_number(vb_v) and is_finite_number(b_v):
+            d_v = float(vb_v) - float(b_v)
+        else:
+            d_v = None
+        return [
+            label,
+            _fmt_num(b_v, 2, unit),
+            _fmt_num(vb_v, 2, unit),
+            _fmt_num(vr_v, 2, unit),
+            _fmt_signed(d_v, 2, unit),
+        ]
+
+    if is_kz:
+        cyc_lbl, gps_lbl, hip_lbl, pel_lbl, ghip_lbl, knee_lbl, ank_lbl = (
+            "Қадам циклдері (n)",
+            "Жүріс индексі (GPS_a, °)",
+            "Сан жазылуы (aMinSagH, °)",
+            "Жамбас GVS (Pelvis, °)",
+            "Сан GVS (Hip, °)",
+            "Тізе GVS (Knee, °)",
+            "Тобық GVS (Ankle, °)",
+        )
+    elif is_en:
+        cyc_lbl, gps_lbl, hip_lbl, pel_lbl, ghip_lbl, knee_lbl, ank_lbl = (
+            "Gait cycles (n)",
+            "Gait Profile Score (GPS_a)",
+            "Min hip flexion (aMinSagH)",
+            "Pelvis GVS (aSagP)",
+            "Hip GVS (aSagH)",
+            "Knee GVS (aSagK)",
+            "Ankle GVS (aSagA)",
+        )
+    else:
+        cyc_lbl, gps_lbl, hip_lbl, pel_lbl, ghip_lbl, knee_lbl, ank_lbl = (
+            "Циклы шага (n)",
+            "Индекс профиля (GPS_a, °)",
+            "Разгибание бедра (aMinSagH)",
+            "Отклонение таза (GVS_P)",
+            "Отклонение бедра (GVS_H)",
+            "Отклонение колена (GVS_K)",
+            "Отклонение стопы (GVS_A)",
+        )
+
     rows = [
         [
-            "Цикл саны / Число циклов",
+            cyc_lbl,
             str(summary.get("cycles_baseline", 0)),
             str(summary.get("cycles_verbal", 0)),
             str(summary.get("cycles_vr", 0)),
             "—",
         ],
-        [
-            "GPS_a (Индекс походки, °)",
-            _fmt_num(summary.get("baseline_gps"), 2, "°"),
-            _fmt_num(summary.get("verbal_gps"), 2, "°"),
-            _fmt_num(summary.get("vr_gps"), 2, "°"),
-            _fmt_signed(summary.get("delta_gps"), 2, "°"),
-        ],
-        [
-            "aMinSagH (Разгибание бедра, °)",
-            _fmt_num(summary.get("baseline_amin_sagh"), 2, "°"),
-            _fmt_num(summary.get("verbal_amin_sagh"), 2, "°"),
-            _fmt_num(summary.get("vr_amin_sagh"), 2, "°"),
-            _fmt_signed(summary.get("delta_amin_sagh"), 2, "°"),
-        ],
-        [
-            "GVS Pelvis (Таз, °)",
-            _fmt_num(summary.get("baseline_gvs_pelvis"), 2, "°"),
-            _fmt_num(summary.get("verbal_gvs_pelvis"), 2, "°"),
-            _fmt_num(summary.get("vr_gvs_pelvis"), 2, "°"),
-            _fmt_signed(summary.get("delta_gvs_pelvis"), 2, "°"),
-        ],
-        [
-            "GVS Hip (Бедро, °)",
-            _fmt_num(summary.get("baseline_gvs_hip"), 2, "°"),
-            _fmt_num(summary.get("verbal_gvs_hip"), 2, "°"),
-            _fmt_num(summary.get("vr_gvs_hip"), 2, "°"),
-            _fmt_signed(summary.get("delta_gvs_hip"), 2, "°"),
-        ],
-        [
-            "GVS Knee (Колено, °)",
-            _fmt_num(summary.get("baseline_gvs_knee"), 2, "°"),
-            _fmt_num(summary.get("verbal_gvs_knee"), 2, "°"),
-            _fmt_num(summary.get("vr_gvs_knee"), 2, "°"),
-            _fmt_signed(summary.get("delta_gvs_knee"), 2, "°"),
-        ],
-        [
-            "GVS Ankle (Стопа, °)",
-            _fmt_num(summary.get("baseline_gvs_ankle"), 2, "°"),
-            _fmt_num(summary.get("verbal_gvs_ankle"), 2, "°"),
-            _fmt_num(summary.get("vr_gvs_ankle"), 2, "°"),
-            _fmt_signed(summary.get("delta_gvs_ankle"), 2, "°"),
-        ],
+        _row_vals(gps_lbl, "gps"),
+        _row_vals(hip_lbl, "amin_sagh"),
+        _row_vals(pel_lbl, "gvs_pelvis"),
+        _row_vals(ghip_lbl, "gvs_hip"),
+        _row_vals(knee_lbl, "gvs_knee"),
+        _row_vals(ank_lbl, "gvs_ankle"),
     ]
 
-    col_x = [0.055, 0.44, 0.57, 0.70, 0.83]
+    col_x = [0.055, 0.48, 0.59, 0.70, 0.81]
     row_h = 0.0205
     y_cur = y_top - 0.023
     ax.add_patch(FancyBboxPatch(
         (0.05, y_cur - 0.004), 0.90, row_h,
-        boxstyle="square,pad=0", facecolor="#EDE8DF", edgecolor="#D6D0C4", linewidth=0.7
+        boxstyle="square,pad=0", facecolor="#EDE8DF", edgecolor="#D6D0C4", linewidth=0.7,
     ))
     for cx, h_txt in zip(col_x, headers):
-        ax.text(cx, y_cur + 0.0025, h_txt, fontsize=8.3, fontweight="bold", color="#1C1917", family=font_family)
+        ax.text(cx, y_cur + 0.0025, h_txt, fontsize=8.0, fontweight="bold", color="#1C1917", family=font_family)
 
     for idx, r in enumerate(rows):
         y_cur -= row_h
         bg = "#FAF8F5" if idx % 2 == 1 else "#FFFFFF"
         ax.add_patch(FancyBboxPatch(
             (0.05, y_cur - 0.004), 0.90, row_h,
-            boxstyle="square,pad=0", facecolor=bg, edgecolor="#E7E2D9", linewidth=0.5
+            boxstyle="square,pad=0", facecolor=bg, edgecolor="#E7E2D9", linewidth=0.5,
         ))
         for cx, cell in zip(col_x, r):
-            ax.text(cx, y_cur + 0.0025, cell, fontsize=8.0, color="#1C1917", family=font_family)
+            ax.text(cx, y_cur + 0.0025, cell, fontsize=7.8, color="#1C1917", family=font_family)
 
     # 4. Optional Hip Kinematics Mini-Chart (0-100% gait cycle)
-    narrative_top = y_cur - 0.025
-    if hip_curves and hip_curves.get("baseline") and hip_curves.get("vr"):
-        chart_bottom = y_cur - 0.190
-        chart_ax = fig.add_axes([0.10, chart_bottom + 0.030, 0.82, 0.130])
-        t_pct = hip_curves.get("time_percent") or list(range(0, 102, 2))
+    narrative_top = y_cur - 0.024
+    if hip_curves and (hip_curves.get("baseline") or hip_curves.get("vr") or hip_curves.get("verbal")):
+        chart_bottom = y_cur - 0.185
+        chart_ax = fig.add_axes([0.10, chart_bottom + 0.030, 0.82, 0.125])
+        raw_t = hip_curves.get("time_percent") or list(range(0, 102, 2))
         norm_mean = hip_curves.get("norm_mean")
         norm_std = hip_curves.get("norm_std")
-        if norm_mean and norm_std and len(norm_mean) == len(t_pct):
+        if norm_mean and norm_std and len(norm_mean) == len(norm_std):
+            t_norm = raw_t if len(raw_t) == len(norm_mean) else np.linspace(0, 100, len(norm_mean))
             upper = [m + s for m, s in zip(norm_mean, norm_std)]
             lower = [m - s for m, s in zip(norm_mean, norm_std)]
-            chart_ax.fill_between(t_pct, lower, upper, color="#D6D3D1", alpha=0.45, label="TD ±1 SD")
-        chart_ax.plot(t_pct, hip_curves["baseline"], color="#3B82F6", linewidth=1.4, label="Baseline")
+            chart_ax.fill_between(
+                t_norm, lower, upper, color="#D6D3D1", alpha=0.45,
+                label=pdf_loc.get("norm_legend", "TD Norm (±1 SD)"),
+            )
+
+        def _plot_series(vals: Any, **kwargs):
+            if not vals:
+                return
+            x_vals = raw_t if len(raw_t) == len(vals) else np.linspace(0, 100, len(vals))
+            chart_ax.plot(x_vals, vals, **kwargs)
+
+        if hip_curves.get("baseline"):
+            _plot_series(
+                hip_curves["baseline"], color="#3B82F6", linewidth=1.4,
+                label="Базалық" if is_kz else ("Baseline" if is_en else "Обычная ходьба"),
+            )
         if hip_curves.get("verbal"):
-            chart_ax.plot(t_pct, hip_curves["verbal"], color="#D97706", linewidth=1.2, linestyle="--", label="Verbal")
-        chart_ax.plot(t_pct, hip_curves["vr"], color="#0F766E", linewidth=1.6, label="VR")
+            _plot_series(
+                hip_curves["verbal"], color="#D97706", linewidth=1.2, linestyle="--",
+                label="Ауызша" if is_kz else ("Verbal" if is_en else "Голос"),
+            )
+        if hip_curves.get("vr"):
+            _plot_series(hip_curves["vr"], color="#0F766E", linewidth=1.6, label="VR")
+
         chart_ax.axhline(0, color="#A8A29E", linewidth=0.6, linestyle=":")
-        chart_ax.set_title(
-            "Сагиттальді сан қисығы (aSagH, 0–100% цикл)" if is_kz else "Сагиттальная кинематика бедра (aSagH, 0–100% цикла)",
-            fontsize=8.5, fontweight="bold", family=font_family, pad=4
+        chart_title = (
+            "Сагиттальді сан қисығы (aSagH, 0–100% цикл)"
+            if is_kz
+            else ("Sagittal Hip Kinematics (aSagH, 0–100% GC)" if is_en else "Сагиттальная кинематика бедра (aSagH, 0–100% цикла)")
         )
-        chart_ax.set_xlabel("% GC", fontsize=7.5, family=font_family)
+        chart_ax.set_title(chart_title, fontsize=8.5, fontweight="bold", family=font_family, pad=4)
+        chart_ax.set_xlabel("% циклі" if is_kz else ("% gait cycle" if is_en else "% цикла шага"), fontsize=7.5, family=font_family)
         chart_ax.set_ylabel("°", fontsize=8, family=font_family)
         chart_ax.tick_params(labelsize=7)
         chart_ax.grid(alpha=0.25, linewidth=0.5)
-        chart_ax.legend(fontsize=7, loc="upper right", ncol=4, frameon=True)
+        chart_ax.legend(fontsize=6.8, loc="upper right", ncol=4, frameon=True)
         narrative_top = chart_bottom - 0.012
 
-    # 5. Clinical / Parent Narrative Block
-    ax.text(
-        0.05, narrative_top,
-        "Қорытынды және ұсынымдар" if is_kz else "Заключение и рекомендации",
-        fontsize=9.8, fontweight="bold", color="#1C1917", family=font_family
+    # 5. Clinical / Parent Narrative Block (guaranteed no right overflow & zero vertical overlap)
+    sec_hdr = (
+        "Қорытынды және ұсынымдар"
+        if is_kz
+        else ("Conclusions & Clinical Recommendations" if is_en else "Заключение и рекомендации")
     )
+    ax.text(0.05, narrative_top, sec_hdr, fontsize=9.5, fontweight="bold", color="#1C1917", family=font_family)
 
-    wrapped_lines = []
-    for raw_line in narrative.splitlines():
-        if not raw_line.strip():
-            wrapped_lines.append("")
-        else:
-            wrapped_lines.extend(textwrap.wrap(raw_line, width=104))
-
-    # Fit narrative lines cleanly above footer disclaimer
-    box_bottom = 0.072
+    wrapped_lines = _wrap_text(narrative, width=74)
+    box_bottom = 0.088
     box_top = narrative_top - 0.012
     ax.add_patch(FancyBboxPatch(
         (0.05, box_bottom), 0.90, max(0.08, box_top - box_bottom),
         boxstyle="round,pad=0.004,rounding_size=0.008",
-        facecolor="#FAF8F5", edgecolor="#DDD8CE", linewidth=0.8
+        facecolor="#FAF8F5", edgecolor="#DDD8CE", linewidth=0.8,
     ))
 
+    font_sz = 6.6
+    min_step = 0.0115
     line_y = box_top - 0.014
-    avail_h = max(0.05, line_y - (box_bottom + 0.008))
-    n_lines = max(1, len(wrapped_lines))
-    line_step = min(0.013, avail_h / n_lines)
-    font_sz = 7.3 if line_step >= 0.0115 else 6.6
-    for line in wrapped_lines:
-        if line_y < box_bottom + 0.006:
+    avail_h = max(0.04, line_y - (box_bottom + 0.008))
+    max_lines = max(1, int(avail_h // min_step))
+    if len(wrapped_lines) <= max_lines:
+        display_lines = wrapped_lines
+        line_step = min(0.0135, avail_h / max(1, len(display_lines)))
+    else:
+        display_lines = wrapped_lines[: max(1, max_lines - 1)] + ["[...]"]
+        line_step = min_step
+
+    for line in display_lines:
+        if line_y < box_bottom + 0.008:
             break
-        ax.text(0.065, line_y, line, fontsize=font_sz, color="#1C1917", family=font_family)
+        ax.text(0.062, line_y, line, fontsize=font_sz, color="#1C1917", family=font_family)
         line_y -= line_step
 
-    # 6. Mandatory Footer (Rule 8.4 & Emergency 103)
-    footer_txt = (
-        "Ескерту (8.4-бап): Libra СППР болып табылады, диагноз қоймайды. Шұғыл жағдайда 103 нөміріне қоңырау шалыңыз."
-        if is_kz
-        else "Примечание (ст. 8.4): Libra является СППР, не ставит диагноз и не назначает лечение. Экстренная помощь: 103."
-    )
-    ax.text(0.05, 0.050, footer_txt, fontsize=8, fontweight="bold", color="#B45309", family=font_family)
+    # 6. Mandatory Footer (Rule 8.2, model limitations N=29 sagittal-only, & Emergency 103)
+    if is_kz:
+        footer_raw = (
+            "Ескерту және шектеулер (Ереже 8.2-т.): Libra СППР диагноз қоймайды, N=29 іріктемесінде "
+            "тек сагиттальді кинематикада калибрленген. Дәрігер тексеруі міндетті; шұғыл көмек: 103."
+        )
+    elif is_en:
+        footer_raw = (
+            "Limitations & Notice (Rule 8.2): Libra is an advisory CDSS calibrated on N=29 (sagittal kinematics only); "
+            "it does not diagnose or prescribe. Physician confirmation required; emergency: 103."
+        )
+    else:
+        footer_raw = (
+            "Ограничения и примечание (п. 8.2): Libra — СППР, не ставит диагноз; модель калибрована на выборке N=29 "
+            "(только сагиттальная кинематика). Нужен контроль врача; экстренная помощь: 103."
+        )
+    footer_lines = textwrap.wrap(footer_raw, width=96)
+    fy = 0.064
+    for fline in footer_lines[:2]:
+        ax.text(0.05, fy, fline, fontsize=7.2, fontweight="bold", color="#B45309", family=font_family)
+        fy -= 0.014
 
     buf = io.BytesIO()
     fig.savefig(buf, format="pdf")

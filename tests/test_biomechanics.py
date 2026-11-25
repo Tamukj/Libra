@@ -188,4 +188,32 @@ def test_compare_modalities_uses_pelvis_tilt_and_matches_cdss():
     assert mod["tje_verbal"] == pytest.approx(-3.5, abs=1e-6)
 
 
+def test_pelvic_overload_blocks_unsafe_vr_and_noise_pcr():
+    # Even when delta_hip > -1.0, delta_gvs_p > 2.0 must raise red pelvic overload
+    risk_overload = analyze_compensation_risk(delta_hip=-0.8, delta_gvs_p=4.5, delta_gvs_k=0.5, delta_gvs_a=0.5)
+    assert risk_overload["status"] == "red"
+    # Tiny hip delta (-0.06 deg) must not explode PCR denominator
+    assert compute_pcr(delta_gvs_pelvis=1.7, delta_gvs_knee=0.0, delta_gvs_ankle=0.0, delta_hip_ext=-0.06) == 0.0
+
+    # When both VR and Verbal exceed delta_gvs_pelvis > 2.0, compare_modalities must not recommend VR
+    mod = compare_modalities({
+        "baseline_amin_sagh": 10.0,
+        "baseline_gvs_pelvis": 8.0,
+        "baseline_gvs_knee": 8.0,
+        "baseline_gvs_ankle": 5.0,
+        "has_vr": True,
+        "vr_amin_sagh": 6.5,
+        "vr_gvs_pelvis": 11.0,  # +3.0 > 2.0
+        "vr_gvs_knee": 8.0,
+        "vr_gvs_ankle": 5.0,
+        "has_verbal": True,
+        "verbal_amin_sagh": 6.0,
+        "verbal_gvs_pelvis": 14.0,  # +6.0 > 2.0
+        "verbal_gvs_knee": 12.0,
+        "verbal_gvs_ankle": 8.0,
+    })
+    assert mod["best_method"] == "Baseline"
+
+
+
 

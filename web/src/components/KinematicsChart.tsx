@@ -2,70 +2,83 @@
 
 import React, { useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { KinematicsResponse } from "@/lib/types";
+import { KinematicsResponse, DiscreteSummary } from "@/lib/types";
 
 interface KinematicsProps {
   data: KinematicsResponse;
-  lang: "ru" | "kz" | "en";
+  summary?: DiscreteSummary;
+  lang: "ru" | "kz";
 }
 
-export function KinematicsChart({ data, lang }: KinematicsProps) {
-  const [activeJoint, setActiveJoint] = useState<"aSagH" | "aSagP" | "aSagK" | "aSagA">("aSagH");
+type JointKey = "aSagH" | "aSagP" | "aSagK" | "aSagA" | "mSagH";
 
-  const jointData = data.joints?.[activeJoint];
+export function KinematicsChart({ data, summary, lang }: KinematicsProps) {
+  const [activeJoint, setActiveJoint] = useState<JointKey>("aSagH");
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const jointTabs: Array<{ key: JointKey; label: string }> = [
+    { key: "aSagH", label: lang === "kz" ? "Сан буыны" : "Бедро" },
+    { key: "aSagP", label: lang === "kz" ? "Жамбас" : "Таз" },
+    { key: "aSagK", label: lang === "kz" ? "Тізе" : "Колено" },
+    { key: "aSagA", label: lang === "kz" ? "Тобық" : "Стопа" },
+    ...(data.joints?.mSagH
+      ? [{ key: "mSagH" as const, label: lang === "kz" ? "Сан моменті" : "Момент бедра" }]
+      : []),
+  ];
+
+  const jointData = data.joints?.[activeJoint] || data.joints?.aSagH;
   if (!jointData) {
     return (
-      <div className="card" style={{ padding: "18px", display: "flex", alignItems: "flex-start", gap: "10px", color: "var(--muted)", fontSize: "13px" }}>
+      <section className="surface" style={{ display: "flex", alignItems: "flex-start", gap: "10px", color: "var(--muted)", fontSize: "13px" }}>
         <AlertTriangle size={17} color="var(--amber)" style={{ flexShrink: 0, marginTop: "2px" }} />
         <div>
           <strong style={{ color: "var(--ink)" }}>
             {lang === "kz"
-              ? "51 нүктелі кинематикалық қисықтар жоқ"
-              : "51-точечные кривые кинематики не загружены"}
+              ? "51 нүктелі кинематикалық қисықтар жүктелмеген"
+              : "51-точечные кривые цикла шага не загружены"}
           </strong>{" "}
-          —{" "}
+          ·{" "}
           {lang === "kz"
-            ? "Бұл пациент үшін тек дискретті параметрлер сақталған. Графикті көру үшін 51 нүктелі кинематика CSV файлын жүктеңіз."
-            : "Для этого пациента сохранены только дискретные показатели. Загрузите CSV с 51-точечными кривыми цикла шага, чтобы построить график без подмены данных."}
+            ? "Бұл пациент үшін тек дискретті көрсеткіштер сақталған. Графикті көру үшін толық кинематикалық CSV файлын жүктеңіз."
+            : "Для этого пациента сохранены только дискретные показатели. Загрузите CSV с кривыми цикла шага, чтобы построить график без подмены данных."}
         </div>
-      </div>
+      </section>
     );
   }
 
-  const jointTabs = [
-    { key: "aSagH" as const, label: lang === "kz" ? "Сан (Hip)" : "Бедро (Hip)" },
-    { key: "aSagP" as const, label: lang === "kz" ? "Жамбас (Pelvis)" : "Таз (Pelvis)" },
-    { key: "aSagK" as const, label: lang === "kz" ? "Тізе (Knee)" : "Колено (Knee)" },
-    { key: "aSagA" as const, label: lang === "kz" ? "Тобық (Ankle)" : "Голеностоп (Ankle)" },
-  ];
+  const avail = data.available_conditions;
+  const showBaseline = (avail ? avail.includes("Baseline") : summary?.has_baseline !== false) && Boolean(jointData.baseline);
+  const showVerbal = (avail ? avail.includes("Verbal") : summary?.has_verbal !== false) && Boolean(jointData.verbal);
+  const showVR = (avail ? avail.includes("VR") : summary?.has_vr !== false) && Boolean(jointData.vr);
 
-  const width = 860;
-  const height = 320;
-  const padLeft = 45;
-  const padRight = 20;
-  const padTop = 26;
-  const padBottom = 34;
+  const width = 880;
+  const height = 340;
+  const padLeft = 52;
+  const padRight = 24;
+  const padTop = 30;
+  const padBottom = 36;
 
-  // Determine min & max values for scale
   const allValues = [
-    ...jointData.baseline.mean,
-    ...jointData.vr.mean,
-    ...jointData.verbal.mean,
-    ...jointData.norm_td.mean.map((m, i) => m + jointData.norm_td.std[i]),
-    ...jointData.norm_td.mean.map((m, i) => m - jointData.norm_td.std[i]),
+    ...(showBaseline && jointData.baseline ? jointData.baseline.mean : []),
+    ...(showVR && jointData.vr ? jointData.vr.mean : []),
+    ...(showVerbal && jointData.verbal ? jointData.verbal.mean : []),
+    ...jointData.norm_td.mean.map((m, i) => m + (jointData.norm_td.std[i] || 0)),
+    ...jointData.norm_td.mean.map((m, i) => m - (jointData.norm_td.std[i] || 0)),
   ].filter((v): v is number => typeof v === "number" && !isNaN(v) && isFinite(v));
-  const minY = allValues.length > 0 ? Math.floor(Math.min(...allValues) / 5) * 5 - 5 : -10;
-  const maxY = allValues.length > 0 ? Math.ceil(Math.max(...allValues) / 5) * 5 + 5 : 40;
+
+  const isMoment = activeJoint === "mSagH";
+  const step = isMoment ? 0.5 : 5;
+  const minY = allValues.length > 0 ? Math.floor(Math.min(...allValues) / step) * step - step : -10;
+  const maxY = allValues.length > 0 ? Math.ceil(Math.max(...allValues) / step) * step + step : 40;
 
   const scaleX = (pct: number) => padLeft + (pct / 100) * (width - padLeft - padRight);
-  const scaleY = (val: number) => padTop + (1 - (val - minY) / (maxY - minY)) * (height - padTop - padBottom);
+  const scaleY = (val: number) => padTop + (1 - (val - minY) / (maxY - minY || 1)) * (height - padTop - padBottom);
 
-  // Generate SVG path for a curve
   const makePath = (points: number[]) => {
     const denom = points.length > 1 ? points.length - 1 : 1;
     return points
       .map((val, idx) => {
-        const safeVal = typeof val === "number" && !isNaN(val) ? val : 0;
+        const safeVal = typeof val === "number" && isFinite(val) ? val : 0;
         const x = scaleX((idx / denom) * 100);
         const y = scaleY(safeVal);
         return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
@@ -73,155 +86,165 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
       .join(" ");
   };
 
-  // Generate SVG area for Norm TD corridor (+/- 1 SD)
   const stdArr = jointData.norm_td?.std || [];
   const meanArr = jointData.norm_td?.mean || [];
-  const normUpper = meanArr.map((m, i) => m + (typeof stdArr[i] === "number" && !isNaN(stdArr[i]) ? stdArr[i] : 0));
-  const normLower = meanArr.map((m, i) => m - (typeof stdArr[i] === "number" && !isNaN(stdArr[i]) ? stdArr[i] : 0));
+  const normUpper = meanArr.map((m, i) => m + (typeof stdArr[i] === "number" && isFinite(stdArr[i]) ? stdArr[i] : 0));
+  const normLower = meanArr.map((m, i) => m - (typeof stdArr[i] === "number" && isFinite(stdArr[i]) ? stdArr[i] : 0));
   const denom = normUpper.length > 1 ? normUpper.length - 1 : 1;
-  const safeScaleY = (v: number) => scaleY(typeof v === "number" && !isNaN(v) ? v : 0);
+  const safeScaleY = (v: number) => scaleY(typeof v === "number" && isFinite(v) ? v : 0);
   const normAreaPath =
     normUpper.map((val, idx) => `${idx === 0 ? "M" : "L"} ${scaleX((idx / denom) * 100).toFixed(1)} ${safeScaleY(val).toFixed(1)}`).join(" ") +
     " " +
     normLower.slice().reverse().map((val, idx) => `L ${scaleX(((denom - idx) / denom) * 100).toFixed(1)} ${safeScaleY(val).toFixed(1)}`).join(" ") +
     " Z";
 
+  const nPts = jointData.time_percent?.length || 51;
+  const unit = jointData.unit || "°";
+  const digits = isMoment ? 2 : 1;
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * width;
+    const pct = ((relX - padLeft) / (width - padLeft - padRight)) * 100;
+    const clamped = Math.max(0, Math.min(100, pct));
+    const idx = Math.round((clamped / 100) * (nPts - 1));
+    setHoverIdx(idx);
+  };
+
+  const midY = isMoment ? Number(((minY + maxY) / 2).toFixed(1)) : Math.round((minY + maxY) / 2);
+
   return (
-    <div className="card" style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "18px" }}>
-      
-      {/* Controls Bar: Joint Tabs on Left, Legend on Right */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-        
-        {/* Joint Selector Pills */}
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-          {jointTabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveJoint(tab.key)}
-              className="btn"
-              style={{
-                fontSize: "12px",
-                padding: "5px 12px",
-                background: activeJoint === tab.key ? "var(--ink)" : "var(--paper)",
-                color: activeJoint === tab.key ? "var(--white)" : "var(--ink)",
-                borderColor: activeJoint === tab.key ? "var(--ink)" : "var(--line)",
-                fontWeight: 500
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Legend */}
-        <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "var(--ink)", flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <span style={{ width: "12px", height: "10px", background: "var(--norm-corridor)", borderRadius: "2px", opacity: 0.65 }} />
-            <span>{lang === "kz" ? "TD нормасы (±1 SD, Schwartz 2008)" : "Схематическая норма TD (±1 SD, Schwartz 2008)"}</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <span style={{ width: "14px", height: "2.5px", background: "#3b82f6" }} />
-            <span>{lang === "kz" ? "Қалыпты қадам (Base)" : "Обычный шаг (Base)"}</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <span style={{ width: "14px", height: "2.5px", background: "var(--teal)" }} />
-            <span>{lang === "kz" ? "VR аватары" : "VR аватар"}</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <span style={{ width: "14px", height: "2.5px", background: "#f59e0b" }} />
-            <span>{lang === "kz" ? "Дауыс (Verbal)" : "Голос (Verbal)"}</span>
-          </div>
-        </div>
-
-      </div>
-
-      {/* Surrogate / Fallback Curves Warning Banner */}
-      {(data.is_surrogate || data.is_fallback) && (
-        <div
-          role="alert"
-          style={{
-            background: "var(--amber-light)",
-            border: "1px solid var(--amber-border)",
-            borderRadius: "8px",
-            padding: "10px 14px",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: "10px",
-            color: "var(--amber)",
-            fontSize: "12.5px",
-            lineHeight: 1.5
-          }}
-        >
-          <AlertTriangle size={17} style={{ flexShrink: 0, marginTop: "2px" }} />
-          <div>
-            <strong>
-              {lang === "kz"
-                ? "Схемалық қисықтар (эталондық s61520_1):"
-                : "Схематические кривые (эталон s61520_1):"}
-            </strong>{" "}
+    <section className="surface" aria-label={lang === "kz" ? "Қадам циклінің кинематикасы" : "Кинематика цикла шага"} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+        <div>
+          <h2 style={{ fontSize: "16px", fontWeight: 600 }}>
+            {lang === "kz" ? "Қадам циклінің кинематикасы мен кинетикасы (0–100%)" : "Кинематика и кинетика цикла шага (0–100%)"}
+          </h2>
+          <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>
             {lang === "kz"
-              ? "Жүктелген дискретті CSV файлында 51 нүктелі кинематикалық қисықтар жоқ, сондықтан бұл пациенттің нақты өлшенген қисықтары емес, когортаның эталондық қисықтары көрсетілген."
-              : "В загруженном дискретном CSV отсутствуют 51-точечные кинематические кривые, поэтому на графике схематично показаны референсные кривые когорты (s61520_1), а не измеренные кривые этого пациента."}
-          </div>
+              ? "Сұр аймақ — жасы бойынша нормативтік дәліз (Schwartz 2008, ±1 SD). 0–60% тірек фазасы, 60–100% ауысу фазасы."
+              : "Серый коридор — возрастная норма здоровых детей (Schwartz 2008, ±1 SD). 0–60% фаза опоры, 60–100% фаза переноса."}
+          </p>
         </div>
-      )}
 
-      {/* Clean Clinical Guide Strip (Zero AI Emoji Slop) */}
-      <div style={{
-        background: "var(--paper)",
-        border: "1px solid var(--line)",
-        padding: "7px 12px",
-        borderRadius: "6px",
-        fontSize: "11.5px",
-        color: "var(--muted)",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: "6px"
-      }}>
-        <span>
-          {lang === "kz"
-            ? "Сұр аймақ — әдебиеттік нормативтік дәліз (Schwartz 2008 ±1 SD). Сарғыш сызықтың (VR) нормадан жоғары шығуы — биомеханикалық компенсация."
-            : "Серый коридор — литературный нормативный диапазон здоровых детей (Schwartz 2008 ±1 SD). Отклонение линии VR выше серого диапазона указывает на компенсаторную нагрузку."}
-        </span>
-        <span style={{ fontWeight: 500, color: "var(--ink)" }}>{lang === "kz" ? "0%–60% Тіреу · 60%–100% Ауысу" : "0%–60% Опора · 60%–100% Перенос"}</span>
+        {/* Joint Selector */}
+        <div role="tablist" aria-label={lang === "kz" ? "Буынды таңдау" : "Выбор сустава"} style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {jointTabs.map((tab) => {
+            const active = activeJoint === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setActiveJoint(tab.key)}
+                className="btn"
+                style={{
+                  minBlockSize: "32px",
+                  fontSize: "12px",
+                  padding: "4px 12px",
+                  background: active ? "var(--ink)" : "var(--paper)",
+                  color: active ? "var(--white)" : "var(--ink)",
+                  borderColor: active ? "var(--ink)" : "var(--line-strong)",
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* SVG Canvas */}
+      {/* Legend & Live Cursor Readout */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", fontSize: "12px" }}>
+        <div style={{ display: "flex", gap: "14px", flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ width: "12px", height: "10px", background: "var(--norm-corridor)", borderRadius: "2px", opacity: 0.7 }} />
+            <span style={{ color: "var(--secondary)" }}>{lang === "kz" ? "Норма (±1 SD)" : "Норма (±1 SD)"}</span>
+          </div>
+          {showBaseline && (
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ width: "14px", height: "2px", background: "var(--blue)" }} />
+              <span>{lang === "kz" ? "Қалыпты жүріс" : "Обычная ходьба"}</span>
+            </div>
+          )}
+          {showVerbal && (
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ width: "14px", height: "2px", background: "var(--amber)" }} />
+              <span>{lang === "kz" ? "Ауызша нұсқау" : "Голосовые команды"}</span>
+            </div>
+          )}
+          {showVR && (
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ width: "14px", height: "2.5px", background: "var(--teal)" }} />
+              <span>{lang === "kz" ? "VR-режим" : "VR-режим"}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="tabular-nums" style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--secondary)" }}>
+          {hoverIdx !== null ? (
+            <>
+              <span>{Math.round((hoverIdx / (nPts - 1)) * 100)}%</span>
+              {showBaseline && jointData.baseline && (
+                <span> · Base {(jointData.baseline.mean[hoverIdx] ?? 0).toFixed(digits)}{unit}</span>
+              )}
+              {showVerbal && jointData.verbal && (
+                <span> · Verbal {(jointData.verbal.mean[hoverIdx] ?? 0).toFixed(digits)}{unit}</span>
+              )}
+              {showVR && jointData.vr && (
+                <span> · VR {(jointData.vr.mean[hoverIdx] ?? 0).toFixed(digits)}{unit}</span>
+              )}
+              <span> · TD {(jointData.norm_td.mean[hoverIdx] ?? 0).toFixed(digits)}{unit}</span>
+            </>
+          ) : (
+            <span>
+              {lang === "kz"
+                ? "Нақты бұрыштарды көру үшін графикке меңзерді апарыңыз"
+                : "Наведите курсор на график для просмотра значений по циклу"}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Interactive SVG Canvas */}
       <div className="table-responsive">
-        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", height: "auto", display: "block", minWidth: "600px" }}>
-          
-          {/* Phase 60% Background Tint for Swing */}
+        <svg
+          role="img"
+          aria-label={lang === "kz" ? jointData.name_kz : jointData.name_ru}
+          width={width}
+          height={height}
+          viewBox={`0 0 ${width} ${height}`}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => setHoverIdx(null)}
+          style={{ width: "100%", height: "auto", display: "block", minWidth: "560px", cursor: "crosshair" }}
+        >
           <rect
             x={scaleX(60)}
             y={padTop}
             width={scaleX(100) - scaleX(60)}
             height={height - padTop - padBottom}
-            fill="var(--linen)"
-            opacity="0.3"
+            fill="var(--sidebar)"
+            opacity="0.45"
           />
 
-          {/* Stance / Swing Labels */}
-          <text x={scaleX(30)} y={padTop - 8} fontSize="11" fill="var(--muted)" textAnchor="middle" fontWeight="600">
-            {lang === "kz" ? "ТІРЕК КЕЗЕҢІ (0%–60%)" : "ФАЗА ОПОРЫ (0%–60%)"}
+          <text x={scaleX(30)} y={padTop - 10} fontSize="11" fill="var(--muted)" textAnchor="middle" fontWeight="500">
+            {lang === "kz" ? "Тірек фазасы (0–60%)" : "Фаза опоры (0–60%)"}
           </text>
-          <text x={scaleX(80)} y={padTop - 8} fontSize="11" fill="var(--muted)" textAnchor="middle" fontWeight="600">
-            {lang === "kz" ? "АУЫСУ КЕЗЕҢІ (60%–100%)" : "ФАЗА ПЕРЕНОСА (60%–100%)"}
+          <text x={scaleX(80)} y={padTop - 10} fontSize="11" fill="var(--muted)" textAnchor="middle" fontWeight="500">
+            {lang === "kz" ? "Ауысу фазасы (60–100%)" : "Фаза переноса (60–100%)"}
           </text>
 
-          {/* Stance / Swing Boundary Line */}
           <line
             x1={scaleX(60)}
             y1={padTop}
             x2={scaleX(60)}
             y2={height - padBottom}
-            stroke="var(--line)"
-            strokeWidth="1.5"
+            stroke="var(--line-strong)"
+            strokeWidth="1.2"
             strokeDasharray="4 3"
           />
 
-          {/* Grid Lines and X axis ticks */}
           {[0, 25, 50, 75, 100].map((pct) => (
             <g key={pct}>
               <line
@@ -232,14 +255,13 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
                 stroke="var(--line)"
                 strokeDasharray="2 3"
               />
-              <text x={scaleX(pct)} y={height - padBottom + 16} fontSize="11" fill="var(--muted)" textAnchor="middle">
+              <text x={scaleX(pct)} y={height - padBottom + 18} fontSize="11" fill="var(--muted)" textAnchor="middle">
                 {pct}%
               </text>
             </g>
           ))}
 
-          {/* Y Axis Grid and Labels */}
-          {[minY, Math.round((minY + maxY) / 2), maxY].map((val) => (
+          {[minY, midY, maxY].map((val) => (
             <g key={val}>
               <line
                 x1={padLeft}
@@ -250,29 +272,37 @@ export function KinematicsChart({ data, lang }: KinematicsProps) {
                 strokeDasharray="2 3"
               />
               <text x={padLeft - 8} y={scaleY(val) + 4} fontSize="11" fill="var(--muted)" textAnchor="end" style={{ fontVariantNumeric: "tabular-nums" }}>
-                {val}°
+                {val}{unit}
               </text>
             </g>
           ))}
 
-          {/* 1. Shaded Norm Corridor */}
           <path d={normAreaPath} fill="var(--norm-corridor)" fillOpacity="0.45" />
-
-          {/* 2. Norm TD Mean Line */}
           <path d={makePath(jointData.norm_td.mean)} fill="none" stroke="#64748b" strokeWidth="1.5" strokeDasharray="3 3" />
 
-          {/* 3. Baseline Mean Line (Blue) */}
-          <path d={makePath(jointData.baseline.mean)} fill="none" stroke="#3b82f6" strokeWidth="2.2" />
+          {showBaseline && jointData.baseline && (
+            <path d={makePath(jointData.baseline.mean)} fill="none" stroke="var(--blue)" strokeWidth="2.2" />
+          )}
+          {showVerbal && jointData.verbal && (
+            <path d={makePath(jointData.verbal.mean)} fill="none" stroke="var(--amber)" strokeWidth="2.0" strokeDasharray="5 3" />
+          )}
+          {showVR && jointData.vr && (
+            <path d={makePath(jointData.vr.mean)} fill="none" stroke="var(--teal)" strokeWidth="2.6" />
+          )}
 
-          {/* 4. Verbal Mean Line (Amber) */}
-          <path d={makePath(jointData.verbal.mean)} fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeDasharray="4 2" />
-
-          {/* 5. VR Mean Line (Teal) */}
-          <path d={makePath(jointData.vr.mean)} fill="none" stroke="var(--teal)" strokeWidth="2.6" />
-
+          {hoverIdx !== null && (
+            <line
+              x1={scaleX((hoverIdx / (nPts - 1)) * 100)}
+              y1={padTop}
+              x2={scaleX((hoverIdx / (nPts - 1)) * 100)}
+              y2={height - padBottom}
+              stroke="var(--ink)"
+              strokeWidth="1"
+              strokeOpacity="0.45"
+            />
+          )}
         </svg>
       </div>
-
-    </div>
+    </section>
   );
 }

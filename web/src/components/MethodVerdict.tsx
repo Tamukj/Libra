@@ -7,7 +7,7 @@ import { ModalitiesComparison, DiscreteSummary } from "@/lib/types";
 interface Props {
   modalities?: ModalitiesComparison;
   summary?: DiscreteSummary;
-  lang: "ru" | "kz" | "en";
+  lang: "ru" | "kz";
 }
 
 export function MethodVerdict({ modalities, summary, lang }: Props) {
@@ -17,225 +17,230 @@ export function MethodVerdict({ modalities, summary, lang }: Props) {
   const isVerbal = modalities.best_method === "Verbal";
   const isBaseline = modalities.best_method === "Baseline";
 
-  const title = lang === "kz" ? "Оңалту тактикасын таңдау: Baseline vs Verbal vs VR" : "Выбор тактики: Baseline vs Verbal vs VR";
+  const title =
+    lang === "kz"
+      ? "Оңалту тәсілін таңдау: Қалыпты, Ауызша және VR"
+      : "Выбор тактики реабилитации: обычная ходьба, голос или VR";
   const verdictText = lang === "kz" ? modalities.verdict_kz : modalities.verdict_ru;
 
-  // Recommended badge styling
-  const badgeColor = isVR ? "var(--teal)" : isVerbal ? "var(--amber)" : "var(--ink)";
-  const badgeBg = isVR ? "var(--teal-bg)" : isVerbal ? "var(--amber-light)" : "var(--linen)";
-  const badgeBorder = isVR ? "var(--teal-border)" : isVerbal ? "var(--amber-border)" : "var(--line)";
+  const badgeClass = isVR ? "badge-green" : isVerbal ? "badge-yellow" : "badge-neutral";
 
-  const fmt = (val: number | null | undefined, digits = 1) =>
-    typeof val === "number" && !isNaN(val) ? val.toFixed(digits) : "—";
+  const fmt = (val: number | null | undefined, digits = 1, signed = false) => {
+    if (typeof val !== "number" || !isFinite(val)) return "—";
+    const prefix = signed && val > 0 ? "+" : "";
+    return `${prefix}${val.toFixed(digits)}`;
+  };
 
   return (
-    <div className="card-raised" style={{
-      borderLeft: `4px solid ${badgeColor}`,
-      display: "flex",
-      flexDirection: "column",
-      gap: "12px",
-      background: "var(--white)",
-      padding: "18px"
-    }}>
-      
-      {/* Top Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+    <section className="surface" aria-label={title} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div style={{
-            width: "32px",
-            height: "32px",
-            borderRadius: "6px",
-            background: badgeBg,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: badgeColor
-          }}>
-            <Award size={18} />
-          </div>
+          <Award size={18} strokeWidth={1.6} color={isVR ? "var(--teal)" : isVerbal ? "var(--amber)" : "var(--ink)"} />
           <div>
-            <h3 style={{ fontSize: "14px", fontWeight: "700", margin: 0 }}>{title}</h3>
-            <span style={{ fontSize: "11px", color: "var(--muted)" }}>
-              {lang === "kz" ? "Базалық жүріске қатысты биомеханика және қауіпсіздік талдауы" : "Сравнительный анализ биомеханики и безопасности относительно базовой походки"}
-            </span>
+            <h2 style={{ fontSize: "16px", fontWeight: 600 }}>{title}</h2>
+            <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>
+              {lang === "kz"
+                ? "Қалыпты жүріспен салыстырғандағы биомеханикалық тиімділік пен қауіпсіздік"
+                : "Сравнение эффективности разгибания бедра и безопасности таза относительно обычной ходьбы"}
+            </p>
           </div>
         </div>
 
-        {/* Big Recommended Badge */}
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          padding: "6px 14px",
-          borderRadius: "6px",
-          background: badgeBg,
-          border: `1px solid ${badgeBorder}`,
-          color: badgeColor,
-          fontWeight: 600,
-          fontSize: "13px"
-        }}>
-          {isVR ? <Glasses size={16} /> : isVerbal ? <Volume2 size={16} /> : <Footprints size={16} />}
+        <span className={`badge ${badgeClass}`} style={{ fontSize: "13px", padding: "6px 12px" }}>
+          {isVR ? <Glasses size={15} /> : isVerbal ? <Volume2 size={15} /> : <Footprints size={15} />}
           <span>
-            {lang === "kz" ? "Ұсынылған: " : "Рекомендовано: "}
-            {lang === "kz"
-              ? (isVR ? "VR Режимі (Аватар)" : isVerbal ? "Verbal Режимі (Дауыс)" : "Базалық режим (Baseline)")
-              : (isVR ? "VR Режим (Аватар)" : isVerbal ? "Verbal Режим (Голос)" : "Базовый режим (Baseline)")}
+            {lang === "kz" ? "Ұсынылған тәсіл: " : "Оптимальный режим: "}
+            {isVR
+              ? lang === "kz"
+                ? "VR-жаттығу"
+                : "VR-обратная связь"
+              : isVerbal
+              ? lang === "kz"
+                ? "Ауызша нұсқау"
+                : "Голосовые команды"
+              : lang === "kz"
+              ? "Қалыпты жаттығулар"
+              : "Базовые упражнения"}
           </span>
-        </div>
+        </span>
       </div>
 
-      {/* Narrative Explanation */}
-      <div style={{ fontSize: "13px", color: "var(--ink)", lineHeight: "1.55", background: "var(--paper)", padding: "10px 14px", borderRadius: "6px", border: "1px solid var(--line)" }}>
-        <strong>{lang === "kz" ? "Клиникалық қорытынды:" : "Клиническое заключение:"}</strong> {verdictText}
-      </div>
+      <p style={{ fontSize: "13px", color: "var(--ink)", lineHeight: 1.55, padding: "12px 14px", borderRadius: "8px", background: "var(--paper)", border: "1px solid var(--line)" }}>
+        {verdictText}
+      </p>
 
-      {/* 3-Way Modality Comparison Cards (Baseline, Verbal, VR) */}
+      {/* 3-way structured modality table/grid */}
       <div className="grid-verdict-split">
-        
-        {/* 1. Baseline Card (Control) */}
-        <div style={{
-          padding: "12px 14px",
-          borderRadius: "6px",
-          border: `1px solid ${isBaseline ? "var(--teal-border)" : "var(--line)"}`,
-          background: isBaseline ? "var(--teal-bg)" : "var(--paper)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px"
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", gap: "6px" }}>
-              <Footprints size={14} color="#3b82f6" />
-              <span>{lang === "kz" ? "1. Қалыпты (Baseline)" : "1. Обычный (Baseline)"}</span>
+        {/* 1. Baseline */}
+        <div
+          style={{
+            padding: "14px",
+            borderRadius: "8px",
+            border: `1px solid ${isBaseline ? "var(--line-strong)" : "var(--line)"}`,
+            background: isBaseline ? "var(--sidebar)" : "var(--paper)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
+              <Footprints size={14} color="var(--blue)" />
+              <span>{lang === "kz" ? "1. Қалыпты жүріс" : "1. Обычная ходьба"}</span>
             </span>
-            {isBaseline ? (
-              <span className="badge badge-green" style={{ fontSize: "10px" }}>{lang === "kz" ? "Басымдық" : "Приоритет"}</span>
-            ) : (
-              <span style={{ fontSize: "10px", color: "var(--muted)", fontWeight: 600 }}>{lang === "kz" ? "Бастапқы нүкте" : "Точка отсчета"}</span>
-            )}
+            <span style={{ fontSize: "11px", color: isBaseline ? "var(--ink)" : "var(--muted)", fontWeight: isBaseline ? 600 : 400 }}>
+              {isBaseline ? (lang === "kz" ? "Басымдық" : "Приоритет") : lang === "kz" ? "Анықтама" : "Эталон"}
+            </span>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px", paddingTop: "6px", borderTop: "1px solid var(--line)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px", paddingTop: "8px", borderTop: "1px solid var(--line)" }}>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>TJE</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                0.0°
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>TJE</div>
+              <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>0.0°</div>
+            </div>
+            <div>
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>{lang === "kz" ? "Сан" : "Бедро"}</div>
+              <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>
+                {summary ? `${fmt(summary.baseline_amin_sagh)}°` : "—"}
               </div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жазылу" : "Разгибание"}</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {summary ? `${fmt(summary.baseline_amin_sagh)}°` : (lang === "kz" ? "База" : "База")}
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>{lang === "kz" ? "Жамбас" : "Таз"}</div>
+              <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>
+                {summary ? `${fmt(summary.baseline_gvs_pelvis)}°` : "—"}
               </div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жамбас еңкеюі" : "Наклон таза"}</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {summary ? `${fmt(summary.baseline_gvs_pelvis)}°` : (lang === "kz" ? "База" : "База")}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>PCR</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px", color: "var(--muted)" }}>
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>PCR</div>
+              <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 500, color: "var(--muted)", marginTop: "2px" }}>
                 {lang === "kz" ? "База" : "База"}
               </div>
             </div>
           </div>
         </div>
 
-        {/* 2. Verbal Card (Speech instructions) */}
-        <div style={{
-          padding: "12px 14px",
-          borderRadius: "6px",
-          border: `1px solid ${isVerbal ? "#d97706" : "var(--line)"}`,
-          background: isVerbal ? "var(--amber-light)" : "var(--paper)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px"
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", gap: "6px" }}>
-              <Volume2 size={14} color="#d97706" />
-              <span>{lang === "kz" ? "2. Дауыс (Verbal)" : "2. Голос (Verbal)"}</span>
+        {/* 2. Verbal */}
+        <div
+          style={{
+            padding: "14px",
+            borderRadius: "8px",
+            border: `1px solid ${isVerbal ? "var(--amber-border)" : "var(--line)"}`,
+            background: isVerbal ? "var(--amber-bg)" : "var(--paper)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
+              <Volume2 size={14} color="var(--amber)" />
+              <span>{lang === "kz" ? "2. Ауызша нұсқау" : "2. Голосовые команды"}</span>
             </span>
-            {isVerbal && <span className="badge badge-yellow" style={{ fontSize: "10px" }}>{lang === "kz" ? "Басымдық" : "Приоритет"}</span>}
+            {isVerbal && <span className="badge badge-yellow">{lang === "kz" ? "Басымдық" : "Приоритет"}</span>}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px", paddingTop: "6px", borderTop: "1px solid var(--line)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px", paddingTop: "8px", borderTop: "1px solid var(--line)" }}>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>TJE</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {typeof modalities.tje_verbal === "number" && modalities.tje_verbal > 0 ? "+" : ""}{fmt(modalities.tje_verbal)}°
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>TJE</div>
+              <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>
+                {fmt(modalities.tje_verbal, 1, true)}°
               </div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жазылу" : "Разгибание"}</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {typeof modalities.delta_hip_verbal === "number" && modalities.delta_hip_verbal > 0 ? "+" : ""}{fmt(modalities.delta_hip_verbal)}°
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>{lang === "kz" ? "Сан" : "Бедро"}</div>
+              <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>
+                {fmt(modalities.delta_hip_verbal, 1, true)}°
               </div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жамбас еңкеюі" : "Наклон таза"}</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {typeof modalities.delta_pelvis_verbal === "number" && modalities.delta_pelvis_verbal > 0 ? "+" : ""}{fmt(modalities.delta_pelvis_verbal)}°
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>{lang === "kz" ? "Жамбас" : "Таз"}</div>
+              <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>
+                {fmt(modalities.delta_pelvis_verbal, 1, true)}°
               </div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>PCR</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px", color: (modalities.pcr_verbal ?? 0) > 0.8 ? "var(--red)" : (modalities.pcr_verbal ?? 0) >= 0.4 ? "var(--amber)" : "var(--teal)" }}>
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>PCR</div>
+              <div
+                className="tabular-nums"
+                style={{
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  marginTop: "2px",
+                  color:
+                    typeof modalities.pcr_verbal === "number" && modalities.pcr_verbal > 0.8
+                      ? "var(--red)"
+                      : typeof modalities.pcr_verbal === "number" && modalities.pcr_verbal >= 0.4
+                      ? "var(--amber)"
+                      : "var(--teal)",
+                }}
+              >
                 {fmt(modalities.pcr_verbal, 2)}
               </div>
             </div>
           </div>
         </div>
 
-        {/* 3. VR Card (Avatar visual feedback) */}
-        <div style={{
-          padding: "12px 14px",
-          borderRadius: "6px",
-          border: `1px solid ${isVR ? "var(--teal-border)" : "var(--line)"}`,
-          background: isVR ? "var(--teal-bg)" : "var(--paper)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px"
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", gap: "6px" }}>
+        {/* 3. VR */}
+        <div
+          style={{
+            padding: "14px",
+            borderRadius: "8px",
+            border: `1px solid ${isVR ? "var(--teal-border)" : "var(--line)"}`,
+            background: isVR ? "var(--teal-bg)" : "var(--paper)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
               <Glasses size={14} color="var(--teal)" />
-              <span>{lang === "kz" ? "3. Көзілдірік (VR аватар)" : "3. Очки (VR аватар)"}</span>
+              <span>{lang === "kz" ? "3. VR-кері байланыс" : "3. VR-обратная связь"}</span>
             </span>
-            {isVR && <span className="badge badge-green" style={{ fontSize: "10px" }}>{lang === "kz" ? "Басымдық" : "Приоритет"}</span>}
+            {isVR && <span className="badge badge-green">{lang === "kz" ? "Басымдық" : "Приоритет"}</span>}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px", paddingTop: "6px", borderTop: "1px solid var(--line)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px", paddingTop: "8px", borderTop: "1px solid var(--line)" }}>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>TJE</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {typeof modalities.tje_vr === "number" && modalities.tje_vr > 0 ? "+" : ""}{fmt(modalities.tje_vr)}°
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>TJE</div>
+              <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>
+                {fmt(modalities.tje_vr, 1, true)}°
               </div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жазылу" : "Разгибание"}</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {typeof modalities.delta_hip_vr === "number" && modalities.delta_hip_vr > 0 ? "+" : ""}{fmt(modalities.delta_hip_vr)}°
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>{lang === "kz" ? "Сан" : "Бедро"}</div>
+              <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>
+                {fmt(modalities.delta_hip_vr, 1, true)}°
               </div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>{lang === "kz" ? "Жамбас еңкеюі" : "Наклон таза"}</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px" }}>
-                {typeof modalities.delta_pelvis_vr === "number" && modalities.delta_pelvis_vr > 0 ? "+" : ""}{fmt(modalities.delta_pelvis_vr)}°
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>{lang === "kz" ? "Жамбас" : "Таз"}</div>
+              <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>
+                {fmt(modalities.delta_pelvis_vr, 1, true)}°
               </div>
             </div>
             <div>
-              <div style={{ fontSize: "11px", color: "var(--muted)" }}>PCR</div>
-              <div style={{ fontSize: "13px", fontWeight: 700, fontFamily: "var(--mono)", marginTop: "2px", color: (modalities.pcr_vr ?? 0) > 0.8 ? "var(--red)" : (modalities.pcr_vr ?? 0) >= 0.4 ? "var(--amber)" : "var(--teal)" }}>
+              <div style={{ fontSize: "11px", color: "var(--muted)", whiteSpace: "nowrap" }}>PCR</div>
+              <div
+                className="tabular-nums"
+                style={{
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  marginTop: "2px",
+                  color:
+                    typeof modalities.pcr_vr === "number" && modalities.pcr_vr > 0.8
+                      ? "var(--red)"
+                      : typeof modalities.pcr_vr === "number" && modalities.pcr_vr >= 0.4
+                      ? "var(--amber)"
+                      : "var(--teal)",
+                }}
+              >
                 {fmt(modalities.pcr_vr, 2)}
               </div>
             </div>
           </div>
         </div>
-
       </div>
-
-    </div>
+    </section>
   );
 }

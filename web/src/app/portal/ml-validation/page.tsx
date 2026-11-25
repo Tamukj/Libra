@@ -1,90 +1,82 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
+import { ArrowLeft, RotateCcw } from "lucide-react";
 import { getMLMetrics } from "@/lib/api";
 import { MLMetrics } from "@/lib/types";
 import { MlValidation } from "@/components/MlValidation";
 import { useLanguage } from "@/lib/LanguageContext";
 
 export default function MlValidationPage() {
+  const { lang, t } = useLanguage();
   const [metrics, setMetrics] = useState<MLMetrics | null>(null);
   const [loading, setLoading] = useState(true);
-  const { lang, setLang } = useLanguage();
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getMLMetrics();
+      setMetrics(data);
+    } catch {
+      setError(
+        lang === "kz"
+          ? "Валидация метрикаларын жүктеу мүмкін болмады."
+          : "Не удалось загрузить метрики валидации моделей ИИ."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [lang]);
 
   useEffect(() => {
-    async function loadMetrics() {
-      try {
-        const data = await getMLMetrics();
-        setMetrics(data);
-      } catch (err) {
-        console.error("Failed to load ML metrics:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadMetrics();
-  }, []);
+    load();
+  }, [load]);
 
   return (
-    <div className="container" style={{ paddingBlock: "28px", display: "flex", flexDirection: "column", gap: "20px" }}>
-      
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
-        <div>
-          <h1 style={{ fontSize: "26px", letterSpacing: "-0.025em" }}>
-            {lang === "kz" ? "Алгоритмді тексеру әдіснамасы (GroupKFold)" : "Методология и валидация алгоритма (GroupKFold)"}
-          </h1>
-          <p style={{ color: "var(--muted)", fontSize: "14px", marginTop: "4px" }}>
-            {lang === "kz"
-              ? "Деректердің ағып кетуін болдырмау үшін науқастар арасында бөлінген кросс-валидация нәтижелері."
-              : "Кросс-валидация модели без смешивания шагов одного пациента между обучающей и проверочной выборками."}
-          </p>
-        </div>
-
-        <div style={{ display: "inline-flex", border: "1px solid var(--line)", borderRadius: "6px", overflow: "hidden", background: "var(--white)" }}>
-          <button
-            onClick={() => setLang("kz")}
-            style={{
-              padding: "5px 12px",
-              fontSize: "12px",
-              fontWeight: 600,
-              border: "none",
-              background: lang === "kz" ? "var(--linen)" : "transparent",
-              color: "var(--ink)",
-              cursor: "pointer"
-            }}
-          >
-            ҚАЗ
-          </button>
-          <button
-            onClick={() => setLang("ru")}
-            style={{
-              padding: "5px 12px",
-              fontSize: "12px",
-              fontWeight: 600,
-              border: "none",
-              borderLeft: "1px solid var(--line)",
-              background: lang === "ru" ? "var(--linen)" : "transparent",
-              color: "var(--ink)",
-              cursor: "pointer"
-            }}
-          >
-            РУС
-          </button>
-        </div>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+      <header>
+        <Link
+          href="/portal"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            fontSize: "13px",
+            color: "var(--muted)",
+            marginBottom: "8px",
+          }}
+        >
+          <ArrowLeft size={14} strokeWidth={1.6} />
+          {t.back_to_registry}
+        </Link>
+        <h1 className="font-display" style={{ fontSize: "clamp(24px, 2.5vw, 32px)", lineHeight: 1.15 }}>
+          {t.nav_ml}
+        </h1>
+        <p style={{ color: "var(--secondary)", fontSize: "14px", marginTop: "6px", maxWidth: "70ch" }}>
+          {lang === "kz"
+            ? "Науқастар бойынша қатаң бөлінген GroupKFold (5 фолд) кросс-валидациясы, PCA-тұрақтылық детекторы және бастапқы жауап болжамы."
+            : "Строгая перекрестная проверка GroupKFold по субъектам, многомерный контроль стабильности цикла и честная калибровка прогноза ответа."}
+        </p>
+      </header>
 
       {loading ? (
-        <div style={{ padding: "60px", textAlign: "center", color: "var(--muted)" }}>
-          {lang === "kz" ? "Валидация метрикалары жүктелуде..." : "Загрузка метрик валидации..."}
+        <div className="surface" style={{ padding: "48px 24px", textAlign: "center", color: "var(--muted)" }}>
+          {lang === "kz" ? "Модель көрсеткіштері жүктелуде..." : "Загрузка метрик валидации..."}
         </div>
-      ) : metrics ? (
-        <MlValidation metrics={metrics} lang={lang} />
+      ) : error || !metrics ? (
+        <div className="surface" role="alert" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+          <span style={{ color: "var(--red)" }}>{error}</span>
+          <button type="button" onClick={load} className="btn">
+            <RotateCcw size={14} strokeWidth={1.6} />
+            {lang === "kz" ? "Қайталау" : "Повторить"}
+          </button>
+        </div>
       ) : (
-        <div className="card" style={{ padding: "40px", textAlign: "center" }}>
-          {lang === "kz" ? "Метрикаларды жүктеу қатесі." : "Ошибка загрузки метрик."}
-        </div>
+        <MlValidation metrics={metrics} lang={lang} />
       )}
-
     </div>
   );
 }

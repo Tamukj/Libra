@@ -2,99 +2,67 @@
 
 import React from "react";
 import Link from "next/link";
+import { ArrowLeft, ShieldAlert } from "lucide-react";
 import { LibraLogo } from "@/components/LibraLogo";
 import { useLanguage } from "@/lib/LanguageContext";
-import { ArrowLeft, FileText } from "lucide-react";
 
 export default function TermsPage() {
-  const { lang, setLang } = useLanguage();
+  const { lang, setLang, t } = useLanguage();
   const isKz = lang === "kz";
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
-      <header style={{ borderBottom: "1px solid var(--line)", background: "var(--white)", padding: "16px var(--gutter)" }}>
-        <div style={{ maxWidth: "900px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-          <LibraLogo size="md" href="/" />
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{ display: "inline-flex", border: "1px solid var(--line)", borderRadius: "6px", overflow: "hidden", background: "var(--white)" }}>
-              <button onClick={() => setLang("kz")} style={{ padding: "5px 10px", fontSize: "11px", fontWeight: 700, border: "none", background: isKz ? "var(--linen)" : "transparent", color: "var(--ink)", cursor: "pointer" }}>ҚАЗ</button>
-              <button onClick={() => setLang("ru")} style={{ padding: "5px 10px", fontSize: "11px", fontWeight: 700, border: "none", borderLeft: "1px solid var(--line)", background: !isKz ? "var(--linen)" : "transparent", color: "var(--ink)", cursor: "pointer" }}>РУС</button>
-            </div>
-            <Link href="/" className="btn" style={{ fontSize: "12px", padding: "6px 12px" }}>
-              <ArrowLeft size={14} />
-              <span>{isKz ? "Басты бетке оралу" : "Вернуться на главную"}</span>
-            </Link>
-          </div>
+    <div style={{ minHeight: "100dvh", background: "var(--paper)" }}>
+      <header style={{ borderBottom: "1px solid var(--line)", background: "var(--white)", padding: "14px clamp(16px, 4vw, 40px)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+        <LibraLogo size="md" href="/" subtitle={t.brand_sub} />
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <button type="button" className="btn" style={{ minBlockSize: "32px", padding: "4px 10px" }} onClick={() => setLang(isKz ? "ru" : "kz")}>
+            {isKz ? "Русский" : "Қазақша"}
+          </button>
+          <Link href="/portal" className="btn btn-primary" style={{ minBlockSize: "32px" }}>
+            {isKz ? "Кабинет" : "В кабинет"}
+          </Link>
         </div>
       </header>
 
-      <main style={{ flex: 1, padding: "48px var(--gutter)" }}>
-        <div style={{ maxWidth: "840px", margin: "0 auto" }}>
-          <div style={{ marginBottom: "32px" }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--amber)", fontSize: "12px", fontWeight: "700", textTransform: "uppercase", marginBottom: "8px" }}>
-              <FileText size={16} />
-              {isKz ? "Клиникалық қолдану регламенті" : "Регламент клинического использования"}
-            </div>
-            <h1 style={{ fontSize: "32px", marginBottom: "12px" }}>
-              {isKz ? "Платформаны пайдалану шарттары (Terms of Service)" : "Условия использования платформы (Terms of Service)"}
+      <main className="container" style={{ maxWidth: "820px", paddingBlock: "40px", display: "flex", flexDirection: "column", gap: "20px" }}>
+        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "var(--muted)" }}>
+          <ArrowLeft size={14} strokeWidth={1.6} />
+          {isKz ? "Басты бетке оралу" : "На главную"}
+        </Link>
+
+        <article className="surface" style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "28px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <ShieldAlert size={20} strokeWidth={1.6} color="var(--amber)" />
+            <h1 className="font-display" style={{ fontSize: "28px" }}>
+              {isKz ? "Қолдану шарттары және СППР шектеулері" : "Условия использования и ограничения СППР"}
             </h1>
-            <p style={{ color: "var(--muted)", fontSize: "14px" }}>
-              {isKz
-                ? "Қазақстан Республикасының балалар стационарлары мен оңалту орталықтарының медицина мамандарына арналған Libra дәрігерлік шешімдерді қолдау жүйесін пайдалану ережелері."
-                : "Правила эксплуатации системы поддержки врачебных решений Libra для медицинских специалистов детских стационаров и реабилитационных центров Республики Казахстан."}
-            </p>
           </div>
 
-          <div className="card" style={{ padding: "32px", display: "flex", flexDirection: "column", gap: "28px", fontSize: "14px", lineHeight: "1.7" }}>
-            <section>
-              <h2 style={{ fontSize: "18px", marginBottom: "8px", fontWeight: "700" }}>
-                {isKz ? "1. Мақсаты және СППР (CDSS) құқықтық мәртебесі" : "1. Назначение и правовой статус CDSS"}
-              </h2>
-              <p style={{ color: "var(--ink)" }}>
-                {isKz
-                  ? "Libra бағдарламалық кешені дәрігерлік шешімдерді қолдау жүйесі (Clinical Decision Support System) болып табылады. Платформа кинематикалық параметрлерді есептеуді, қадам циклінің қисықтарын визуализациялауды және жамбастың патологиялық компенсациясы (PCR) қаупін анықтауды қамтамасыз етеді."
-                  : "Программный комплекс Libra является системой поддержки принятия врачебных решений (Clinical Decision Support System). Платформа предоставляет автоматизированный расчет кинематических параметров, визуализацию кривых цикла шага и выявление рисков патологической компенсации таза (PCR)."}
-              </p>
-            </section>
+          <p style={{ fontSize: "14px", color: "var(--secondary)", lineHeight: 1.65 }}>
+            {isKz
+              ? "Libra дәрігерлік шешімдерді қолдау жүйесі (СППР) тек анықтамалық және биомеханикалық талдау мақсатында қолданылады."
+              : "Программный комплекс Libra является системой поддержки принятия врачебных решений (СППР) и предназначен для анализа биомеханических параметров походки."}
+          </p>
 
-            <section>
-              <h2 style={{ fontSize: "18px", marginBottom: "8px", fontWeight: "700" }}>
-                {isKz ? "2. Дәрігердің жауапкершілігін шектеу" : "2. Разграничение ответственности врача"}
-              </h2>
-              <p style={{ color: "var(--ink)", marginBottom: "8px" }}>
-                {isKz
-                  ? "Алгоритмнің есептік қорытындылары (Verbal және VR режимдерін таңдау, сондай-ақ CDSS бағдаршамы) тек ұсынымдық сипатқа ие."
-                  : "Расчетные вердикты алгоритма (включая выбор между режимами Verbal и VR, а также классификацию степени риска по светофору CDSS) носят рекомендательный характер."}
-              </p>
-              <div style={{ background: "var(--amber-light)", border: "1px solid var(--amber-border)", borderRadius: "6px", padding: "12px 16px", color: "var(--ink)", fontSize: "13px" }}>
-                <strong>{isKz ? "Маңызды клиникалық ескерту:" : "Важное клиническое уведомление:"}</strong>{" "}
-                {isKz
-                  ? "Диагноз қою, емдеу тактикасын немесе ЕДШ жоспарын өзгерту туралы түпкілікті шешімді тек емдеуші дәрігер қабылдайды. Шұғыл жағдайларда 103 нөміріне қоңырау шалыңыз."
-                  : "Окончательное решение о диагнозе, тактике вмешательства или изменении плана ЛФК принимает лечащий врач. Алгоритм не заменяет очного осмотра. В экстренных случаях звоните 103."}
-              </div>
-            </section>
+          <h2 style={{ fontSize: "17px", marginTop: "6px" }}>
+            {isKz ? "1. Медициналық шектеулер" : "1. Консультативный характер выводов"}
+          </h2>
+          <p style={{ fontSize: "14px", color: "var(--secondary)", lineHeight: 1.65 }}>
+            {isKz
+              ? "Жүйе дербес диагноз қоймайды, дәрі-дәрмек тағайындамайды және білікті дәрігер-реабилитологтың кеңесін алмастырмайды. Өмірге немесе денсаулыққа қауіп төндіретін шұғыл жағдайларда 103 нөміріне қоңырау шалыңыз."
+              : "Расчетные индексы TJE, PCR, GPS и прогнозы машинного обучения не являются диагнозом или врачебным назначением. При ухудшении состояния или острых симптомах необходимо обратиться в службу скорой помощи по номеру 103."}
+          </p>
 
-            <section>
-              <h2 style={{ fontSize: "18px", marginBottom: "8px", fontWeight: "700" }}>
-                {isKz ? "3. Клиникалық PDF-есептерді қалыптастыру" : "3. Формирование клинических PDF-отчётов"}
-              </h2>
-              <p style={{ color: "var(--ink)" }}>
-                {isKz
-                  ? "Жүктелетін PDF-есептер ДДҰ ХҚЖ (b770, d450) шкалалары мен салыстырмалы биомеханика кестесін қамтиды. Есепті тексеретін емдеуші дәрігер қорытынды ұсынымдарды растауға жауапты."
-                  : "Выгружаемые PDF-отчёты содержат таблицу изменений, график кинематики бедра и сопоставление с кодами МКФ ВОЗ (b770, d450). Окончательную верификацию рекомендаций выполняет лечащий врач."}
-              </p>
-            </section>
-
-            <section style={{ borderTop: "1px solid var(--line)", paddingTop: "20px", fontSize: "13px", color: "var(--muted)" }}>
-              {isKz ? "Libra CDSS · БЦП оңалту кезіндегі жүрісті талдау платформасы." : "Libra CDSS · Платформа анализа походки при реабилитации ДЦП."}
-            </section>
-          </div>
-        </div>
+          <h2 style={{ fontSize: "17px", marginTop: "6px" }}>
+            {isKz ? "2. Клиникалық жауапкершілік" : "2. Клиническая ответственность"}
+          </h2>
+          <p style={{ fontSize: "14px", color: "var(--secondary)", lineHeight: 1.65 }}>
+            {isKz
+              ? "Пациентке жүктеме деңгейін белгілеу, VR-жаттығуларын жалғастыру немесе тоқтату жөніндегі түпкілікті шешімді емдеуші дәрігер қабылдайды."
+              : "Решение о корректировке режима тренировок, дозировании нагрузки в VR-среде и выдаче выписного протокола принимает исключительно лечащий врач-реабилитолог."}
+          </p>
+        </article>
       </main>
-
-      <footer style={{ padding: "20px var(--gutter)", borderTop: "1px solid var(--line)", background: "var(--paper)", fontSize: "12px", color: "var(--muted)", textAlign: "center" }}>
-        {isKz ? "© 2026 Libra. ҚР денсаулық сақтау мекемелерінде клиникалық қолдану регламенті." : "© 2026 Libra. Регламент клинического применения в учреждениях здравоохранения РК."}
-      </footer>
     </div>
   );
 }
