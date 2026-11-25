@@ -40,6 +40,31 @@ function pickLatestVisit(visits: VisitSummary[]): VisitSummary | undefined {
   return visits.find((v) => v.is_latest) ?? visits[visits.length - 1];
 }
 
+async function detectSingleSubjectFromCsv(file: File): Promise<string | null> {
+  try {
+    const sample = await file.slice(0, 16384).text();
+    const lines = sample.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) return null;
+    const headerLine = lines[0];
+    const sep = headerLine.includes(";") ? ";" : ",";
+    const headers = headerLine.split(sep).map((h) => h.trim().replace(/^"|"$/g, "").toLowerCase().replace(/_/g, ""));
+    const subIdx = headers.findIndex((h) => ["subject", "patientcode", "patientid", "code", "subjectid"].includes(h));
+    if (subIdx === -1) return null;
+    const found = new Set<string>();
+    for (let i = 1; i < Math.min(lines.length, 30); i += 1) {
+      const cols = lines[i].split(sep);
+      const raw = (cols[subIdx] || "").trim().replace(/^"|"$/g, "");
+      if (raw && !["nan", "none", "null"].includes(raw.toLowerCase())) {
+        found.add(raw);
+        if (found.size > 1) return null;
+      }
+    }
+    return found.size === 1 ? Array.from(found)[0] : null;
+  } catch {
+    return null;
+  }
+}
+
 export function UploadCsvModal({
   open,
   lang,
@@ -589,8 +614,16 @@ export function UploadCsvModal({
             type="file"
             accept=".csv"
             onChange={(e) => {
-              setFile(e.target.files?.[0] || null);
+              const chosen = e.target.files?.[0] || null;
+              setFile(chosen);
               setError(null);
+              if (chosen && !subjectCode.trim()) {
+                detectSingleSubjectFromCsv(chosen).then((detected) => {
+                  if (detected) {
+                    fetchVisitsForCode(detected, condition, modeManuallyChosen);
+                  }
+                });
+              }
             }}
             style={{ width: "100%", padding: "8px", background: "var(--paper)" }}
           />
