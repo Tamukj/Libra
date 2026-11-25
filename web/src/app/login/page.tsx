@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, ShieldCheck, KeyRound } from "lucide-react";
 import { LibraLogo } from "@/components/LibraLogo";
 import { LanguageSwitch, LargeFontButton } from "@/components/PageControls";
@@ -22,7 +22,6 @@ function createSessionToken(): string {
 }
 
 function LoginFormContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { lang, t } = useLanguage();
   const isKz = lang === "kz";
@@ -69,7 +68,7 @@ function LoginFormContent() {
         }
       } catch {}
       const from = searchParams.get("from") || "/portal";
-      router.push(from.startsWith("/portal") ? from : "/portal");
+      window.location.assign(from.startsWith("/portal") ? from : "/portal");
     } catch {
       setAuthError(
         isKz
