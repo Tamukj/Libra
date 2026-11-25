@@ -743,17 +743,17 @@ class VRResponderPredictor:
             "recommendation_ru": (
                 "Рекомендован стандартный протокол VR-тренировок с обратной связью под контролем врача."
                 if is_resp
-                else "Рекомендована консультация врача-реабилитолога и возможная коррекция целевого угла тренажера (-30%) во избежание гиперлордоза (п. 8.2)."
+                else "Рекомендована консультация врача-реабилитолога и возможная коррекция целевого угла и нагрузки тренажера во избежание гиперлордоза (п. 8.2)."
             ),
             "recommendation_kz": (
                 "Дәрігер бақылауымен стандартты VR-жаттығу хаттамасы ұсынылады."
                 if is_resp
-                else "Гиперлордоздың алдын алу үшін дәрігермен келісіп тренажердің мақсатты бұрышын (-30%) азайту ұсынылады (8.2-т.)."
+                else "Гиперлордоздың алдын алу үшін дәрігермен келісіп тренажердің мақсатты бұрышы мен жүктемесін түзету мүмкіндігін қарастыру ұсынылады (8.2-т.)."
             ),
             "recommendation_en": (
                 "Standard VR biofeedback protocol under physician oversight is advised."
                 if is_resp
-                else "Physician review and potential -30% VR target angle adjustment advised to avoid hyperlordosis (Rule 8.2)."
+                else "Physician review and potential adjustment of VR target angle or cue intensity advised to avoid hyperlordosis (Rule 8.2)."
             ),
         }
         if not model_reliable:

@@ -310,3 +310,89 @@ def test_reporters_multilingual_verbal_and_limitations():
         assert "8.2" in extracted and "8.4" not in extracted
         assert "11.00°" in extracted
         assert "—" in extracted
+
+
+def test_rule82_non_prescriptive_and_unspecified_metadata():
+    import subprocess
+    import tempfile
+    from src.ml.pdf_reporter import generate_pdf_report
+
+    # 1. VRResponderPredictor non-responder recommendation avoids hardcoded -30% directive
+    predictor = VRResponderPredictor()
+    df_syn = pd.DataFrame({
+        "weight": [30.0, 40.0, 50.0, 60.0],
+        "height": [1.2, 1.3, 1.4, 1.5],
+        "LegLength": [0.6, 0.65, 0.7, 0.75],
+        "GPS_a": [8.0, 9.0, 15.0, 16.0],
+        "GVS_aSagP": [6.0, 7.0, 18.0, 20.0],
+        "GVS_aSagH": [8.0, 9.0, 17.0, 19.0],
+        "GVS_aSagK": [7.0, 8.0, 14.0, 15.0],
+        "GVS_aSagA": [4.0, 5.0, 8.0, 9.0],
+        "aMinSagH": [5.0, 6.0, 18.0, 20.0],
+    })
+    X_imp = predictor.imputer.fit_transform(df_syn)
+    X_sc = predictor.scaler.fit_transform(X_imp)
+    predictor.clf.fit(X_sc, [1, 1, 0, 0])
+    predictor.is_fitted = True
+    predictor.metrics_ = {"balanced_accuracy": 0.75, "roc_auc": 0.80, "n_subjects": 4}
+
+    res_risk = predictor.predict_subject_response(df_syn.iloc[[3]])
+    assert res_risk["is_predicted_responder"] is False
+    for key in ("recommendation_ru", "recommendation_kz", "recommendation_en"):
+        assert "30%" not in res_risk[key]
+        assert "8.2" in res_risk[key]
+
+    # 2. Honest UNSPECIFIED side & None anthropometry + visit header in narrative and PDF
+    summary_unspec = {
+        "subject": "s_unspec_1",
+        "side": "UNSPECIFIED",
+        "weight": None,
+        "height": None,
+        "leg_length": None,
+        "visit_key": "visit-2",
+        "visit_label": "Визит 2",
+        "visit_label_kz": "2-визит",
+        "visit_date": "2026-11-25",
+        "cycles_baseline": 10,
+        "cycles_verbal": 0,
+        "cycles_vr": 10,
+        "has_baseline": True,
+        "has_verbal": False,
+        "has_vr": True,
+        "baseline_gps": 10.5,
+        "vr_gps": 8.9,
+        "baseline_amin_sagh": 14.0,
+        "vr_amin_sagh": 10.0,
+        "delta_amin_sagh": -4.0,
+        "baseline_gvs_pelvis": 9.0,
+        "vr_gvs_pelvis": 9.2,
+        "delta_gvs_pelvis": 0.2,
+        "baseline_gvs_knee": 8.0,
+        "vr_gvs_knee": 7.8,
+        "delta_gvs_knee": -0.2,
+        "baseline_gvs_ankle": 5.0,
+        "vr_gvs_ankle": 5.0,
+        "delta_gvs_ankle": 0.0,
+    }
+    nar_ru = generate_clinical_narrative(summary_unspec, lang="ru")
+    nar_kz = generate_clinical_narrative(summary_unspec, lang="kz")
+    nar_en = generate_clinical_narrative(summary_unspec, lang="en")
+    assert "Не указана" in nar_ru and "Визит 2" in nar_ru and "2026-11-25" in nar_ru
+    assert "Көрсетілмеген" in nar_kz and "2-визит" in nar_kz
+    assert "Unspecified" in nar_en and "2026-11-25" in nar_en
+
+    pdf_ru = generate_pdf_report(
+        summary_unspec,
+        {"status": "green", "tje": -3.8, "pcr": 0.03, "label_ru": "Прогресс", "label_kz": "Ілгерілеу", "label_en": "True progress"},
+        {"best_method": "VR"},
+        "b770.2", "b770.2", None, nar_ru, lang="ru", audience="doctor",
+    )
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
+        f.write(pdf_ru)
+        f.flush()
+        extracted = subprocess.check_output(["pdftotext", f.name, "-"]).decode("utf-8", "replace")
+        assert "Сторона: —" in extracted
+        assert "Вес: —" in extracted
+        assert "Рост: —" in extracted
+        assert "Визит 2 (2026-11-25)" in extracted
+

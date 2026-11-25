@@ -26,13 +26,21 @@ from src.api.cohort_analytics import build_cohort_analytics
 from src.api.deps import require_clinician_auth, get_engine_state, ClinicalEngineState
 from src.api.services import (
     resolve_patient_summary,
+    list_patient_visits,
+    group_visits,
+    extract_visit_metadata,
     evaluate_active_cdss_risk,
     compute_patient_cycle_stability,
     build_patient_kinematics,
     extract_session_metrics_for_diff,
     _parse_session_kinematics,
 )
-from src.api.ingest import read_limited_upload, prepare_csv_upload_payloads, persist_upload_payloads
+from src.api.ingest import (
+    read_limited_upload,
+    prepare_csv_upload_payloads,
+    persist_upload_payloads,
+    validate_visit_params,
+)
 
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(require_clinician_auth)])
 
@@ -42,7 +50,7 @@ def list_patients(
     db: Session = Depends(get_db),
     state: ClinicalEngineState = Depends(get_engine_state),
 ):
-    """Returns all registered patients with clinical biomechanics & CDSS triage status (O(1) queries)."""
+    """Returns all registered patients with latest-visit biomechanics & CDSS triage status (O(1) queries)."""
     patients = (
         db.query(Patient)
         .options(joinedload(Patient.clinic), selectinload(Patient.sessions))
@@ -50,6 +58,14 @@ def list_patients(
     )
     result = []
     for p in patients:
+        grouped = group_visits(p.sessions)
+        visit_count = len(grouped)
+        if grouped:
+            latest_vk, latest_sess = grouped[-1]
+            v_meta = extract_visit_metadata(latest_vk, latest_sess)
+        else:
+            v_meta = {"visit_key": None, "visit_label": None, "visit_date": None}
+
         item: Dict[str, Any] = {
             "id": p.id,
             "code": p.code,
@@ -57,7 +73,13 @@ def list_patients(
             "weight": p.weight,
             "height": p.height,
             "leg_length": p.leg_length,
+            "anthropometry_estimated": bool(getattr(p, "anthropometry_estimated", False)),
+            "side_estimated": bool(getattr(p, "side_estimated", False)),
             "clinic_name": p.clinic.name if p.clinic else None,
+            "visit_count": visit_count,
+            "latest_visit_key": v_meta["visit_key"],
+            "latest_visit_label": v_meta["visit_label"],
+            "latest_visit_date": v_meta["visit_date"],
         }
         try:
             summary, _ = resolve_patient_summary(p.code, p, db, state, sessions=p.sessions)
@@ -69,6 +91,8 @@ def list_patients(
                 "baseline_gps": summary["baseline_gps"],
                 "vr_gps": summary["vr_gps"],
                 "delta_amin_sagh": summary["delta_amin_sagh"],
+                "active_modality": summary.get("active_modality"),
+                "active_delta_amin_sagh": summary.get("active_delta_amin_sagh"),
                 "has_vr": bool(summary.get("has_vr", False)),
                 "has_verbal": bool(summary.get("has_verbal", False)),
             })
@@ -82,6 +106,8 @@ def list_patients(
                 "baseline_gps": None,
                 "vr_gps": None,
                 "delta_amin_sagh": None,
+                "active_modality": None,
+                "active_delta_amin_sagh": None,
                 "has_vr": False,
                 "has_verbal": False,
             })
@@ -89,15 +115,39 @@ def list_patients(
     return result
 
 
+@router.get("/patients/{code}/visits")
+def list_patient_visits_endpoint(
+    code: str,
+    db: Session = Depends(get_db),
+    state: ClinicalEngineState = Depends(get_engine_state),
+):
+    """Returns chronological visits/courses recorded for a patient."""
+    patient = (
+        db.query(Patient)
+        .options(selectinload(Patient.sessions))
+        .filter(Patient.code == code)
+        .first()
+    )
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient {code} not found")
+
+    visits = list_patient_visits(patient, patient.sessions, state)
+    return {
+        "code": code,
+        "visits": visits,
+    }
+
+
 @router.get("/patients/{code}/analysis")
 def get_patient_analysis(
     code: str,
     lang: str = Query("ru", pattern="^(ru|kz|en)$"),
+    visit: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     state: ClinicalEngineState = Depends(get_engine_state),
 ):
     """
-    Returns comparative biomechanical and clinical CDSS analysis
+    Returns comparative biomechanical and clinical CDSS analysis for a visit (or latest visit)
     (Baseline vs Verbal vs VR, TJE, PCR, WHO ICF, ML prognosis, and Rule 8.2 limitations).
     """
     patient = (
@@ -109,16 +159,30 @@ def get_patient_analysis(
     if not patient:
         raise HTTPException(status_code=404, detail=f"Patient {code} not found")
 
-    summary, sessions = resolve_patient_summary(code, patient, db, state, sessions=patient.sessions)
+    summary, sessions = resolve_patient_summary(
+        code, patient, db, state, sessions=patient.sessions, visit_key=visit
+    )
+    visits = list_patient_visits(patient, patient.sessions, state)
+    active_visit = next((v for v in visits if v["visit_key"] == summary.get("visit_key")), None)
+
     risk = evaluate_active_cdss_risk(summary)
 
     anomaly_rate, n_anomalies, n_cycles, cycle_stability = compute_patient_cycle_stability(
-        code, summary, state, sessions=sessions
+        code, summary, state, sessions=sessions, visit_key=summary.get("visit_key")
     )
 
-    post_gps = summary["vr_gps"] if summary.get("has_vr") else summary.get("verbal_gps")
+    if summary.get("has_vr"):
+        post_cond: Optional[str] = "VR"
+        post_gps = summary.get("vr_gps")
+    elif summary.get("has_verbal"):
+        post_cond = "Verbal"
+        post_gps = summary.get("verbal_gps")
+    else:
+        post_cond = None
+        post_gps = None
+
     icf_b770_base = classify_icf_b770(summary.get("baseline_gps"))
-    icf_b770_vr = classify_icf_b770(post_gps)
+    icf_b770_post = classify_icf_b770(post_gps)
     icf_d450 = classify_icf_d450(anomaly_rate * 100.0) if anomaly_rate is not None else None
 
     # ML condition discrimination on active condition without stale static override
@@ -188,15 +252,21 @@ def get_patient_analysis(
     loc = get_locale(lang)
     return {
         "summary": summary,
+        "active_visit": active_visit,
+        "visits": visits,
         "cdss_risk": risk,
         "modalities": modalities,
         "icf": {
             "b770_baseline": icf_b770_base,
-            "b770_vr": icf_b770_vr,
+            "b770_vr": icf_b770_post,
+            "b770_post": icf_b770_post,
+            "b770_post_condition": post_cond,
             "d450": icf_d450 or "N/A",
         },
         "ml": {
             "vr_gait_signature_confidence": response_prob,
+            "active_condition_evaluated": target_cond,
+            "predicted_condition": ("VR" if response_prob >= 0.5 else "Baseline") if response_prob is not None else None,
             "binary_roc_auc": round(float(state.ml_metrics.get("roc_auc", 0.0)), 3),
             "is_vr_discriminative": bool(response_prob > 0.5) if response_prob is not None else False,
             "responder_prediction": responder_prediction,
@@ -217,12 +287,13 @@ def get_patient_analysis(
 @router.get("/patients/{code}/kinematics")
 def get_patient_kinematics(
     code: str,
+    visit: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     state: ClinicalEngineState = Depends(get_engine_state),
 ):
     """Returns 51-point kinematic curves per recorded condition with TD normative corridor."""
     patient = db.query(Patient).filter(Patient.code == code).first()
-    return build_patient_kinematics(code, patient, db, state)
+    return build_patient_kinematics(code, patient, db, state, visit_key=visit)
 
 
 @router.get("/analytics/cohort")
@@ -288,6 +359,7 @@ def create_patient_report(
     code: str,
     lang: str = Query("ru", pattern="^(ru|kz|en)$"),
     audience: str = Query("doctor", pattern="^(doctor|parent)$"),
+    visit: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     state: ClinicalEngineState = Depends(get_engine_state),
 ):
@@ -301,10 +373,14 @@ def create_patient_report(
     if not patient:
         raise HTTPException(status_code=404, detail=f"Patient {code} not found")
 
-    summary, sessions = resolve_patient_summary(code, patient, db, state, sessions=patient.sessions)
+    summary, sessions = resolve_patient_summary(
+        code, patient, db, state, sessions=patient.sessions, visit_key=visit
+    )
     risk = evaluate_active_cdss_risk(summary)
 
-    anomaly_rate, _, _, _ = compute_patient_cycle_stability(code, summary, state, sessions=sessions)
+    anomaly_rate, _, _, _ = compute_patient_cycle_stability(
+        code, summary, state, sessions=sessions, visit_key=summary.get("visit_key")
+    )
     summary["anomaly_rate"] = anomaly_rate
     summary["anomaly_pct"] = anomaly_rate * 100.0 if anomaly_rate is not None else None
 
@@ -317,8 +393,10 @@ def create_patient_report(
     narrative_kz = gen_fn(summary, lang="kz")
     narrative_selected = gen_fn(summary, lang=lang) if lang == "en" else (narrative_kz if lang == "kz" else narrative_ru)
 
+    resolved_vk = summary.get("visit_key") or "visit-1"
     report = ClinicalReport(
         patient_id=patient.id,
+        visit_key=resolved_vk,
         icf_b770=icf_b770,
         icf_d450=icf_d450,
         tje=risk["tje"] if risk["tje"] is not None else 0.0,
@@ -335,6 +413,9 @@ def create_patient_report(
     return {
         "report_id": report.id,
         "patient": code,
+        "visit_key": report.visit_key,
+        "visit_label": summary.get("visit_label"),
+        "visit_date": summary.get("visit_date"),
         "audience": audience,
         "lang": lang,
         "status": risk["status"],
@@ -352,11 +433,14 @@ def get_patient_diff(
     code: str,
     session_a: str = Query("Baseline", description="Baseline or prior session condition"),
     session_b: str = Query("VR", description="Current or follow-up session condition"),
+    visit: Optional[str] = Query(None),
+    visit_a: Optional[str] = Query(None),
+    visit_b: Optional[str] = Query(None),
     lang: str = Query("ru", pattern="^(ru|kz|en)$"),
     db: Session = Depends(get_db),
     state: ClinicalEngineState = Depends(get_engine_state),
 ):
-    """Computes clinical comparison between two gait sessions (TJE, PCR, GPS, GDI, WHO ICF, Rule 8.2)."""
+    """Computes clinical comparison between two gait sessions or visits (TJE, PCR, GPS, GDI, WHO ICF, Rule 8.2)."""
     patient = (
         db.query(Patient)
         .options(selectinload(Patient.sessions))
@@ -366,9 +450,34 @@ def get_patient_diff(
     if not patient:
         raise HTTPException(status_code=404, detail=f"Patient {code} not found")
 
-    summary, _ = resolve_patient_summary(code, patient, db, state, sessions=patient.sessions)
-    sess_a_data = extract_session_metrics_for_diff(summary, session_a, lang=lang)
-    sess_b_data = extract_session_metrics_for_diff(summary, session_b, lang=lang)
+    eff_va = visit_a or visit
+    eff_vb = visit_b or visit
+    summary_a, _ = resolve_patient_summary(
+        code, patient, db, state, sessions=patient.sessions, visit_key=eff_va
+    )
+    summary_b = (
+        summary_a
+        if eff_va == eff_vb
+        else resolve_patient_summary(
+            code, patient, db, state, sessions=patient.sessions, visit_key=eff_vb
+        )[0]
+    )
+
+    sess_a_data = extract_session_metrics_for_diff(summary_a, session_a, lang=lang)
+    sess_b_data = extract_session_metrics_for_diff(summary_b, session_b, lang=lang)
+
+    if summary_a.get("visit_key") != summary_b.get("visit_key"):
+        for s_data, s_sum in ((sess_a_data, summary_a), (sess_b_data, summary_b)):
+            v_lbl_ru = s_sum.get("visit_label") or s_sum.get("visit_key") or ""
+            v_lbl_kz = s_sum.get("visit_label_kz") or v_lbl_ru
+            v_date = s_sum.get("visit_date") or ""
+            sfx_ru = f"{v_lbl_ru} ({v_date})" if (v_lbl_ru and v_date) else (v_lbl_ru or v_date)
+            sfx_kz = f"{v_lbl_kz} ({v_date})" if (v_lbl_kz and v_date) else (v_lbl_kz or v_date)
+            if sfx_ru:
+                s_data["label_ru"] = f"{s_data['label_ru']} · {sfx_ru}"
+                s_data["label_en"] = f"{s_data['label_en']} · {sfx_ru}"
+            if sfx_kz:
+                s_data["label_kz"] = f"{s_data['label_kz']} · {sfx_kz}"
 
     diff_res = compute_session_diff(sess_a_data, sess_b_data, lang=lang)
     loc = get_locale(lang)
@@ -376,6 +485,8 @@ def get_patient_diff(
         "patient": code,
         "session_a": session_a,
         "session_b": session_b,
+        "visit_a": summary_a.get("visit_key"),
+        "visit_b": summary_b.get("visit_key"),
         **diff_res,
         "disclaimer": loc.get("disclaimer", ""),
     }
@@ -420,12 +531,16 @@ async def upload_patient_csv(
     file: UploadFile = File(...),
     condition: str = Form("Baseline"),
     subject_code: Optional[str] = Form(None),
+    visit_key: Optional[str] = Form(None),
+    visit_label: Optional[str] = Form(None),
+    visit_date: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """
     Accepts CSV from Vicon Nexus, GRAIL, or IMU sensors (<= 10 MB), enforces Law 94-V PII filter,
-    parses in threadpool without blocking event loop, and atomically upserts patient & session.
+    validates visit metadata, parses in threadpool without blocking event loop, and atomically upserts patient & visit session.
     """
+    validate_visit_params(visit_key, visit_label, visit_date)
     contents = await read_limited_upload(file)
     normalized_condition, n_rows, n_cols, payloads = await run_in_threadpool(
         prepare_csv_upload_payloads,
@@ -439,6 +554,9 @@ async def upload_patient_csv(
         db,
         normalized_condition,
         payloads,
+        visit_key,
+        visit_label,
+        visit_date,
     )
 
     primary = uploaded_results[0]
@@ -456,7 +574,12 @@ async def upload_patient_csv(
         "codes": codes,
         "patients_updated": len(codes),
         "condition": normalized_condition,
+        "visit_key": primary["visit_key"],
+        "visit_label": primary["visit_label"],
+        "visit_date": primary["visit_date"],
+        "visit_created": primary["visit_created"],
         "anthropometry_estimated": primary["anthropometry_estimated"],
+        "side_estimated": primary["side_estimated"],
         "has_kinematics": any(r["has_kinematics"] for r in uploaded_results),
         "rows": n_rows,
         "columns": n_cols,
@@ -470,6 +593,7 @@ def export_patient_pdf_report(
     code: str,
     lang: str = Query("ru", pattern="^(ru|kz|en)$"),
     audience: str = Query("doctor", pattern="^(doctor|parent)$"),
+    visit: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     state: ClinicalEngineState = Depends(get_engine_state),
 ):
@@ -483,10 +607,14 @@ def export_patient_pdf_report(
     if not patient:
         raise HTTPException(status_code=404, detail=f"Patient {code} not found")
 
-    summary, sessions = resolve_patient_summary(code, patient, db, state, sessions=patient.sessions)
+    summary, sessions = resolve_patient_summary(
+        code, patient, db, state, sessions=patient.sessions, visit_key=visit
+    )
     risk = evaluate_active_cdss_risk(summary)
     modalities = compare_modalities(summary)
-    anomaly_rate, _, _, _ = compute_patient_cycle_stability(code, summary, state, sessions=sessions)
+    anomaly_rate, _, _, _ = compute_patient_cycle_stability(
+        code, summary, state, sessions=sessions, visit_key=summary.get("visit_key")
+    )
     summary["anomaly_rate"] = anomaly_rate
     summary["anomaly_pct"] = anomaly_rate * 100.0 if anomaly_rate is not None else None
 
@@ -502,7 +630,7 @@ def export_patient_pdf_report(
     )
 
     hip_curves: Optional[Dict[str, Any]] = None
-    kin_resp = build_patient_kinematics(code, patient, db, state)
+    kin_resp = build_patient_kinematics(code, patient, db, state, visit_key=summary.get("visit_key"))
     if not kin_resp.get("is_surrogate"):
         hip_joint = kin_resp.get("joints", {}).get("aSagH")
         if hip_joint:

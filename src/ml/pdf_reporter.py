@@ -61,7 +61,14 @@ def generate_pdf_report(
     pdf_loc = loc.get("pdf", {})
 
     subject = str(summary.get("subject", "N/A"))
-    side = str(summary.get("side", "RIGHT")).upper()
+    side = str(summary.get("side") or "UNSPECIFIED").strip().upper()
+    visit_label = str(
+        (summary.get("visit_label_kz") if is_kz else None)
+        or summary.get("visit_label")
+        or summary.get("visit_key")
+        or ""
+    ).strip()
+    visit_date = str(summary.get("visit_date") or "").strip()
     now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     fig = plt.figure(figsize=(8.27, 11.69), dpi=150)  # A4 portrait
@@ -76,37 +83,46 @@ def generate_pdf_report(
 
     # 1. Header bar
     ax.add_patch(FancyBboxPatch(
-        (0.05, 0.905), 0.90, 0.06,
+        (0.05, 0.900), 0.90, 0.068,
         boxstyle="round,pad=0.004,rounding_size=0.008",
         facecolor="#F7F5F0", edgecolor="#DDD8CE", linewidth=1.0,
     ))
     if is_kz:
         title = f"LIBRA · {'Баланың жүріс төлқұжаты' if audience == 'parent' else 'Клиникалық биомеханикалық есеп'}"
-        side_display = "Сол жақ" if side == "LEFT" else "Оң жақ"
+        side_display = "Сол жақ" if side == "LEFT" else ("Оң жақ" if side == "RIGHT" else "—")
         meta_line = (
             f"Пациент: {subject} | Аяқ: {side_display} | "
             f"Салмақ: {_fmt_num(summary.get('weight'), 1, ' кг')} | "
             f"Бой: {_fmt_num(summary.get('height'), 2, ' м')} | {now_str}"
         )
+        visit_prefix = "Қабылдау"
     elif is_en:
         title = f"LIBRA · {'Child Gait Passport' if audience == 'parent' else 'Clinical Biomechanical Report'}"
-        side_display = "Left" if side == "LEFT" else "Right"
+        side_display = "Left" if side == "LEFT" else ("Right" if side == "RIGHT" else "—")
         meta_line = (
             f"Patient: {subject} | Side: {side_display} | "
             f"Weight: {_fmt_num(summary.get('weight'), 1, ' kg')} | "
             f"Height: {_fmt_num(summary.get('height'), 2, ' m')} | {now_str}"
         )
+        visit_prefix = "Visit"
     else:
         title = f"LIBRA · {'Паспорт походки ребенка' if audience == 'parent' else 'Клинический биомеханический отчёт'}"
-        side_display = "Левая" if side == "LEFT" else "Правая"
+        side_display = "Левая" if side == "LEFT" else ("Правая" if side == "RIGHT" else "—")
         meta_line = (
             f"Пациент: {subject} | Сторона: {side_display} | "
             f"Вес: {_fmt_num(summary.get('weight'), 1, ' кг')} | "
             f"Рост: {_fmt_num(summary.get('height'), 2, ' м')} | {now_str}"
         )
+        visit_prefix = "Визит"
 
-    ax.text(0.065, 0.943, title[:70], fontsize=12.0, fontweight="bold", color="#1C1917", family=font_family)
-    ax.text(0.065, 0.917, meta_line[:95], fontsize=7.8, color="#57534E", family=font_family)
+    visit_meta = f"{visit_label} ({visit_date})" if (visit_label and visit_date) else (visit_label or visit_date)
+    if visit_meta:
+        ax.text(0.065, 0.949, title[:70], fontsize=11.6, fontweight="bold", color="#1C1917", family=font_family)
+        ax.text(0.065, 0.927, meta_line[:95], fontsize=7.6, color="#57534E", family=font_family)
+        ax.text(0.065, 0.908, f"{visit_prefix}: {visit_meta}"[:95], fontsize=7.5, fontweight="bold", color="#44403C", family=font_family)
+    else:
+        ax.text(0.065, 0.943, title[:70], fontsize=12.0, fontweight="bold", color="#1C1917", family=font_family)
+        ax.text(0.065, 0.917, meta_line[:95], fontsize=7.8, color="#57534E", family=font_family)
 
     # 2. CDSS Status Banner
     status = risk.get("status", "yellow")

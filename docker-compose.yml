@@ -38,6 +38,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
+      # NOTE: The DB_PASSWORD fallback ('libra_secret_pass') is for local demo/dev only and MUST be overridden in production.
       DATABASE_URL: postgresql://libra:${DB_PASSWORD:-libra_secret_pass}@db:5432/libra
       PYTHONUNBUFFERED: "1"
     volumes:
@@ -73,6 +74,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: libra
+      # NOTE: The DB_PASSWORD fallback ('libra_secret_pass') is for local demo/dev only and MUST be overridden in production.
       POSTGRES_PASSWORD: ${DB_PASSWORD:-libra_secret_pass}
       POSTGRES_DB: libra
     volumes:
