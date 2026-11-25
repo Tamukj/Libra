@@ -1,34 +1,76 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PortalSidebar, PortalTopBar } from "@/components/PortalSidebar";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { UploadCsvModal } from "@/components/UploadCsvModal";
-import { CsvUploadResponse } from "@/lib/types";
+import { CsvUploadResponse, VisitSummary } from "@/lib/types";
 import { useLanguage } from "@/lib/LanguageContext";
+
+interface OpenUploadDetail {
+  subjectCode?: string;
+  defaultVisitMode?: "new" | "existing";
+  visits?: VisitSummary[];
+}
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { lang } = useLanguage();
   const [guideOpen, setGuideOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadPrefill, setUploadPrefill] = useState<OpenUploadDetail | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const onOpenUpload = (ev: Event) => {
+      const detail = (ev as CustomEvent<OpenUploadDetail | undefined>).detail ?? null;
+      setUploadPrefill(detail);
+      setUploadOpen(true);
+    };
+    window.addEventListener("libra:open-upload", onOpenUpload);
+    return () => {
+      window.removeEventListener("libra:open-upload", onOpenUpload);
+      if (noticeTimerRef.current) {
+        clearTimeout(noticeTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCloseUpload = () => {
+    setUploadOpen(false);
+    setUploadPrefill(null);
+  };
 
   const handleUploadSuccess = (res: CsvUploadResponse) => {
     setUploadOpen(false);
+    setUploadPrefill(null);
+
     const fallbackMsg =
       lang === "kz"
         ? `Файл сәтті импортталды (${res.code}).`
         : `Данные CSV успешно импортированы (${res.code}).`;
     setUploadNotice((lang === "kz" ? res.message_kz : res.message_ru) || fallbackMsg);
+
     if (res.code) {
-      window.dispatchEvent(new CustomEvent("libra:patient-updated", { detail: { code: res.code } }));
-      router.push(`/portal/patients/${encodeURIComponent(res.code)}`);
+      window.dispatchEvent(
+        new CustomEvent("libra:patient-updated", {
+          detail: { code: res.code, visit_key: res.visit_key },
+        })
+      );
+      const visitQuery = res.visit_key
+        ? `?visit=${encodeURIComponent(res.visit_key)}`
+        : "";
+      router.push(`/portal/patients/${encodeURIComponent(res.code)}${visitQuery}`);
     }
     router.refresh();
-    setTimeout(() => {
+
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current);
+    }
+    noticeTimerRef.current = setTimeout(() => {
       setUploadNotice(null);
     }, 5000);
   };
@@ -40,7 +82,10 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       </a>
 
       <PortalSidebar
-        onOpenUpload={() => setUploadOpen(true)}
+        onOpenUpload={() => {
+          setUploadPrefill(null);
+          setUploadOpen(true);
+        }}
         onOpenGuide={() => setGuideOpen(true)}
       />
 
@@ -106,7 +151,10 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       <UploadCsvModal
         open={uploadOpen}
         lang={lang}
-        onClose={() => setUploadOpen(false)}
+        initialSubjectCode={uploadPrefill?.subjectCode}
+        defaultVisitMode={uploadPrefill?.defaultVisitMode}
+        initialVisits={uploadPrefill?.visits}
+        onClose={handleCloseUpload}
         onSuccess={handleUploadSuccess}
       />
 

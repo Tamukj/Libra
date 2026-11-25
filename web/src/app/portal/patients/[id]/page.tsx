@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, Suspense } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, FileText, RotateCcw, Info } from "lucide-react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, FileText, RotateCcw, Info, Calendar, Plus } from "lucide-react";
 import { getPatientAnalysis, getPatientKinematics, getPatients } from "@/lib/api";
-import { Patient, PatientAnalysis, KinematicsResponse } from "@/lib/types";
+import { Patient, PatientAnalysis, KinematicsResponse, VisitSummary } from "@/lib/types";
 import { useLanguage } from "@/lib/LanguageContext";
 import { CdssTrafficLight } from "@/components/CdssTrafficLight";
 import { MethodVerdict } from "@/components/MethodVerdict";
@@ -25,28 +25,59 @@ const DRIVER_LABELS: Record<string, { ru: string; kz: string }> = {
   leg_length: { ru: "Длина нижней конечности", kz: "Аяқ ұзындығы" },
 };
 
+function isFiniteNum(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 function fmtSigned(value: number | null | undefined, digits = 2, unit = "°"): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (!isFiniteNum(value)) return "—";
   if (Math.abs(value) < 0.005) return `0.00${unit}`;
   const sign = value > 0 ? "+" : "−";
   return `${sign}${Math.abs(value).toFixed(digits)}${unit}`;
 }
 
 function fmtCm(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value) || value <= 0) return "—";
+  if (!isFiniteNum(value) || value <= 0) return "—";
   const cm = value < 3.0 ? value * 100 : value;
   return `${Math.round(cm)} см`;
 }
 
 function fmtDeg(value: number | null | undefined, digits = 2): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  if (!isFiniteNum(value)) return "—";
   return `${value.toFixed(digits)}°`;
 }
 
-export default function PatientDossierPage() {
+function fmtScalar(value: number | null | undefined, digits = 1): string {
+  if (!isFiniteNum(value)) return "—";
+  return value.toFixed(digits);
+}
+
+function shortConditionLabel(cond: string): string {
+  const c = cond.toLowerCase();
+  if (c === "baseline") return "Base";
+  if (c === "verbal") return "Verb";
+  if (c === "vr") return "VR";
+  return cond;
+}
+
+function visitStatusDotColor(status: VisitSummary["status"]): string {
+  if (status === "green") return "var(--teal)";
+  if (status === "yellow") return "var(--amber)";
+  if (status === "red") return "var(--red)";
+  return "var(--muted)";
+}
+
+function diffNumbers(post: number | null | undefined, base: number | null | undefined): number | null {
+  if (!isFiniteNum(post) || !isFiniteNum(base)) return null;
+  return post - base;
+}
+
+function PatientDossierContent() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const patientCode = decodeURIComponent(String(params?.id || "s61520_1"));
+  const visitParam = searchParams.get("visit") || undefined;
   const { lang, t } = useLanguage();
 
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -61,8 +92,8 @@ export default function PatientDossierPage() {
     setError(null);
     try {
       const [ana, kin, list] = await Promise.all([
-        getPatientAnalysis(patientCode),
-        getPatientKinematics(patientCode),
+        getPatientAnalysis(patientCode, visitParam),
+        getPatientKinematics(patientCode, visitParam),
         getPatients(),
       ]);
       setAnalysis(ana);
@@ -77,16 +108,21 @@ export default function PatientDossierPage() {
     } finally {
       setLoading(false);
     }
-  }, [patientCode, lang]);
+  }, [patientCode, visitParam, lang]);
 
   useEffect(() => {
     loadDossier();
-    const onUpdate = () => {
+    const onUpdate = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ code?: string; visit_key?: string }>).detail;
+      if (detail?.code && detail.code !== patientCode) return;
+      if (detail?.visit_key && detail.visit_key !== visitParam) {
+        return;
+      }
       loadDossier();
     };
     window.addEventListener("libra:patient-updated", onUpdate);
     return () => window.removeEventListener("libra:patient-updated", onUpdate);
-  }, [loadDossier]);
+  }, [loadDossier, patientCode, visitParam]);
 
   if (loading) {
     return (
@@ -115,6 +151,14 @@ export default function PatientDossierPage() {
   }
 
   const s = analysis.summary;
+  const visits = analysis.visits ?? [];
+  const activeVisit =
+    analysis.active_visit ??
+    visits.find((v) => v.visit_key === visitParam) ??
+    visits.find((v) => v.is_latest) ??
+    visits[0];
+  const selectedVisit = visitParam || activeVisit?.visit_key;
+
   const cdss = analysis.cdss || analysis.cdss_risk;
   const responder = analysis.ml.responder_prediction;
   const pca = analysis.ml.pca_stability;
@@ -123,58 +167,111 @@ export default function PatientDossierPage() {
   const verbalCycles = s.verbal_cycles ?? s.cycles_verbal ?? 0;
   const vrCycles = s.vr_cycles ?? s.cycles_vr ?? 0;
 
+  const hasVr = Boolean(s.has_vr || vrCycles > 0 || isFiniteNum(s.vr_gps) || isFiniteNum(s.vr_amin_sagh));
+  const hasVerbal = Boolean(s.has_verbal || verbalCycles > 0 || isFiniteNum(s.verbal_gps) || isFiniteNum(s.verbal_amin_sagh));
+  const activePostLabel = hasVr ? "VR" : hasVerbal ? "Verbal" : null;
+
+  const postIcfB770 = analysis.icf.b770_post || analysis.icf.b770_vr;
+  const sideLabel =
+    s.side === "LEFT" ? t.side_left : s.side === "RIGHT" ? t.side_right : t.side_unspecified;
+
+  const pickDelta = (
+    vrDelta: number | null | undefined,
+    vrVal: number | null | undefined,
+    vbVal: number | null | undefined,
+    baseVal: number | null | undefined
+  ) => {
+    if (hasVr) return isFiniteNum(vrDelta) ? vrDelta : diffNumbers(vrVal, baseVal);
+    if (hasVerbal) return diffNumbers(vbVal, baseVal);
+    return null;
+  };
+
+  const hipActiveDelta = hasVr
+    ? isFiniteNum(s.delta_amin_sagh)
+      ? s.delta_amin_sagh
+      : diffNumbers(s.vr_amin_sagh, s.baseline_amin_sagh)
+    : hasVerbal
+    ? isFiniteNum(s.active_delta_amin_sagh)
+      ? s.active_delta_amin_sagh
+      : diffNumbers(s.verbal_amin_sagh, s.baseline_amin_sagh)
+    : null;
+
   const jointSummaryRows = [
     {
       label: lang === "kz" ? "Жүріс индексі (GPS)" : "Индекс профиля походки (GPS)",
       base: fmtDeg(s.baseline_gps),
+      verbal: fmtDeg(s.verbal_gps),
       vr: fmtDeg(s.vr_gps),
-      delta: s.delta_gps,
+      delta: pickDelta(s.delta_gps, s.vr_gps, s.verbal_gps, s.baseline_gps),
       betterNegative: true,
     },
     {
       label: lang === "kz" ? "Ауытқу индексі (GDI)" : "Индекс отклонения (GDI)",
-      base: typeof s.baseline_gdi === "number" && Number.isFinite(s.baseline_gdi) ? s.baseline_gdi.toFixed(1) : "—",
-      vr: typeof s.vr_gdi === "number" && Number.isFinite(s.vr_gdi) ? s.vr_gdi.toFixed(1) : "—",
-      delta: s.delta_gdi ?? null,
+      base: fmtScalar(s.baseline_gdi, 1),
+      verbal: fmtScalar(s.verbal_gdi, 1),
+      vr: fmtScalar(s.vr_gdi, 1),
+      delta: pickDelta(s.delta_gdi, s.vr_gdi, s.verbal_gdi, s.baseline_gdi),
       betterNegative: false,
       unit: "",
     },
     {
       label: lang === "kz" ? "Жамбас еңкеюі (GVS)" : "Таз, сагиттальный профиль (GVS)",
       base: fmtDeg(s.baseline_gvs_pelvis),
+      verbal: fmtDeg(s.verbal_gvs_pelvis),
       vr: fmtDeg(s.vr_gvs_pelvis),
-      delta: s.delta_gvs_pelvis,
+      delta: pickDelta(s.delta_gvs_pelvis, s.vr_gvs_pelvis, s.verbal_gvs_pelvis, s.baseline_gvs_pelvis),
       betterNegative: true,
     },
     {
       label: lang === "kz" ? "Сан буыны (GVS)" : "Бедро, профиль отклонения (GVS)",
       base: fmtDeg(s.baseline_gvs_hip),
+      verbal: fmtDeg(s.verbal_gvs_hip),
       vr: fmtDeg(s.vr_gvs_hip),
-      delta: s.delta_gvs_hip,
+      delta: pickDelta(s.delta_gvs_hip, s.vr_gvs_hip, s.verbal_gvs_hip, s.baseline_gvs_hip),
       betterNegative: true,
     },
     {
       label: lang === "kz" ? "Тізе буыны (GVS)" : "Колено, профиль отклонения (GVS)",
       base: fmtDeg(s.baseline_gvs_knee),
+      verbal: fmtDeg(s.verbal_gvs_knee),
       vr: fmtDeg(s.vr_gvs_knee),
-      delta: s.delta_gvs_knee,
+      delta: pickDelta(s.delta_gvs_knee, s.vr_gvs_knee, s.verbal_gvs_knee, s.baseline_gvs_knee),
       betterNegative: true,
     },
     {
       label: lang === "kz" ? "Тобық буыны (GVS)" : "Голеностоп (GVS Стопы)",
       base: fmtDeg(s.baseline_gvs_ankle),
+      verbal: fmtDeg(s.verbal_gvs_ankle),
       vr: fmtDeg(s.vr_gvs_ankle),
-      delta: s.delta_gvs_ankle,
+      delta: pickDelta(s.delta_gvs_ankle, s.vr_gvs_ankle, s.verbal_gvs_ankle, s.baseline_gvs_ankle),
       betterNegative: true,
     },
     {
       label: lang === "kz" ? "Санның жазылуы (aMinSagH)" : "Мин. сгибание бедра в опоре (aMinSagH)",
       base: fmtDeg(s.baseline_amin_sagh),
+      verbal: fmtDeg(s.verbal_amin_sagh),
       vr: fmtDeg(s.vr_amin_sagh),
-      delta: s.delta_amin_sagh,
+      delta: hipActiveDelta,
       betterNegative: true,
     },
   ];
+
+  const handleOpenNewVisit = () => {
+    window.dispatchEvent(
+      new CustomEvent("libra:open-upload", {
+        detail: {
+          subjectCode: patientCode,
+          defaultVisitMode: "new",
+          visits,
+        },
+      })
+    );
+  };
+
+  const vrConfidence = analysis.ml.vr_gait_signature_confidence;
+  const predictedCondition =
+    analysis.ml.predicted_condition ??
+    (isFiniteNum(vrConfidence) ? (analysis.ml.is_vr_discriminative ? "VR" : "Baseline") : null);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
@@ -207,7 +304,8 @@ export default function PatientDossierPage() {
               >
                 {patients.map((p) => (
                   <option key={p.code} value={p.code}>
-                    {p.code} · {p.side === "LEFT" ? "L" : "R"}
+                    {p.code} · {p.side === "LEFT" ? "L" : p.side === "RIGHT" ? "R" : "—"}
+                    {(p.visit_count ?? 1) > 1 ? ` (${p.visit_count})` : ""}
                   </option>
                 ))}
               </select>
@@ -224,6 +322,122 @@ export default function PatientDossierPage() {
           {t.btn_clinical_protocol}
         </button>
       </div>
+
+      {/* Longitudinal Visit / Session Selector Bar */}
+      <section
+        className="surface"
+        aria-label={lang === "kz" ? "Пациент визиттері" : "Визиты и сессии пациента"}
+        style={{
+          padding: "12px 16px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "12px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", flex: 1 }}>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              fontSize: "12px",
+              fontWeight: 600,
+              color: "var(--secondary)",
+              marginRight: "4px",
+            }}
+          >
+            <Calendar size={14} strokeWidth={1.6} color="var(--teal)" />
+            <span>{lang === "kz" ? "Визиттер:" : "Визиты:"}</span>
+          </div>
+
+          {visits.length > 0 ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {visits.map((v) => {
+                const isSelected = selectedVisit === v.visit_key;
+                const label =
+                  lang === "kz" && v.visit_label_kz ? v.visit_label_kz : v.visit_label;
+                const condSummary =
+                  v.conditions.length > 0
+                    ? v.conditions.map(shortConditionLabel).join(" · ")
+                    : "—";
+
+                return (
+                  <button
+                    key={v.visit_key}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() =>
+                      router.push(
+                        `/portal/patients/${encodeURIComponent(patientCode)}?visit=${encodeURIComponent(
+                          v.visit_key
+                        )}`
+                      )
+                    }
+                    className="btn"
+                    style={{
+                      minBlockSize: "34px",
+                      padding: "5px 11px",
+                      fontSize: "12px",
+                      gap: "7px",
+                      background: isSelected ? "var(--ink)" : "var(--paper)",
+                      color: isSelected ? "var(--white)" : "var(--ink)",
+                      borderColor: isSelected ? "var(--ink)" : "var(--line-strong)",
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        width: "7px",
+                        height: "7px",
+                        borderRadius: "50%",
+                        background: visitStatusDotColor(v.status),
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ fontWeight: 600 }}>{label}</span>
+                    {v.visit_date && (
+                      <span
+                        className="tabular-nums"
+                        style={{
+                          fontSize: "11px",
+                          opacity: isSelected ? 0.85 : 0.72,
+                        }}
+                      >
+                        {v.visit_date}
+                      </span>
+                    )}
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        fontFamily: "var(--mono)",
+                        opacity: isSelected ? 0.9 : 0.75,
+                      }}
+                    >
+                      [{condSummary}]
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <span style={{ fontSize: "12px", color: "var(--muted)" }}>
+              {s.visit_label || (lang === "kz" ? "Бастапқы тексеру" : "Текущее обследование")}
+            </span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={handleOpenNewVisit}
+          className="btn btn-teal"
+          style={{ minBlockSize: "34px", padding: "6px 12px", fontSize: "12px" }}
+        >
+          <Plus size={14} strokeWidth={1.8} />
+          <span>{lang === "kz" ? "Жаңа визит (CSV)" : "Новый визит (CSV)"}</span>
+        </button>
+      </section>
 
       {/* Patient Demographic Header */}
       <section className="surface" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -242,7 +456,17 @@ export default function PatientDossierPage() {
               <span style={{ fontFamily: "var(--mono)" }}>{s.subject}</span>
             </h1>
             <p style={{ color: "var(--secondary)", fontSize: "13px", marginTop: "6px" }}>
-              {t.clinic_cohort_label} · {t.icf_b770}: {analysis.icf.b770_baseline} {"→"} {analysis.icf.b770_vr}
+              {t.clinic_cohort_label}
+              {activeVisit
+                ? ` · ${
+                    lang === "kz" && activeVisit.visit_label_kz
+                      ? activeVisit.visit_label_kz
+                      : activeVisit.visit_label
+                  }${activeVisit.visit_date ? ` (${activeVisit.visit_date})` : ""}`
+                : ""}
+              {" · "}
+              {t.icf_b770}: {analysis.icf.b770_baseline}
+              {postIcfB770 && postIcfB770 !== "N/A" ? ` → ${postIcfB770}` : ""}
             </p>
           </div>
 
@@ -274,14 +498,12 @@ export default function PatientDossierPage() {
         >
           <div>
             <div style={{ fontSize: "12px", color: "var(--muted)" }}>{t.side}</div>
-            <div style={{ fontWeight: 600, marginTop: "2px" }}>
-              {s.side === "LEFT" ? t.side_left : t.side_right}
-            </div>
+            <div style={{ fontWeight: 600, marginTop: "2px" }}>{sideLabel}</div>
           </div>
           <div>
             <div style={{ fontSize: "12px", color: "var(--muted)" }}>{t.weight}</div>
             <div className="tabular-nums" style={{ fontWeight: 600, marginTop: "2px" }}>
-              {typeof s.weight === "number" && Number.isFinite(s.weight) ? `${s.weight.toFixed(1)} кг` : "—"}
+              {isFiniteNum(s.weight) ? `${s.weight.toFixed(1)} кг` : "—"}
             </div>
           </div>
           <div>
@@ -297,6 +519,21 @@ export default function PatientDossierPage() {
             </div>
           </div>
         </div>
+
+        {(s.anthropometry_estimated || s.side_estimated) && (
+          <div
+            style={{
+              fontSize: "12px",
+              color: "var(--muted)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            <Info size={13} strokeWidth={1.6} />
+            <span>{t.not_filled_in_csv}</span>
+          </div>
+        )}
       </section>
 
       {/* Primary CDSS Risk & TJE/PCR Assessment */}
@@ -315,12 +552,18 @@ export default function PatientDossierPage() {
         <div className="surface" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--line)" }}>
             <h3 style={{ fontSize: "16px", fontWeight: 600 }}>
-              {lang === "kz" ? "Негізгі буын көрсеткіштері (Қалып → VR)" : "Сводка по суставам: показатели GVS и GPS"}
+              {lang === "kz"
+                ? "Негізгі буын көрсеткіштері (Қалып · Ауызша · VR)"
+                : "Сводка по суставам: показатели GVS и GPS"}
             </h3>
             <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "4px" }}>
               {lang === "kz"
-                ? "Теріс Δ ауытқудың азайып, қадамның сау нормаға жақындағанын білдіреді (GPS пен GVS үшін)"
-                : "Отрицательное Δ для GPS и GVS означает уменьшение отклонений и приближение к норме"}
+                ? `Теріс Δ ауытқудың азайып, қадамның нормаға жақындағанын білдіреді${
+                    activePostLabel ? ` (${activePostLabel} − Қалыпты)` : ""
+                  }`
+                : `Отрицательное Δ для GPS и GVS означает уменьшение отклонений и приближение к норме${
+                    activePostLabel ? ` (${activePostLabel} − База)` : ""
+                  }`}
             </p>
           </div>
           <div className="table-responsive">
@@ -328,7 +571,8 @@ export default function PatientDossierPage() {
               <thead>
                 <tr>
                   <th scope="col">{lang === "kz" ? "Көрсеткіш" : "Параметр"}</th>
-                  <th scope="col">{t.condition_baseline}</th>
+                  <th scope="col">{lang === "kz" ? "Қалыпты" : "Обычная"}</th>
+                  <th scope="col">{lang === "kz" ? "Ауызша" : "Голос"}</th>
                   <th scope="col">VR</th>
                   <th scope="col" style={{ textAlign: "right" }}>
                     Δ
@@ -348,6 +592,9 @@ export default function PatientDossierPage() {
                       <td style={{ fontWeight: 500 }}>{row.label}</td>
                       <td className="tabular-nums" style={{ color: "var(--secondary)" }}>
                         {row.base}
+                      </td>
+                      <td className="tabular-nums" style={{ color: "var(--secondary)" }}>
+                        {row.verbal}
                       </td>
                       <td className="tabular-nums" style={{ fontWeight: 500 }}>
                         {row.vr}
@@ -371,18 +618,100 @@ export default function PatientDossierPage() {
         </div>
       </section>
 
-      {/* Session Comparison Between Conditions */}
-      <GaitDiffViewer patientCode={patientCode} />
+      {/* Session Comparison Between Conditions and Visits */}
+      <GaitDiffViewer
+        patientCode={patientCode}
+        visits={visits}
+        activeVisitKey={selectedVisit}
+      />
 
-      {/* AI Prognosis & Gait Cycle Stability */}
+      {/* AI Diagnostics: ConditionClassifier + VRResponderPredictor + PCA Stability */}
       <section
+        aria-label={lang === "kz" ? "ЖИ диагностикасы" : "Диагностика моделей ИИ"}
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
           gap: "20px",
         }}
       >
-        {/* Left: Responder Model */}
+        {/* 1. Condition Classifier */}
+        <div className="surface" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap" }}>
+            <div>
+              <h3 style={{ fontSize: "16px", fontWeight: 600 }}>
+                {lang === "kz"
+                  ? "Жүріс режимін жіктеу (ConditionClassifier)"
+                  : "Классификатор режима (ConditionClassifier)"}
+              </h3>
+              <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>
+                {lang === "kz"
+                  ? "Таңдалған сессиядағы VR-паттернді тану"
+                  : "Вероятность VR-паттерна походки для оцениваемой пробы"}
+              </p>
+            </div>
+            {predictedCondition && (
+              <span className={`badge ${predictedCondition === "VR" ? "badge-green" : "badge-neutral"}`}>
+                {predictedCondition === "VR"
+                  ? lang === "kz"
+                    ? "VR-паттерн"
+                    : "VR-паттерн"
+                  : lang === "kz"
+                  ? "Baseline-паттерн"
+                  : "Базовый паттерн"}
+              </span>
+            )}
+          </div>
+
+          <div
+            style={{
+              background: "var(--sidebar)",
+              borderRadius: "8px",
+              padding: "12px 14px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "12px",
+            }}
+          >
+            <span style={{ fontSize: "13px", color: "var(--secondary)" }}>
+              {lang === "kz" ? "VR-қолтаңба сенімділігі" : "Уверенность VR-профиля"}
+            </span>
+            <span className="tabular-nums" style={{ fontSize: "18px", fontWeight: 600 }}>
+              {isFiniteNum(vrConfidence) ? `${(vrConfidence * 100).toFixed(0)}%` : "—"}
+            </span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "12px", borderTop: "1px solid var(--line)", paddingTop: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
+              <span style={{ color: "var(--muted)" }}>
+                {lang === "kz" ? "Бағаланған сынама" : "Оцениваемая проба"}
+              </span>
+              <span style={{ fontFamily: "var(--mono)", fontWeight: 600 }}>
+                {analysis.ml.active_condition_evaluated || "—"}
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
+              <span style={{ color: "var(--muted)" }}>
+                {lang === "kz" ? "Модель болжамы" : "Предсказанный класс"}
+              </span>
+              <span style={{ fontFamily: "var(--mono)", fontWeight: 600 }}>
+                {predictedCondition || "—"}
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
+              <span style={{ color: "var(--muted)" }}>
+                {lang === "kz" ? "Модель ROC-AUC (GroupKFold)" : "Модель ROC-AUC (GroupKFold)"}
+              </span>
+              <span className="tabular-nums" style={{ fontFamily: "var(--mono)", fontWeight: 600 }}>
+                {isFiniteNum(analysis.ml.binary_roc_auc)
+                  ? analysis.ml.binary_roc_auc.toFixed(3)
+                  : "—"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Responder Model */}
         <div className="surface" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap" }}>
             <div>
@@ -402,7 +731,7 @@ export default function PatientDossierPage() {
             )}
           </div>
 
-          {responder && (
+          {responder ? (
             <>
               <div
                 style={{
@@ -458,8 +787,8 @@ export default function PatientDossierPage() {
                                 ? "Оң фактор"
                                 : "Поддерживает ответ"
                               : lang === "kz"
-                                ? "Риск факторы"
-                                : "Риск компенсации"}
+                              ? "Риск факторы"
+                              : "Риск компенсации"}
                           </span>
                         </div>
                       );
@@ -485,10 +814,30 @@ export default function PatientDossierPage() {
                 </div>
               )}
             </>
+          ) : (
+            <div
+              style={{
+                background: "var(--sidebar)",
+                borderRadius: "8px",
+                padding: "16px",
+                fontSize: "13px",
+                color: "var(--secondary)",
+                display: "flex",
+                gap: "10px",
+                alignItems: "flex-start",
+              }}
+            >
+              <Info size={16} strokeWidth={1.6} color="var(--muted)" style={{ flexShrink: 0, marginTop: "2px" }} />
+              <span>
+                {lang === "kz"
+                  ? "Терапияға дейінгі болжам үшін осы визитта Baseline сынамасы болуы қажет."
+                  : "Для дотерапевтического прогноза отклика загрузите пробу Baseline в этот визит."}
+              </span>
+            </div>
           )}
         </div>
 
-        {/* Right: PCA Cycle Stability */}
+        {/* 3. PCA Cycle Stability */}
         <div className="surface" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap" }}>
             <div>
@@ -497,8 +846,8 @@ export default function PatientDossierPage() {
               </h3>
               <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>
                 {lang === "kz"
-                  ? "VR кезіндегі ауытқыған қадам циклдерінің үлесі"
-                  : "Доля нестандартных циклов шага на беговой дорожке в VR"}
+                  ? `Ауытқыған қадам циклдерінің үлесі (${analysis.ml.active_condition_evaluated || "VR"})`
+                  : `Доля нестандартных циклов шага (${analysis.ml.active_condition_evaluated || "VR"})`}
               </p>
             </div>
             {pca && pca.has_curves !== false && pca.is_stable !== null && (
@@ -508,8 +857,8 @@ export default function PatientDossierPage() {
                     ? "Тұрақты жүріс"
                     : "Стереотип стабилен"
                   : lang === "kz"
-                    ? "Қадам ауытқуы байқалады"
-                    : "Вариативность циклов"}
+                  ? "Қадам ауытқуы байқалады"
+                  : "Вариативность циклов"}
               </span>
             )}
           </div>
@@ -590,8 +939,8 @@ export default function PatientDossierPage() {
                             ? "норма шегінен тыс"
                             : "выход за порог нормы"
                           : lang === "kz"
-                            ? "тұрақты"
-                            : "в пределах нормы"
+                          ? "тұрақты"
+                          : "в пределах нормы"
                       }`}
                       style={{
                         height: `${pct}%`,
@@ -622,7 +971,8 @@ export default function PatientDossierPage() {
       <section className="surface-muted" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
         <div>
           <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--ink)" }}>
-            {t.icf_title}: {t.icf_b770} ({analysis.icf.b770_baseline} {"→"} {analysis.icf.b770_vr}) ·{" "}
+            {t.icf_title}: {t.icf_b770} ({analysis.icf.b770_baseline}
+            {postIcfB770 && postIcfB770 !== "N/A" ? ` → ${postIcfB770}` : ""}) ·{" "}
             {t.icf_d450}: {analysis.icf.d450}
           </div>
           <p style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "4px" }}>
@@ -637,9 +987,24 @@ export default function PatientDossierPage() {
       <ReportModal
         open={reportOpen}
         patientCode={patientCode}
+        visitKey={selectedVisit}
         lang={lang}
         onClose={() => setReportOpen(false)}
       />
     </div>
+  );
+}
+
+export default function PatientDossierPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="surface" style={{ padding: "48px 24px", textAlign: "center", color: "var(--muted)" }}>
+          Загрузка клинической карты пациента...
+        </div>
+      }
+    >
+      <PatientDossierContent />
+    </Suspense>
   );
 }

@@ -128,15 +128,15 @@ All 52 tests must pass without errors. Tests run against an isolated temporary S
 
 Follow these 9 steps to test the application:
 
-1. **Open the application and sign in:** Navigate to http://127.0.0.1:3000, click "Вход для врачей" (or open http://127.0.0.1:3000/login), and click the one-click jury demo button ("Войти как врач-исследователь (1 клик)").
+1. **Open the application and enter the portal:** Navigate to http://127.0.0.1:3000 and click **"Кабинет врача"**, or open http://127.0.0.1:3000/login and click **"Открыть реестр пациентов"**.
 2. **Review the cohort:** On the `/portal` registry table, inspect all 29 participants from the hackathon dataset and open a patient card.
 3. **Inspect high-risk compensation (Patient `s61520_1`):** Select patient `s61520_1`. Observe that the Clinical Decision Support indicator turns Red. The patient displays a Pathological Compensation Ratio of 1.21. While raw hip extension appears improved by 2.68 degrees, the child achieved this through compensatory pelvic deviation (+5.36 degrees pelvic tilt), yielding TJE = +2.68 degrees and creating risk of lumbar hyperlordosis.
 4. **Inspect true therapeutic response (Patient `s61520_13`):** Select patient `s61520_13`. Observe the Green indicator. The patient achieved true joint extension with a Pathological Compensation Ratio under 0.40 without dangerous pelvic tilt.
 5. **Compare modalities:** Scroll to the "Selection of rehabilitation tactics" card. The card compares Baseline, Verbal, and VR conditions, stating whether verbal feedback or VR feedback provides the safer outcome for the active patient.
 6. **Switch language:** Click the language button in the top navigation bar to toggle between Kazakh (`ҚАЗ`) and Russian (`РУС`). Notice that medical terminology and clinical narratives update across the entire interface.
 7. **View live cohort analytics:** Click "Cohort Analytics" (`Аналитика когорты` / `Когорта талдауы`) in the navigation bar to inspect real-time distributions of CDSS statuses, optimal modalities, cycle counts, and anthropometric ranges computed directly from the database.
-8. **Generate clinical PDF report:** Click "Generate Report (PDF)" (`Оформить отчёт (PDF)`) in the upper right corner. Switch between Doctor and Parent views or KZ/RU languages, then click **Download PDF** to download the A4 PDF containing the comparison table, hip kinematic curve, WHO ICF codes (`b770`, `d450`), and clinical narrative.
-9. **Test custom CSV upload:** Click "Upload CSV" in the top bar. Select or drag any table adhering to the discrete parameter format. The engine validates column headers, parses decimal commas, and displays the analyzed patient card.
+8. **Generate clinical PDF report:** Click **"Медицинский отчёт (PDF)"** in the upper right corner. Switch between Doctor and Parent views or KZ/RU languages, then click **Скачать отчёт PDF** to download the A4 PDF containing the comparison table, hip kinematic curve, WHO ICF codes (`b770`, `d450`), and clinical narrative for the selected visit.
+9. **Test custom CSV upload and longitudinal visits:** Click **"Загрузить CSV"** in the sidebar or **"+ Новый визит (CSV)"** inside a patient card. Upload a Vicon, IMU, or 51-point kinematics CSV table to create a new visit without overwriting prior CSV sessions, switch between recorded visits in the visit selector bar (`?visit=`), and use **"Сравнение визитов"** to compare metrics across visits.
 
 ---
 
@@ -170,7 +170,7 @@ $$PCR = \frac{0.5 \cdot \max(0, \Delta GVS_P) + 0.3 \cdot \max(0, \Delta GVS_K) 
 
 - **Green ($PCR < 0.4$):** True responder. Pure joint improvement.
 - **Yellow ($0.4 \le PCR \le 0.8$):** Moderate adaptation. Requires therapist monitoring.
-- **Red ($PCR > 0.8$ or $TJE \ge 0$ with pelvic overload):** Pathological compensation. As an assistive CDSS alert (Rule 8.2), Libra flags pelvic overload and recommends clinician review to adjust VR load or switch modality, plus urgent attention via `103` in acute symptoms; it never prescribes therapy autonomously.
+- **Red ($PCR > 0.8$ or $TJE \ge 0$ with pelvic overload):** Pathological compensation. Under Rule 8.2, Libra acts strictly as an advisory CDSS alert. It flags pelvic overload and recommends consulting the attending physician regarding VR load adjustment or modality choice, plus calling `103` for acute symptoms. It never diagnoses, prescribes pharmacotherapy, or alters therapy autonomously.
 
 *The weights ($0.5, 0.3, 0.2$) and decision thresholds ($0.4, 0.8$) are algorithmic heuristics calibrated on the CP cohort to assist clinical evaluation.*
 
@@ -202,15 +202,17 @@ The machine learning pipeline follows four design principles:
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/health` | Health check verifying database and engine readiness |
-| `GET` | `/api/v1/patients` | List of all cohort patients with live PCR, TJE, status, and GPS |
-| `GET` | `/api/v1/patients/{code}/analysis` | Baseline, Verbal, VR metrics, deltas, TJE, PCR, ICF, and ML output |
-| `GET` | `/api/v1/patients/{code}/kinematics` | 51-point kinematic curves for pelvis, hip, knee, and ankle |
-| `POST` | `/api/v1/patients/{code}/report` | Structured medical narrative with ICF codes in KZ and RU |
-| `GET` | `/api/v1/patients/{code}/report.pdf` | Downloadable A4 PDF report (metric table, hip curve, ICF codes, narrative) |
+| `GET` | `/api/v1/patients` | List of all cohort patients with live PCR, TJE, status, GPS, and visit count |
+| `GET` | `/api/v1/patients/{code}/visits` | List longitudinal visits/sessions recorded for a patient |
+| `GET` | `/api/v1/patients/{code}/analysis` | Baseline, Verbal, VR metrics, deltas, TJE, PCR, ICF, and ML output (supports `?visit=`) |
+| `GET` | `/api/v1/patients/{code}/kinematics` | 51-point kinematic curves for pelvis, hip, knee, and ankle (supports `?visit=`) |
+| `GET` | `/api/v1/patients/{code}/diff` | Compare gait sessions within a visit or across visits (`session_a`, `session_b`, `visit_a`, `visit_b`, `lang`) |
+| `POST` | `/api/v1/patients/{code}/report` | Structured medical narrative with ICF codes in KZ and RU (supports `?visit=`) |
+| `GET` | `/api/v1/patients/{code}/report.pdf` | Downloadable A4 PDF report with metric table, hip curve, ICF codes, and narrative (supports `?visit=`) |
 | `GET` | `/api/v1/ml/metrics` | GroupKFold cross-validation results (binary + 3-class) and feature importances |
 | `GET` | `/api/v1/analytics/cohort` | Live cohort aggregations computed from registered patients and gait cycles |
-| `GET` | `/api/v1/ingest/template` | Downloadable CSV templates (`format=vicon` or `format=imu`) |
-| `POST`| `/api/v1/patients/upload` | Multi-condition (`Baseline`/`Verbal`/`VR`) Vicon/IMU CSV ingestion |
+| `GET` | `/api/v1/ingest/template` | Downloadable CSV templates (`format=vicon`, `imu`, or `kinematics`) |
+| `POST`| `/api/v1/patients/upload` | Multi-condition (`Baseline`/`Verbal`/`VR`) Vicon/IMU CSV ingestion with optional `visit_key`, `visit_label`, and `visit_date` |
 
 ---
 
@@ -221,7 +223,7 @@ The machine learning pipeline follows four design principles:
    - **Pathological Compensation Ratio (PCR):** The segmental weights ($w_{\text{pelvis}}=0.5$, $w_{\text{knee}}=0.3$, $w_{\text{ankle}}=0.2$) and decision thresholds ($0.4$ and $0.8$) are algorithmic heuristics derived to identify proximal compensatory strategies, not universal ISO standards.
    - **True Joint Extension (TJE):** Directional pelvic tilt correction ($\Delta \text{PelvisTilt}$) is derived from sagittal kinematics (`aSagP`) to isolate anatomical hip extension from compensatory lumbar/pelvic sway.
    - **WHO ICF d450 Mapping:** The walking stability classification maps PCA kinematic anomaly rate (<5%, 5-12%, 12-25%, 25-45%, >=45%) as an algorithmic proxy for locomotor difficulty.
-3. **Advisory Status (CDSS):** Per Rule 8.2 of the Solveathon Regulations, Libra is an assistive Clinical Decision Support System. It does not replace medical specialists, does not autonomously assign diagnoses, and does not prescribe pharmacotherapy. In acute distress or emergency symptoms, contact `103` immediately. Final therapeutic decisions remain the sole responsibility of the attending pediatric physiatrist/rehabilitation physician.
+3. **Advisory Status (CDSS):** Per Rule 8.2 of the Solveathon Regulations, Libra is an advisory Clinical Decision Support System. It does not replace medical specialists, does not establish diagnoses, does not prescribe pharmacotherapy, and does not autonomously modify therapy protocols or target angles. In acute pain, trauma, or emergency symptoms, contact `103` immediately. Final clinical decisions remain solely with the attending pediatric physiatrist or rehabilitation physician.
 4. **Normative Curves:** The healthy TD reference corridor (`src/core/normative_data.py`) uses a parametric Winter/Schwartz-calibrated curve (mean ± 1 SD) rather than digitized raw lab trials; preloaded cohort GVS/GPS values come directly from the KU Leuven CSVs.
 5. **Default Authentication Mode:** In local development and hackathon evaluation environments, permissive demo mode (`LIBRA_ALLOW_DEMO=1`) is enabled by default to allow jury testing without API key configuration. Production deployments require setting `LIBRA_ALLOW_DEMO=0` and configuring `LIBRA_API_KEY` header verification across both `GET` and `POST` clinical endpoints.
 
