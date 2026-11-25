@@ -1,255 +1,308 @@
 "use client";
 
 import React from "react";
-import { ShieldCheck, BarChart3 } from "lucide-react";
-import { MLMetrics } from "@/lib/types";
+import { fmtPercent } from "@/lib/format";
+import type { MLMetrics } from "@/lib/types";
 
-interface Props {
+interface MlValidationProps {
   metrics: MLMetrics;
   lang: "ru" | "kz";
 }
 
-export function MlValidation({ metrics, lang }: Props) {
+function mapFeatureLabel(key: string, isKz: boolean): string {
+  const dict: Record<string, { ru: string; kz: string }> = {
+    aMinSagH: {
+      ru: "Минимальное сгибание бедра в опоре",
+      kz: "Тіреудегі санның мин. бүгілуі",
+    },
+    GVS_aSagP: {
+      ru: "Отклонение таза от нормы (GVS)",
+      kz: "Жамбас ауытқуы (GVS)",
+    },
+    GPS_a: {
+      ru: "Общий индекс походки (GPS)",
+      kz: "Жалпы жүріс индексі (GPS)",
+    },
+    GVS_aSagH: {
+      ru: "Отклонение бедра от нормы (GVS)",
+      kz: "Сан ауытқуы (GVS)",
+    },
+    GVS_aSagK: {
+      ru: "Отклонение колена от нормы (GVS)",
+      kz: "Тізе ауытқуы (GVS)",
+    },
+    GVS_aSagA: {
+      ru: "Отклонение голеностопа (GVS)",
+      kz: "Тобық ауытқуы (GVS)",
+    },
+    pctmZeroStSagH: {
+      ru: "Момент разгибания бедра в опоре",
+      kz: "Тіреудегі сан жазылу моменті",
+    },
+    kinematic_waveforms: {
+      ru: "Форма кинематических кривых",
+      kz: "Кинематикалық қисық пішіні",
+    },
+  };
+  return dict[key]?.[isKz ? "kz" : "ru"] || key;
+}
+
+export function MlValidation({ metrics, lang }: MlValidationProps) {
   const isKz = lang === "kz";
 
-  const featureLabels: Record<string, string> = {
-    aMinSagH: isKz ? "Санның жазылу бұрышы (aMinSagH)" : "Минимальный угол сгибания бедра (aMinSagH)",
-    GVS_aSagP: isKz ? "Жамбас ауытқуы (GVS Таз)" : "Отклонение наклона таза (GVS Таза)",
-    GPS_a: isKz ? "Жүріс профилі индексі (GPS)" : "Общий индекс профиля походки (GPS)",
-    GVS_aSagH: isKz ? "Сан ауытқуы (GVS Сан)" : "Отклонение кинематики бедра (GVS Бедра)",
-    GVS_aSagK: isKz ? "Тізе ауытқуы (GVS Тізе)" : "Отклонение кинематики колена (GVS Колена)",
-    GVS_aSagA: isKz ? "Тобық ауытқуы (GVS Тобық)" : "Отклонение кинематики стопы (GVS Стопы)",
-    pctmZeroStSagH: isKz ? "Сан моментінің ауысу сәті (pctmZeroStSagH)" : "Момент смены разгибателя бедра (pctmZeroStSagH)",
-    kinematic_waveforms: isKz ? "Кинематикалық қисық сипаттамалары (0–100% цикл)" : "Характеристики кинематических кривых (0–100% цикла)",
-  };
+  const mainKpis = [
+    {
+      label: isKz ? "Теңдестірілген дәлдік" : "Точность различия VR и базы",
+      val: fmtPercent(metrics.balanced_accuracy, true, 1),
+      sub: isKz
+        ? `VR және қалыпты режим (${metrics.n_splits} фолд)`
+        : `Базовая модель, ${metrics.n_splits} фолдов`,
+    },
+    {
+      label: isKz ? "Бөлу сапасы (ROC-AUC)" : "Качество разделения (ROC-AUC)",
+      val: fmtPercent(metrics.roc_auc, true, 1),
+      sub: isKz ? "Ажырату қабілеті" : "Площадь под ROC-кривой",
+    },
+    {
+      label: isKz ? "Сезімталдық (VR)" : "Чувствительность к VR",
+      val: fmtPercent(metrics.sensitivity, true, 1),
+      sub: isKz ? "VR-жүрісті тану" : "Доля распознанных VR-циклов",
+    },
+    {
+      label: isKz ? "Спецификалық (Қалыпты)" : "Специфичность к базе",
+      val: fmtPercent(metrics.specificity, true, 1),
+      sub: isKz ? "Қалыпты жүрісті ажырату" : "Отсутствие ложных срабатываний",
+    },
+  ];
+
+  const sortedFeatures = Object.entries(metrics.feature_importances || {})
+    .sort(([, a], [, b]) => b - a);
+  const maxImp = sortedFeatures.length > 0 ? Math.max(...sortedFeatures.map(([, v]) => v), 0.01) : 1;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      {/* Subject-isolation methodology statement */}
-      <div className="surface-muted">
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-          <ShieldCheck size={18} strokeWidth={1.6} color="var(--teal)" />
-          <h2 style={{ fontSize: "15px", fontWeight: 600 }}>
-            {isKz
-              ? "Пациенттер бойынша қатаң бөлу (GroupKFold, деректер ағып кетуінсіз)"
-              : "Строгое разделение выборки по пациентам (GroupKFold)"}
-          </h2>
-        </div>
-        <p style={{ fontSize: "13px", color: "var(--secondary)", lineHeight: 1.6 }}>
-          {isKz ? (
-            <>
-              Қадам циклдерін кездейсоқ араластыру (<span style={{ fontFamily: "var(--mono)" }}>train_test_split</span>)
-              үлгінің нақты баланың антропометриясын жаттап алуына байланысты <strong>жалған 95–99% дәлдік</strong> береді.
-              Libra моделі <strong>{metrics.n_subjects} пациент ({metrics.n_cycles} цикл) бойынша GroupKFold (k={metrics.n_splits})</strong> әдісімен
-              тексерілді: бір пациенттің қадамдары оқыту және тексеру топтарына ешқашан бірге түспейді.
-            </>
-          ) : (
-            <>
-              Случайное разбиение отдельных шагов (<span style={{ fontFamily: "var(--mono)" }}>train_test_split</span>) завышает
-              метрики до <strong>ложных 95–99%</strong> за счёт запоминания индивидуальной походки ребёнка.
-              Модель Libra проверена методом <strong>GroupKFold (k={metrics.n_splits}) по {metrics.n_subjects} пациентам ({metrics.n_cycles} циклов)</strong>:
-              все циклы одного участника попадают либо только в обучение, либо только в проверку.
-            </>
-          )}
-        </p>
-      </div>
-
-      {/* 4 Primary Validation Metrics */}
-      <div className="grid-kpi-4">
-        <div className="surface" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-            {isKz ? "Теңгерімді дәлдік" : "Сбалансированная точность"}
-          </div>
-          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, color: "var(--teal)", marginTop: "6px", lineHeight: 1.1 }}>
-            {(metrics.balanced_accuracy * 100).toFixed(1)}%
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            {isKz ? "Пациентаралық бағалау" : "Межсубъектная проверка"}
-          </div>
-        </div>
-
-        <div className="surface" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-            {isKz ? "ROC-AUC көрсеткіші" : "Площадь под ROC-кривой"}
-          </div>
-          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, color: "var(--teal)", marginTop: "6px", lineHeight: 1.1 }}>
-            {metrics.roc_auc.toFixed(3)}
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            {isKz ? "VR мен базаны ажырату" : "Различение VR и обычной ходьбы"}
-          </div>
-        </div>
-
-        <div className="surface" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-            {isKz ? "Сезімталдық" : "Чувствительность"}
-          </div>
-          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, color: "var(--ink)", marginTop: "6px", lineHeight: 1.1 }}>
-            {(metrics.sensitivity * 100).toFixed(1)}%
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            {isKz ? "VR-әсерін анықтау" : "Выявление VR-паттерна"}
-          </div>
-        </div>
-
-        <div className="surface" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-            {isKz ? "Спецификалық" : "Специфичность"}
-          </div>
-          <div className="tabular-nums" style={{ fontSize: "28px", fontWeight: 600, color: "var(--ink)", marginTop: "6px", lineHeight: 1.1 }}>
-            {(metrics.specificity * 100).toFixed(1)}%
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            {isKz ? "Базалық жүрісті тану" : "Отсечение ложных срабатываний"}
-          </div>
-        </div>
-      </div>
-
-      {/* 3-Class Classification */}
-      {metrics.three_class && (
-        <div className="surface">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
-            <h3 style={{ fontSize: "15px", fontWeight: 600 }}>
+    <div className="stack-lg">
+      {/* Validation Protocol Banner */}
+      <section className="surface-muted stack-xs">
+        <div className="row-between">
+          <div>
+            <h2 className="section-title">
               {isKz
-                ? "Үш режимді жіктеу (Қалыпты, Ауызша, VR)"
-                : "Трёхклассовая классификация режимов (Обычная, Голос, VR)"}
-            </h3>
-            <span className="badge badge-neutral tabular-nums">
+                ? "Пациент бойынша оқшауланған тексеру хаттамасы"
+                : "Кросс-валидация с изоляцией по пациентам"}
+            </h2>
+            <p className="section-subtitle" style={{ maxWidth: "70ch" }}>
               {isKz
-                ? `${metrics.three_class.n_cycles} цикл · ${metrics.three_class.n_subjects} пациент · k=${metrics.three_class.n_splits}`
-                : `${metrics.three_class.n_cycles} циклов · ${metrics.three_class.n_subjects} пациентов · k=${metrics.three_class.n_splits}`}
+                ? "Бір баланың барлық қадам циклдері тек оқу немесе тек тексеру тобына түседі, сондықтан деректердің ағып кетуіне жол берілмейді."
+                : "Все циклы шага одного ребёнка попадают строго в один разрез проверки — это исключает утечку данных между тренировкой и тестом."}
+            </p>
+          </div>
+          <div className="cluster">
+            <span className="badge badge-green">
+              {isKz ? `Пациенттер: ${metrics.n_subjects}` : `Пациентов: ${metrics.n_subjects}`}
+            </span>
+            <span className="badge badge-neutral">
+              {isKz ? `Циклдер: ${metrics.n_cycles}` : `Циклов шага: ${metrics.n_cycles}`}
             </span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
-            <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "12px 14px" }}>
-              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                {isKz ? "Теңгерімді дәлдік (3 класс)" : "Сбалансированная точность (3 класса)"}
-              </div>
-              <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: "var(--teal)", marginTop: "4px" }}>
-                {(metrics.three_class.balanced_accuracy * 100).toFixed(1)}%
-              </div>
-              <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>
-                {isKz ? "Кездейсоқ деңгей: 33,3%" : "Случайный порог: 33,3%"}
-              </div>
-            </div>
-            <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "12px 14px" }}>
-              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                {isKz ? "Макро-орташа F1" : "Макро-средняя F1-мера"}
-              </div>
-              <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: "var(--ink)", marginTop: "4px" }}>
-                {(metrics.three_class.f1_macro * 100).toFixed(1)}%
-              </div>
-              <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>
-                {isKz ? "Үш режим бойынша теңгерім" : "Баланс точности и полноты"}
-              </div>
-            </div>
-          </div>
         </div>
-      )}
+      </section>
 
-      {/* PCA Stability & Pre-therapy Responder Predictor */}
-      {(metrics.pca_validation || metrics.vr_responder) && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "16px" }}>
-          {metrics.pca_validation && (
-            <div className="surface">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", gap: "8px", flexWrap: "wrap" }}>
-                <h3 style={{ fontSize: "15px", fontWeight: 600 }}>
-                  {isKz ? "Қадам тұрақтылығын бақылау (PCA)" : "Детектор нестабильности шага (PCA)"}
-                </h3>
-                <span className="badge badge-neutral tabular-nums">
-                  k={metrics.pca_validation.n_splits} · {metrics.pca_validation.n_subjects} {isKz ? "пациент" : "пациентов"}
+      {/* Main 4 KPIs */}
+      <div className="grid-kpi-4">
+        {mainKpis.map((item) => (
+          <div key={item.label} className="surface stack-xs">
+            <div style={{ fontSize: "12px", color: "var(--muted)" }}>{item.label}</div>
+            <div className="font-display tabular-nums" style={{ fontSize: "30px", color: "var(--ink)" }}>
+              {item.val}
+            </div>
+            <div style={{ fontSize: "12px", color: "var(--secondary)" }}>{item.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Multi-model Details */}
+      <div className="grid-2">
+        {/* Left: 3-class + PCA Stability */}
+        <div className="stack-lg">
+          {metrics.three_class && (
+            <section className="surface stack-md">
+              <div className="row-between">
+                <div>
+                  <h2 className="section-title">
+                    {isKz ? "Үш режимді жіктеу (Қалыпты / Ауызша / VR)" : "Различение трёх режимов ходьбы"}
+                  </h2>
+                  <p className="section-subtitle">
+                    {isKz ? "Обычная, ауызша нұсқау және VR-кері байланыс" : "Обычная ходьба, голосовые инструкции и VR"}
+                  </p>
+                </div>
+                <span className="badge badge-neutral">
+                  {metrics.three_class.n_cycles} {isKz ? "цикл" : "циклов"}
                 </span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "12px" }}>
+
+              <div className="hairline-grid">
+                <div className="hairline-cell">
                   <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                    {isKz ? "Қалыпты жүріс (фолдтардан тыс)" : "Обычная ходьба (кросс-валидация)"}
+                    {isKz ? "Теңдестірілген дәлдік" : "Сбалансированная точность"}
                   </div>
-                  <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: "var(--ink)", marginTop: "4px" }}>
-                    {(metrics.pca_validation.oof_baseline_anomaly_rate * 100).toFixed(1)}%
+                  <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)" }}>
+                    {fmtPercent(metrics.three_class.balanced_accuracy, true, 1)}
                   </div>
                 </div>
-                <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "12px" }}>
+                <div className="hairline-cell">
                   <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                    {isKz ? "VR-дегі аномальді циклдер" : "Нестабильные шаги в VR"}
+                    {isKz ? "Макро F1 көрсеткіші" : "Сводная оценка (Macro F1)"}
                   </div>
-                  <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: "var(--amber)", marginTop: "4px" }}>
-                    {(metrics.pca_validation.vr_anomaly_rate * 100).toFixed(1)}%
+                  <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)" }}>
+                    {fmtPercent(metrics.three_class.f1_macro, true, 1)}
                   </div>
                 </div>
+                {typeof metrics.three_class.roc_auc === "number" && (
+                  <div className="hairline-cell">
+                    <div style={{ fontSize: "12px", color: "var(--muted)" }}>ROC-AUC</div>
+                    <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)" }}>
+                      {fmtPercent(metrics.three_class.roc_auc, true, 1)}
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
+            </section>
           )}
 
+          {metrics.pca_validation && (
+            <section className="surface stack-md">
+              <div>
+                <h2 className="section-title">
+                  {isKz ? "Қадам тұрақтылығын бақылау (PCA)" : "Модель стабильности цикла шага (PCA)"}
+                </h2>
+                <p className="section-subtitle">
+                  {isKz
+                    ? "Тәуелсіз фолдтар бойынша ауытқу деңгейін тексеру"
+                    : "Доля нестандартных циклов при проверке на неиспользованных пациентах"}
+                </p>
+              </div>
+
+              <div className="hairline-grid">
+                <div className="hairline-cell">
+                  <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                    {isKz ? "Қалыпты жүрістегі ауытқу" : "Аномалии в обычной ходьбе"}
+                  </div>
+                  <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)" }}>
+                    {fmtPercent(metrics.pca_validation.oof_baseline_anomaly_rate, true, 1)}
+                  </div>
+                </div>
+                <div className="hairline-cell hairline-cell-active">
+                  <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                    {isKz ? "VR режиміндегі ығысу" : "Сдвиг в VR (распознано как новое)"}
+                  </div>
+                  <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, color: "var(--teal)", marginTop: "var(--sp-1)" }}>
+                    {fmtPercent(metrics.pca_validation.vr_anomaly_rate, true, 1)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="stack-xs">
+                <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                  {isKz ? "Қиылыспалы тексеру фолдтары бойынша үлес:" : "Доля по фолдам проверки:"}
+                </div>
+                <div style={{ display: "flex", gap: "var(--sp-2)" }}>
+                  {metrics.pca_validation.fold_rates.map((r, i) => (
+                    <div
+                      key={i}
+                      className="panel-inset"
+                      style={{ flex: 1, textAlign: "center", padding: "var(--sp-2)" }}
+                    >
+                      <div className="tabular-nums" style={{ fontSize: "13px", fontWeight: 600 }}>
+                        {fmtPercent(r, true, 0)}
+                      </div>
+                      <div style={{ fontSize: "11px", color: "var(--muted)" }}>
+                        #{i + 1}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+
+        {/* Right: Responder Prediction + Feature Importances */}
+        <div className="stack-lg">
           {metrics.vr_responder && (
-            <div className="surface">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", gap: "8px", flexWrap: "wrap" }}>
-                <h3 style={{ fontSize: "15px", fontWeight: 600 }}>
-                  {isKz ? "Терапияға дейінгі болжам (LOO, N=29)" : "Дотерапевтический прогноз отклика (LOO, N=29)"}
-                </h3>
-                <span className="badge badge-neutral tabular-nums">
-                  {metrics.vr_responder.n_responders} / {metrics.vr_responder.n_compensators}
+            <section className="surface stack-md">
+              <div className="row-between">
+                <div>
+                  <h2 className="section-title">
+                    {isKz ? "VR-терапияға жауап болжамы" : "Прогноз отклика на VR-терапию"}
+                  </h2>
+                  <p className="section-subtitle">
+                    {isKz
+                      ? `Әр пациентті жеке шығарып тексеру (N=${metrics.vr_responder.n_subjects})`
+                      : `Попациентная проверка на N=${metrics.vr_responder.n_subjects} клинических случаях`}
+                  </p>
+                </div>
+                <span className="badge badge-green">
+                  {isKz
+                    ? `${metrics.vr_responder.n_responders} жауап · ${metrics.vr_responder.n_compensators} компенсация`
+                    : `${metrics.vr_responder.n_responders} с откликом · ${metrics.vr_responder.n_compensators} без`}
                 </span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "12px" }}>
+
+              <div className="hairline-grid">
+                <div className="hairline-cell">
                   <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                    {isKz ? "Теңгерімді дәлдік (LOO)" : "Точность LOO"}
+                    {isKz ? "Теңдестірілген дәлдік" : "Сбалансированная точность"}
                   </div>
-                  <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: "var(--teal)", marginTop: "4px" }}>
-                    {(metrics.vr_responder.balanced_accuracy * 100).toFixed(1)}%
+                  <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)" }}>
+                    {fmtPercent(metrics.vr_responder.balanced_accuracy, true, 1)}
                   </div>
                 </div>
-                <div style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "8px", padding: "12px" }}>
-                  <div style={{ fontSize: "12px", color: "var(--muted)" }}>ROC-AUC (LOO)</div>
-                  <div className="tabular-nums" style={{ fontSize: "22px", fontWeight: 600, color: "var(--amber)", marginTop: "4px" }}>
-                    {Number.isFinite(metrics.vr_responder.roc_auc) ? metrics.vr_responder.roc_auc.toFixed(3) : "—"}
+                <div className="hairline-cell">
+                  <div style={{ fontSize: "12px", color: "var(--muted)" }}>ROC-AUC</div>
+                  <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)" }}>
+                    {fmtPercent(metrics.vr_responder.roc_auc, true, 1)}
                   </div>
                 </div>
               </div>
-              <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "10px", lineHeight: 1.5 }}>
+
+              {(metrics.vr_responder.note || metrics.vr_responder.note_kz) && (
+                <p style={{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.55 }}>
+                  {isKz
+                    ? metrics.vr_responder.note_kz || metrics.vr_responder.note
+                    : metrics.vr_responder.note}
+                </p>
+              )}
+            </section>
+          )}
+
+          <section className="surface stack-md">
+            <div>
+              <h2 className="section-title">
+                {isKz ? "Модель шешіміне әсер ететін параметрлер" : "Вес клинических параметров в модели"}
+              </h2>
+              <p className="section-subtitle">
                 {isKz
-                  ? metrics.vr_responder.note_kz ||
-                    "N=29 когортасындағы LOO-валидация. Клиникалық қолдану алдында когортаны кеңейту қажет."
-                  : metrics.vr_responder.note ||
-                    "Валидация на малой когорте (N=29). Перед клиническим применением требуется расширение выборки."}
+                  ? "Кинематикалық белгілердің салыстырмалы үлесі"
+                  : "Вклад биомеханических показателей в итоговую оценку"}
               </p>
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Feature Importances */}
-      <div className="surface">
-        <h3 style={{ fontSize: "15px", fontWeight: 600, marginBottom: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
-          <BarChart3 size={16} strokeWidth={1.6} color="var(--teal)" />
-          <span>{isKz ? "Биомеханикалық көрсеткіштердің маңыздылығы" : "Значимость биомеханических признаков модели"}</span>
-        </h3>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {Object.entries(metrics.feature_importances)
-            .sort((a, b) => b[1] - a[1])
-            .map(([feat, imp]) => {
-              const pctVal = (imp * 100).toFixed(1);
-              return (
-                <div key={feat} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
-                    <span style={{ fontWeight: 500 }}>{featureLabels[feat] || feat}</span>
-                    <span className="tabular-nums" style={{ color: "var(--muted)" }}>{pctVal}%</span>
+            <div className="stack-sm">
+              {sortedFeatures.map(([key, val]) => {
+                const relWidth = (val / maxImp) * 100;
+                return (
+                  <div key={key} className="stack-xs">
+                    <div className="kv-row" style={{ fontSize: "13px" }}>
+                      <span style={{ color: "var(--ink)" }}>{mapFeatureLabel(key, isKz)}</span>
+                      <strong className="tabular-nums mono">{fmtPercent(val, true, 1)}</strong>
+                    </div>
+                    <div className="meter-track" aria-hidden="true">
+                      <div className="meter-fill" style={{ width: `${relWidth}%`, background: "var(--teal)" }} />
+                    </div>
                   </div>
-                  <div style={{ height: "8px", background: "var(--sidebar)", borderRadius: "4px", overflow: "hidden" }}>
-                    <div
-                      style={{
-                        height: "100%",
-                        width: `${pctVal}%`,
-                        background: feat === "kinematic_waveforms" || feat === "aMinSagH" ? "var(--teal)" : feat === "GVS_aSagP" ? "var(--amber)" : "var(--ink)",
-                        borderRadius: "4px",
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          </section>
         </div>
       </div>
     </div>

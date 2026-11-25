@@ -4,17 +4,15 @@ import React from "react";
 import { AlertTriangle, CheckCircle2, AlertOctagon } from "lucide-react";
 import { PatientAnalysis, GaitCondition } from "@/lib/types";
 import { translations } from "@/lib/translations";
+import { isFiniteNum, fmtFixed, fmtSigned, fmtPcr, cleanClinicalText } from "@/lib/format";
 
 interface CdssProps {
   analysis: PatientAnalysis;
   lang: "ru" | "kz";
 }
 
-function isFiniteNum(value: number | null | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
 export function CdssTrafficLight({ analysis, lang }: CdssProps) {
+  const isKz = lang === "kz";
   const t = translations[lang];
   const cdss_risk = analysis.cdss_risk || analysis.cdss || {
     status: "yellow" as const,
@@ -78,129 +76,132 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
       : null;
 
   const postB770 = icf.b770_post || icf.b770_vr;
-  const comparisonArrowLabel = activeModality === "Verbal" ? "Base → Verbal" : "Base → VR";
+  const comparisonPairLabel =
+    activeModality === "Verbal"
+      ? isKz
+        ? "Қалыпты → Ауызша"
+        : "Обычная → Голос"
+      : isKz
+      ? "Қалыпты → VR"
+      : "Обычная → VR";
 
   const statusConfig = {
     green: {
-      bg: "var(--teal-bg)",
-      border: "var(--teal-border)",
+      calloutClass: "callout callout-teal",
       color: "var(--teal)",
       badgeClass: "badge-green",
       icon: CheckCircle2,
-      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru,
+      title: isKz ? cdss_risk.label_kz : cdss_risk.label_ru,
     },
     yellow: {
-      bg: "var(--amber-bg)",
-      border: "var(--amber-border)",
+      calloutClass: "callout callout-amber",
       color: "var(--amber)",
       badgeClass: "badge-yellow",
       icon: AlertTriangle,
-      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru,
+      title: isKz ? cdss_risk.label_kz : cdss_risk.label_ru,
     },
     red: {
-      bg: "var(--red-bg)",
-      border: "var(--red-border)",
+      calloutClass: "callout callout-red",
       color: "var(--red)",
       badgeClass: "badge-red",
       icon: AlertOctagon,
-      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru,
+      title: isKz ? cdss_risk.label_kz : cdss_risk.label_ru,
     },
     unassessed: {
-      bg: "var(--sidebar)",
-      border: "var(--line)",
+      calloutClass: "callout",
       color: "var(--ink)",
       badgeClass: "badge-neutral",
       icon: AlertTriangle,
-      title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru,
+      title: isKz ? cdss_risk.label_kz : cdss_risk.label_ru,
     },
   }[cdss_risk.status] || {
-    bg: "var(--sidebar)",
-    border: "var(--line)",
+    calloutClass: "callout",
     color: "var(--ink)",
     badgeClass: "badge-neutral",
     icon: AlertTriangle,
-    title: lang === "kz" ? cdss_risk.label_kz : cdss_risk.label_ru,
+    title: isKz ? cdss_risk.label_kz : cdss_risk.label_ru,
   };
 
   const StatusIcon = statusConfig.icon;
-  const recommendationText = lang === "kz" ? cdss_risk.recommendation_kz : cdss_risk.recommendation_ru;
+  const recommendationText = cleanClinicalText(
+    isKz ? cdss_risk.recommendation_kz : cdss_risk.recommendation_ru
+  );
 
-  const baseHipStr = isFiniteNum(summary.baseline_amin_sagh)
-    ? `${summary.baseline_amin_sagh.toFixed(1)}°`
-    : "—";
-  const postHipStr = isFiniteNum(activePostHip) ? `${activePostHip.toFixed(1)}°` : "—";
+  const baseHipStr = fmtFixed(summary.baseline_amin_sagh, 1, "°");
+  const postHipStr = fmtFixed(activePostHip, 1, "°");
 
   const hipSubtext = (() => {
     if (activeModality === "Baseline") {
-      return `${baseHipStr} · ${lang === "kz" ? "Тек базалық сынама" : "Только базовая проба"}`;
+      return `${baseHipStr} · ${isKz ? "Тек базалық сынама" : "Только базовая проба"}`;
     }
     if (!isFiniteNum(activeDeltaHip)) {
-      return `${baseHipStr} → ${postHipStr} (${comparisonArrowLabel}) · ${
-        lang === "kz" ? "Салыстыру дерегі жоқ" : "Нет пары для сравнения"
-      }`;
+      return `${baseHipStr} → ${postHipStr} (${comparisonPairLabel})`;
     }
     const impact =
       activeDeltaHip <= -2.0
-        ? lang === "kz"
+        ? isKz
           ? "Айқын оң нәтиже"
           : "Клинически значимо"
         : activeDeltaHip <= -1.0
-        ? lang === "kz"
+        ? isKz
           ? "Орташа жақсару"
           : "Умеренный отклик"
-        : lang === "kz"
+        : isKz
         ? "Динамикасыз"
         : "Без динамики";
-    return `${baseHipStr} → ${postHipStr} (${comparisonArrowLabel}) · ${impact}`;
+    return `${baseHipStr} → ${postHipStr} · ${impact}`;
   })();
+
+  const tjeDirectionHint =
+    tjeVal === null
+      ? t.tje_desc
+      : tjeVal <= -1.0
+      ? isKz
+        ? "Шынайы буын ілгерілеуі (≤ −1,0°)"
+        : "Чистое улучшение сустава (≤ −1,0°)"
+      : tjeVal > 0.0
+      ? isKz
+        ? "Жамбас еңкеюі сан нәтижесін жапты"
+        : "Перекрыто передним наклоном таза"
+      : isKz
+      ? "Елеулі өзгеріс жоқ"
+      : "Минимальное изменение";
 
   return (
     <section
-      aria-label={lang === "kz" ? "Қауіпсіздік бағдаршамы" : "Клинический светофор"}
-      style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+      aria-label={isKz ? "Қауіпсіздік бағдаршамы" : "Клинический светофор"}
+      className="stack-md"
     >
-      {/* Top Status Banner */}
-      <div
-        style={{
-          background: statusConfig.bg,
-          border: `1px solid ${statusConfig.border}`,
-          borderRadius: "12px",
-          padding: "16px 20px",
-          display: "flex",
-          alignItems: "flex-start",
-          gap: "12px",
-        }}
-      >
+      <div className={statusConfig.calloutClass}>
         <div style={{ color: statusConfig.color, marginTop: "2px", flexShrink: 0 }}>
-          <StatusIcon size={20} strokeWidth={1.7} />
+          <StatusIcon size={18} strokeWidth={1.6} aria-hidden="true" />
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px", flexWrap: "wrap" }}>
+          <div className="cluster" style={{ marginBottom: "var(--sp-1)" }}>
             <span style={{ fontSize: "15px", fontWeight: 600, color: statusConfig.color }}>
               {statusConfig.title}
             </span>
-            <span className={`badge ${statusConfig.badgeClass} tabular-nums`}>
-              PCR = {pcrVal !== null ? pcrVal.toFixed(2) : "—"}
+            <span className={`badge ${statusConfig.badgeClass} tabular-nums mono`}>
+              PCR = {fmtPcr(pcrVal)}
             </span>
           </div>
           <p style={{ fontSize: "13px", color: "var(--ink)", lineHeight: 1.55 }}>
             <strong>{t.recommendation}:</strong> {recommendationText}
           </p>
           {cdss_risk.status === "red" && (
-            <p style={{ marginTop: "6px", fontSize: "12px", color: "var(--red)", fontWeight: 500 }}>
-              {lang === "kz"
-                ? "Назар аударыңыз: шұғыл жағдайларда 103 нөміріне қоңырау шалыңыз. Жүйе диагноз қоймайды (Ереже 8.2-т.)."
-                : "В экстренных ситуациях вызывайте скорую помощь 103. СППР не ставит диагноз (п. 8.2 Положения)."}
+            <p style={{ marginTop: "var(--sp-2)", fontSize: "12px", color: "var(--red)", fontWeight: 500 }}>
+              {isKz
+                ? "Назар аударыңыз: шұғыл жағдайларда 103 нөміріне қоңырау шалыңыз. Жүйе кеңестік сипатта, диагноз қоймайды."
+                : "В экстренных ситуациях вызывайте скорую помощь 103. Система носит консультативный характер и не ставит диагноз."}
             </p>
           )}
         </div>
       </div>
 
-      {/* 4 Unified Metric Cells */}
       <div className="grid-kpi-4">
-        <div className="surface" style={{ padding: "16px" }} title={t.tooltip_delta_hip}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
-            {lang === "kz" ? "Санның жазылу өсімі" : "Разгибание бедра (ΔaMinSagH)"}
+        <div className="surface-compact" title={t.tooltip_delta_hip}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
+            {isKz ? "Санның жазылу өсімі" : "Разгибание бедра в опоре"}
           </div>
           <div
             className="tabular-nums"
@@ -211,17 +212,15 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
               color: isFiniteNum(activeDeltaHip) && activeDeltaHip <= -1.0 ? "var(--teal)" : "var(--ink)",
             }}
           >
-            {isFiniteNum(activeDeltaHip)
-              ? `${activeDeltaHip > 0 ? `+${activeDeltaHip.toFixed(1)}` : activeDeltaHip.toFixed(1)}°`
-              : "—"}
+            {fmtSigned(activeDeltaHip, 1, "°")}
           </div>
-          <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
+          <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "var(--sp-2)" }}>
             {hipSubtext}
           </div>
         </div>
 
-        <div className="surface" style={{ padding: "16px" }} title={t.tooltip_tje}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+        <div className="surface-compact" title={t.tooltip_tje}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
             {t.tje_title}
           </div>
           <div
@@ -240,18 +239,18 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
                   : "var(--amber)",
             }}
           >
-            {tjeVal !== null ? `${tjeVal > 0 ? `+${tjeVal.toFixed(1)}` : tjeVal.toFixed(1)}°` : "—"}
+            {fmtSigned(tjeVal, 1, "°")}
           </div>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
-            {t.tje_desc}
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "var(--sp-2)" }}>
+            {tjeDirectionHint}
           </div>
         </div>
 
-        <div className="surface" style={{ padding: "16px" }} title={t.tooltip_pcr}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+        <div className="surface-compact" title={t.tooltip_pcr}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
             {t.pcr_title}
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "var(--sp-2)" }}>
             <span
               className="tabular-nums"
               style={{
@@ -268,51 +267,51 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
                     : "var(--teal)",
               }}
             >
-              {pcrVal !== null ? pcrVal.toFixed(2) : "—"}
+              {fmtPcr(pcrVal)}
             </span>
             {pcrVal !== null && (
               <span style={{ fontSize: "12px", color: "var(--muted)" }}>
                 {pcrVal > 0.8
-                  ? lang === "kz"
+                  ? isKz
                     ? "Жоғары"
                     : "Высокий риск"
                   : pcrVal >= 0.4
-                  ? lang === "kz"
+                  ? isKz
                     ? "Орташа"
                     : "Умеренно"
-                  : lang === "kz"
+                  : isKz
                   ? "Қалыпты"
                   : "В норме"}
               </span>
             )}
           </div>
-          <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
+          <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "var(--sp-2)" }}>
             {isFiniteNum(activeDeltaPelvis)
-              ? lang === "kz"
-                ? `Жамбас ауытқуы: ${activeDeltaPelvis > 0 ? `+${activeDeltaPelvis.toFixed(1)}` : activeDeltaPelvis.toFixed(1)}°`
-                : `Отклонение таза: ${activeDeltaPelvis > 0 ? `+${activeDeltaPelvis.toFixed(1)}` : activeDeltaPelvis.toFixed(1)}°`
-              : lang === "kz"
+              ? isKz
+                ? `Жамбас ауытқуы: ${fmtSigned(activeDeltaPelvis, 1, "°")}`
+                : `Отклонение таза: ${fmtSigned(activeDeltaPelvis, 1, "°")}`
+              : isKz
               ? "Жамбас ауытқуы: —"
               : "Отклонение таза: —"}
           </div>
         </div>
 
-        <div className="surface" style={{ padding: "16px" }} title={t.tooltip_icf}>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
+        <div className="surface-compact" title={t.tooltip_icf}>
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "var(--sp-2)" }}>
             {t.icf_title}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "13px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="stack-xs" style={{ fontSize: "13px" }}>
+            <div className="kv-row">
               <span style={{ color: "var(--muted)" }}>b770</span>
-              <span className="tabular-nums" style={{ fontFamily: "var(--mono)", fontWeight: 500 }}>
+              <span className="tabular-nums mono" style={{ fontWeight: 500 }}>
                 {icf.b770_baseline}
                 {postB770 && postB770 !== "N/A" ? ` → ${postB770}` : ""}
               </span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="kv-row">
               <span style={{ color: "var(--muted)" }}>d450</span>
-              <span className="tabular-nums" style={{ fontFamily: "var(--mono)", fontWeight: 500 }}>
-                {icf.d450 === "N/A" ? (lang === "kz" ? "Бағаланбады" : "Нет кривых") : icf.d450}
+              <span className="tabular-nums mono" style={{ fontWeight: 500 }}>
+                {icf.d450 === "N/A" ? (isKz ? "Бағаланбады" : "Нет кривых") : icf.d450}
               </span>
             </div>
           </div>
@@ -325,22 +324,22 @@ export function CdssTrafficLight({ analysis, lang }: CdssProps) {
                 activePostGps < summary.baseline_gps
                   ? "var(--teal)"
                   : "var(--muted)",
-              marginTop: "6px",
+              marginTop: "var(--sp-2)",
             }}
           >
             {activeModality === "Baseline"
-              ? lang === "kz"
+              ? isKz
                 ? "Базалық сынама бойынша"
                 : "Оценено по базовой пробе"
               : !isFiniteNum(activePostGps) || !isFiniteNum(summary.baseline_gps)
-              ? lang === "kz"
+              ? isKz
                 ? `Салыстырмалы ${activeModality} дерегі жоқ`
-                : `Нет парной ${activeModality}-пробы`
+                : `Нет парной пробы ${activeModality}`
               : activePostGps < summary.baseline_gps
-              ? lang === "kz"
+              ? isKz
                 ? "Жүріс профилі (GPS) жақсарды"
                 : "Индекс походки GPS улучшился"
-              : lang === "kz"
+              : isKz
               ? "Ауытқу сақталған"
               : "Отклонение GPS сохраняется"}
           </div>

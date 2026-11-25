@@ -10,6 +10,7 @@ import {
   Calendar,
   Info,
 } from "lucide-react";
+import { ModalDialog } from "@/components/ModalDialog";
 import { uploadPatientCSV, getCsvTemplateUrl, getPatientVisits } from "@/lib/api";
 import { CsvUploadResponse, GaitCondition, VisitSummary } from "@/lib/types";
 
@@ -49,7 +50,7 @@ export function UploadCsvModal({
   onClose,
   onSuccess,
 }: Props) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const isKz = lang === "kz";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fetchSeqRef = useRef(0);
 
@@ -66,16 +67,6 @@ export function UploadCsvModal({
   const [selectedVisitKey, setSelectedVisitKey] = useState("");
   const [visitDate, setVisitDate] = useState<string>(getTodayIsoDate);
   const [visitLabel, setVisitLabel] = useState("");
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) {
-      dialog.showModal();
-    } else if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
 
   const applyVisitsResolution = useCallback(
     (
@@ -223,12 +214,14 @@ export function UploadCsvModal({
     }
   };
 
+  const handleClose = () => {
+    if (!uploading) onClose();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
-      setError(
-        lang === "kz" ? "Алдымен CSV файлын таңдаңыз." : "Сначала выберите CSV-файл."
-      );
+      setError(isKz ? "Алдымен CSV файлын таңдаңыз." : "Сначала выберите CSV-файл.");
       return;
     }
 
@@ -251,15 +244,15 @@ export function UploadCsvModal({
       onSuccess(res);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(lang === "kz" ? `Жүктеу қатесі: ${msg}` : `Ошибка загрузки: ${msg}`);
+      setError(isKz ? `Жүктеу қатесі: ${msg}` : `Ошибка загрузки: ${msg}`);
     } finally {
       setUploading(false);
     }
   };
 
   const conditions: Array<{ value: GaitCondition; labelRu: string; labelKz: string }> = [
-    { value: "Baseline", labelRu: "Обычная (Baseline)", labelKz: "Қалыпты (Baseline)" },
-    { value: "Verbal", labelRu: "Голос (Verbal)", labelKz: "Ауызша (Verbal)" },
+    { value: "Baseline", labelRu: "Обычная", labelKz: "Қалыпты" },
+    { value: "Verbal", labelRu: "Голос", labelKz: "Ауызша" },
     { value: "VR", labelRu: "VR-режим", labelKz: "VR-режим" },
   ];
 
@@ -268,114 +261,62 @@ export function UploadCsvModal({
     visitMode === "existing" && visitHasCondition(selectedVisitObj, condition);
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="libra-dialog dialog-narrow"
-      aria-labelledby="upload-csv-title"
-      onCancel={(e) => {
-        if (uploading) e.preventDefault();
-      }}
-      onClose={() => {
-        if (!uploading) onClose();
-      }}
-      onClick={(e) => {
-        if (uploading) return;
-        const dialog = dialogRef.current;
-        if (!dialog) return;
-        const r = dialog.getBoundingClientRect();
-        if (
-          e.clientX < r.left ||
-          e.clientX > r.right ||
-          e.clientY < r.top ||
-          e.clientY > r.bottom
-        ) {
-          onClose();
-        }
-      }}
+    <ModalDialog
+      open={open}
+      onClose={handleClose}
+      labelledBy="upload-csv-title"
+      narrow
+      dismissible={!uploading}
     >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "16px 20px",
-          borderBottom: "1px solid var(--line)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <FileSpreadsheet size={18} strokeWidth={1.6} color="var(--amber)" />
-          <h1 id="upload-csv-title" style={{ fontSize: "16px", fontWeight: 600 }}>
-            {lang === "kz" ? "CSV зерттеу деректерін жүктеу" : "Импорт CSV-данных обследования"}
+      <div className="dialog-header">
+        <div className="cluster">
+          <FileSpreadsheet size={18} strokeWidth={1.6} color="var(--amber)" aria-hidden="true" />
+          <h1 id="upload-csv-title" className="section-title">
+            {isKz ? "CSV зерттеу деректерін жүктеу" : "Импорт CSV-данных обследования"}
           </h1>
         </div>
         <button
           type="button"
-          onClick={onClose}
+          className="btn-icon"
+          onClick={handleClose}
           disabled={uploading}
-          aria-label={lang === "kz" ? "Жабу" : "Закрыть"}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--muted)",
-            padding: "4px",
-          }}
+          aria-label={isKz ? "Жабу" : "Закрыть"}
         >
-          <X size={18} />
+          <X size={18} aria-hidden="true" />
         </button>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          padding: "20px",
-          overflowY: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: "16px",
-        }}
-      >
-        <div>
-          <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink)", marginBottom: "6px" }}>
-            {lang === "kz" ? "Зерттеу шарты" : "Условие пробы"}
+      <form onSubmit={handleSubmit} className="dialog-body stack-md">
+        <div className="stack-xs">
+          <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink)" }}>
+            {isKz ? "Зерттеу шарты" : "Условие пробы"}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
-            {conditions.map((c) => {
-              const active = condition === c.value;
-              return (
-                <button
-                  key={c.value}
-                  type="button"
-                  onClick={() => handleConditionChange(c.value)}
-                  className="btn"
-                  aria-pressed={active}
-                  style={{
-                    padding: "6px 10px",
-                    fontSize: "12px",
-                    background: active ? "var(--ink)" : "var(--paper)",
-                    color: active ? "var(--white)" : "var(--ink)",
-                    borderColor: active ? "var(--ink)" : "var(--line-strong)",
-                  }}
-                >
-                  {lang === "kz" ? c.labelKz : c.labelRu}
-                </button>
-              );
-            })}
+          <div
+            className="seg-group"
+            role="group"
+            aria-label={isKz ? "Зерттеу шарты" : "Условие пробы"}
+            style={{ width: "100%", display: "grid", gridTemplateColumns: "repeat(3, 1fr)" }}
+          >
+            {conditions.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                className="seg-btn"
+                aria-pressed={condition === c.value}
+                onClick={() => handleConditionChange(c.value)}
+              >
+                {isKz ? c.labelKz : c.labelRu}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div>
+        <div className="stack-xs">
           <label
             htmlFor="upload-subject-code"
-            style={{
-              display: "block",
-              fontSize: "12px",
-              fontWeight: 600,
-              color: "var(--ink)",
-              marginBottom: "6px",
-            }}
+            style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink)" }}
           >
-            {lang === "kz" ? "Пациент коды (міндетті емес)" : "Идентификатор пациента (необязательно)"}
+            {isKz ? "Пациент коды (міндетті емес)" : "Код пациента (необязательно)"}
           </label>
           <input
             id="upload-subject-code"
@@ -391,197 +332,138 @@ export function UploadCsvModal({
               }
             }}
             placeholder={
-              lang === "kz"
+              isKz
                 ? "Бос қалдырсаңыз, CSV ішіндегі subject бағаны оқылады"
-                : "Если оставить пустым, коды пациентов считываются из столбца subject"
+                : "Если оставить пустым, коды считаются из столбца subject"
             }
-            style={{ width: "100%" }}
           />
-          <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-            {lang === "kz"
-              ? "Бір файлда бірнеше пациент болса, жүйе әрқайсысын жеке өңдейді. Дербес деректерге (Аты-жөні, ЖСН) тыйым салынады."
-              : "Поддерживаются таблицы с одним или несколькими пациентами (; и запятая). Столбцы с ФИО и ИИН отклоняются (Закон РК № 94-V)."}
-          </div>
+          <p style={{ fontSize: "12px", color: "var(--muted)", lineHeight: 1.45 }}>
+            {isKz
+              ? "Бір файлда бірнеше пациент болса, әрқайсысы бөлек өңделеді. Дербес деректерге (Аты-жөні, ЖСН) тыйым салынады."
+              : "Поддерживаются таблицы с разделителем «;» и «,». Столбцы с ФИО и ИИН отклоняются (Закон РК № 94-V)."}
+          </p>
         </div>
 
         {/* Visit / Session Longitudinal Controls */}
-        <div
-          style={{
-            background: "var(--paper)",
-            border: "1px solid var(--line)",
-            borderRadius: "8px",
-            padding: "12px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "10px",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, color: "var(--ink)" }}>
-              <Calendar size={14} strokeWidth={1.6} color="var(--teal)" />
-              <span>{lang === "kz" ? "Визит / Сессия" : "Визит / Сессия"}</span>
+        <div className="panel-inset stack-sm">
+          <div className="row-between">
+            <div className="cluster" style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink)" }}>
+              <Calendar size={14} strokeWidth={1.6} color="var(--teal)" aria-hidden="true" />
+              <span>{isKz ? "Визит және динамика" : "Визит и динамика"}</span>
             </div>
             {visitsLoading && (
-              <span style={{ fontSize: "11px", color: "var(--muted)" }}>
-                {lang === "kz" ? "Тексерілуде..." : "Поиск визитов..."}
+              <span style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {isKz ? "Тексерілуде..." : "Поиск визитов..."}
               </span>
             )}
           </div>
 
           {existingVisits.length > 0 && (
             <div
+              className="seg-group"
               role="group"
-              aria-label={lang === "kz" ? "Визит режимі" : "Режим сохранения визита"}
-              style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}
+              aria-label={isKz ? "Визит режимі" : "Режим сохранения визита"}
+              style={{ width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr" }}
             >
               <button
                 type="button"
+                className="seg-btn"
                 aria-pressed={visitMode === "new"}
                 onClick={() => {
                   setModeManuallyChosen(true);
                   setVisitMode("new");
                 }}
-                className="btn"
-                style={{
-                  padding: "6px 10px",
-                  fontSize: "12px",
-                  whiteSpace: "normal",
-                  lineHeight: 1.25,
-                  background: visitMode === "new" ? "var(--ink)" : "var(--white)",
-                  color: visitMode === "new" ? "var(--white)" : "var(--ink)",
-                  borderColor: visitMode === "new" ? "var(--ink)" : "var(--line-strong)",
-                }}
               >
-                {lang === "kz"
-                  ? "Жаңа визит (бұрынғы CSV сақталады)"
-                  : "Новый визит (сохранить прошлые CSV)"}
+                {isKz ? "Жаңа визит" : "Новый визит"}
               </button>
               <button
                 type="button"
+                className="seg-btn"
                 aria-pressed={visitMode === "existing"}
                 onClick={() => {
                   setModeManuallyChosen(true);
                   setVisitMode("existing");
                 }}
-                className="btn"
-                style={{
-                  padding: "6px 10px",
-                  fontSize: "12px",
-                  whiteSpace: "normal",
-                  lineHeight: 1.25,
-                  background: visitMode === "existing" ? "var(--ink)" : "var(--white)",
-                  color: visitMode === "existing" ? "var(--white)" : "var(--ink)",
-                  borderColor: visitMode === "existing" ? "var(--ink)" : "var(--line-strong)",
-                }}
               >
-                {lang === "kz" ? "Бар визитқа қосу" : "Добавить к существующему визиту"}
+                {isKz ? "Бар визитқа қосу" : "К текущему визиту"}
               </button>
             </div>
           )}
 
           {visitMode === "new" || existingVisits.length === 0 ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px" }}>
-              <div>
-                <label
-                  htmlFor="upload-visit-date"
-                  style={{ display: "block", fontSize: "11px", color: "var(--muted)", marginBottom: "4px" }}
-                >
-                  {lang === "kz" ? "Визит күні" : "Дата визита"}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "var(--sp-3)" }}>
+              <div className="stack-xs">
+                <label htmlFor="upload-visit-date" style={{ fontSize: "12px", color: "var(--muted)" }}>
+                  {isKz ? "Визит күні" : "Дата визита"}
                 </label>
                 <input
                   id="upload-visit-date"
                   type="date"
                   value={visitDate}
                   onChange={(e) => setVisitDate(e.target.value)}
-                  style={{ width: "100%" }}
                 />
               </div>
-              <div>
-                <label
-                  htmlFor="upload-visit-label"
-                  style={{ display: "block", fontSize: "11px", color: "var(--muted)", marginBottom: "4px" }}
-                >
-                  {lang === "kz" ? "Визит атауы (міндетті емес)" : "Название визита (необязательно)"}
+              <div className="stack-xs">
+                <label htmlFor="upload-visit-label" style={{ fontSize: "12px", color: "var(--muted)" }}>
+                  {isKz ? "Визит атауы (міндетті емес)" : "Название (необязательно)"}
                 </label>
                 <input
                   id="upload-visit-label"
                   type="text"
                   value={visitLabel}
                   onChange={(e) => setVisitLabel(e.target.value)}
-                  placeholder={
-                    lang === "kz" ? "Мысалы: Қайталау курсы (3 ай)" : "Повторный курс (3 мес)"
-                  }
-                  style={{ width: "100%" }}
+                  placeholder={isKz ? "Қайталау курсы (3 ай)" : "Повторный курс (3 мес)"}
                 />
               </div>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              <div>
-                <label
-                  htmlFor="upload-existing-visit"
-                  style={{ display: "block", fontSize: "11px", color: "var(--muted)", marginBottom: "4px" }}
-                >
-                  {lang === "kz" ? "Мақсатты визит" : "Выберите визит пациента"}
-                </label>
-                <select
-                  id="upload-existing-visit"
-                  value={selectedVisitKey}
-                  onChange={(e) => setSelectedVisitKey(e.target.value)}
-                  style={{ width: "100%" }}
-                >
-                  {existingVisits.map((v) => {
-                    const label = lang === "kz" && v.visit_label_kz ? v.visit_label_kz : v.visit_label;
-                    const condsText = v.conditions.length > 0 ? v.conditions.join(" / ") : "—";
-                    return (
-                      <option key={v.visit_key} value={v.visit_key}>
-                        {label} {v.visit_date ? `(${v.visit_date})` : ""} · [{condsText}]
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              <div
-                style={{
-                  fontSize: "11.5px",
-                  lineHeight: 1.45,
-                  padding: "8px 10px",
-                  borderRadius: "6px",
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "6px",
-                  background: willOverwriteCondition ? "var(--amber-bg)" : "var(--teal-bg)",
-                  border: `1px solid ${willOverwriteCondition ? "var(--amber-border)" : "var(--teal-border)"}`,
-                  color: willOverwriteCondition ? "var(--amber)" : "var(--teal)",
-                }}
+            <div className="stack-xs">
+              <label htmlFor="upload-existing-visit" style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {isKz ? "Мақсатты визит" : "Выберите визит пациента"}
+              </label>
+              <select
+                id="upload-existing-visit"
+                value={selectedVisitKey}
+                onChange={(e) => setSelectedVisitKey(e.target.value)}
               >
-                <Info size={14} style={{ flexShrink: 0, marginTop: "2px" }} />
+                {existingVisits.map((v) => {
+                  const label = isKz && v.visit_label_kz ? v.visit_label_kz : v.visit_label;
+                  const condsText = v.conditions.length > 0 ? v.conditions.join(" / ") : "—";
+                  return (
+                    <option key={v.visit_key} value={v.visit_key}>
+                      {label} {v.visit_date ? `(${v.visit_date})` : ""} · [{condsText}]
+                    </option>
+                  );
+                })}
+              </select>
+
+              <div
+                className={`callout ${willOverwriteCondition ? "callout-amber" : "callout-teal"}`}
+                style={{ padding: "var(--sp-2) var(--sp-3)", fontSize: "12px", marginTop: "var(--sp-1)" }}
+              >
+                <Info
+                  size={14}
+                  color={willOverwriteCondition ? "var(--amber)" : "var(--teal)"}
+                  style={{ flexShrink: 0, marginTop: "2px" }}
+                  aria-hidden="true"
+                />
                 <span>
                   {willOverwriteCondition
-                    ? lang === "kz"
+                    ? isKz
                       ? `Бұл визитта «${condition}» сынамасы бұрыннан бар — жаңа файл оны жаңартады.`
                       : `В этом визите уже есть проба ${condition} — загрузка обновит её.`
-                    : lang === "kz"
-                    ? `Таңдалған визитқа «${condition}» сынамасы қосылады (бұрынғы сынамалар сақталады).`
-                    : `Добавит пробу ${condition} к выбранному визиту (существующие пробы сохранятся).`}
+                    : isKz
+                      ? `Таңдалған визитқа «${condition}» сынамасы қосылады (бұрынғы сынамалар сақталады).`
+                      : `Добавит пробу ${condition} к выбранному визиту (существующие пробы сохранятся).`}
                 </span>
               </div>
             </div>
           )}
         </div>
 
-        <div>
-          <label
-            htmlFor="upload-csv-file"
-            style={{
-              display: "block",
-              fontSize: "12px",
-              fontWeight: 600,
-              color: "var(--ink)",
-              marginBottom: "6px",
-            }}
-          >
-            {lang === "kz" ? "CSV файлы" : "Файл данных (.csv)"}
+        <div className="stack-xs">
+          <label htmlFor="upload-csv-file" style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink)" }}>
+            {isKz ? "CSV файлы" : "Файл данных (.csv)"}
           </label>
           <input
             ref={fileInputRef}
@@ -592,101 +474,64 @@ export function UploadCsvModal({
               setFile(e.target.files?.[0] || null);
               setError(null);
             }}
-            style={{ width: "100%", padding: "8px", background: "var(--paper)" }}
+            style={{
+              padding: "var(--sp-2)",
+              background: "var(--paper)",
+              border: "1px solid var(--line-strong)",
+              borderRadius: "var(--r-md)",
+            }}
           />
         </div>
 
-        <div
-          style={{
-            background: "var(--paper)",
-            border: "1px solid var(--line)",
-            borderRadius: "8px",
-            padding: "12px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-          }}
-        >
+        <div className="panel-inset stack-xs">
           <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--ink)" }}>
-            {lang === "kz" ? "Үлгі CSV шаблондарды жүктеу" : "Скачать шаблоны CSV"}
+            {isKz ? "Үлгі CSV шаблондарды жүктеу" : "Скачать шаблоны CSV"}
           </div>
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            <a
-              href={getCsvTemplateUrl("vicon")}
-              download="libra_template_vicon.csv"
-              className="btn"
-              style={{ fontSize: "12px", padding: "6px 10px" }}
-            >
-              <Download size={14} />
+          <div className="cluster">
+            <a href={getCsvTemplateUrl("vicon")} download="libra_template_vicon.csv" className="btn btn-sm">
+              <Download size={14} aria-hidden="true" />
               <span>Vicon / GRAIL</span>
             </a>
-            <a
-              href={getCsvTemplateUrl("imu")}
-              download="libra_template_imu.csv"
-              className="btn"
-              style={{ fontSize: "12px", padding: "6px 10px" }}
-            >
-              <Download size={14} />
-              <span>{lang === "kz" ? "IMU сенсорлары" : "Датчики IMU"}</span>
+            <a href={getCsvTemplateUrl("imu")} download="libra_template_imu.csv" className="btn btn-sm">
+              <Download size={14} aria-hidden="true" />
+              <span>{isKz ? "IMU сенсорлары" : "Датчики IMU"}</span>
             </a>
             <a
               href={getCsvTemplateUrl("kinematics")}
               download="libra_template_kinematics.csv"
-              className="btn"
-              style={{ fontSize: "12px", padding: "6px 10px" }}
+              className="btn btn-sm"
             >
-              <Download size={14} />
-              <span>{lang === "kz" ? "51-нүктелі кинематика" : "51-точечные кривые"}</span>
+              <Download size={14} aria-hidden="true" />
+              <span>{isKz ? "51-нүктелі кинематика" : "51-точечные кривые"}</span>
             </a>
           </div>
         </div>
 
         {error && (
-          <div
-            role="alert"
-            style={{
-              background: "var(--red-bg)",
-              border: "1px solid var(--red-border)",
-              color: "var(--red)",
-              borderRadius: "8px",
-              padding: "10px 12px",
-              fontSize: "12px",
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "8px",
-            }}
-          >
-            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "1px" }} />
-            <span>{error}</span>
+          <div className="callout callout-red" role="alert" style={{ padding: "var(--sp-3)" }}>
+            <AlertCircle size={16} color="var(--red)" style={{ flexShrink: 0, marginTop: "2px" }} aria-hidden="true" />
+            <span style={{ color: "var(--red)", fontSize: "12px" }}>{error}</span>
           </div>
         )}
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: "10px",
-            paddingTop: "12px",
-            borderTop: "1px solid var(--line)",
-          }}
-        >
-          <button type="button" onClick={onClose} className="btn" disabled={uploading}>
-            {lang === "kz" ? "Болдырмау" : "Отмена"}
+        <div className="cluster" style={{ justifyContent: "flex-end", paddingTop: "var(--sp-3)", borderTop: "1px solid var(--line)" }}>
+          <button type="button" onClick={handleClose} className="btn" disabled={uploading}>
+            {isKz ? "Болдырмау" : "Отмена"}
           </button>
           <button type="submit" className="btn btn-teal" disabled={uploading || !file}>
-            <Upload size={15} />
+            <Upload size={15} aria-hidden="true" />
             <span>
               {uploading
-                ? lang === "kz"
+                ? isKz
                   ? "Өңделуде..."
                   : "Обработка..."
-                : lang === "kz"
-                ? "Тізілімге жүктеу"
-                : "Импортировать"}
+                : isKz
+                  ? "Тізілімге жүктеу"
+                  : "Импортировать"}
             </span>
           </button>
         </div>
       </form>
-    </dialog>
+    </ModalDialog>
   );
 }

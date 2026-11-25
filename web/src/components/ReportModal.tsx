@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { FileText, Printer, X, Shield, Download } from "lucide-react";
+import { ModalDialog } from "@/components/ModalDialog";
 import { createReport, downloadReportPdf } from "@/lib/api";
+import { cleanClinicalText } from "@/lib/format";
 
 interface Props {
   open: boolean;
@@ -12,8 +14,13 @@ interface Props {
   onClose: () => void;
 }
 
-export function ReportModal({ open, patientCode, visitKey, lang: initialLang, onClose }: Props) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+export function ReportModal({
+  open,
+  patientCode,
+  visitKey,
+  lang: initialLang,
+  onClose,
+}: Props) {
   const [modalLang, setModalLang] = useState<"ru" | "kz">(initialLang);
   const [audience, setAudience] = useState<"doctor" | "parent">("doctor");
   const [loading, setLoading] = useState(false);
@@ -23,24 +30,14 @@ export function ReportModal({ open, patientCode, visitKey, lang: initialLang, on
   const [report, setReport] = useState<{
     narrative: string;
     created_at: string;
-    pcr: number;
-    tje: number;
+    pcr: number | null;
+    tje: number | null;
     icf_b770: string;
   } | null>(null);
 
   useEffect(() => {
     setModalLang(initialLang);
   }, [initialLang]);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) {
-      dialog.showModal();
-    } else if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,167 +66,125 @@ export function ReportModal({ open, patientCode, visitKey, lang: initialLang, on
   const formattedDate = (() => {
     if (!report?.created_at) return "";
     const d = new Date(report.created_at);
-    if (isNaN(d.getTime())) return report.created_at;
+    if (Number.isNaN(d.getTime())) return report.created_at;
     return d.toLocaleString(modalLang === "kz" ? "kk-KZ" : "ru-RU");
   })();
 
+  const isKz = modalLang === "kz";
+
   return (
-    <dialog
-      ref={dialogRef}
-      className="libra-dialog"
-      aria-labelledby="report-modal-title"
-      onClose={onClose}
-      onClick={(e) => {
-        const dialog = dialogRef.current;
-        if (!dialog) return;
-        const r = dialog.getBoundingClientRect();
-        if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) {
-          onClose();
-        }
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "16px 24px",
-          borderBottom: "1px solid var(--line)",
-          flexWrap: "wrap",
-          gap: "12px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <FileText size={18} strokeWidth={1.6} color="var(--teal)" />
-          <h1 id="report-modal-title" style={{ fontSize: "16px", fontWeight: 600 }}>
+    <ModalDialog open={open} onClose={onClose} labelledBy="report-modal-title">
+      <div className="dialog-header">
+        <div className="cluster">
+          <FileText size={18} strokeWidth={1.6} color="var(--teal)" aria-hidden="true" />
+          <h1 id="report-modal-title" className="section-title">
             {audience === "doctor"
-              ? modalLang === "kz"
+              ? isKz
                 ? `Дәрігерлік хаттама · ${patientCode}`
                 : `Клинический протокол · ${patientCode}`
-              : modalLang === "kz"
-              ? `Баланың жүріс төлқұжаты · ${patientCode}`
-              : `Паспорт походки ребенка · ${patientCode}`}
+              : isKz
+                ? `Баланың жүріс төлқұжаты · ${patientCode}`
+                : `Паспорт походки ребёнка · ${patientCode}`}
           </h1>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }} className="no-print">
-          <div style={{ display: "inline-flex", background: "var(--sidebar)", borderRadius: "8px", border: "1px solid var(--line)", padding: "2px" }}>
+        <div className="cluster no-print">
+          <div
+            className="seg-group"
+            role="group"
+            aria-label={isKz ? "Есеп адресаты" : "Адресат отчёта"}
+          >
             <button
               type="button"
+              className="seg-btn"
               onClick={() => setAudience("doctor")}
               aria-pressed={audience === "doctor"}
-              style={{
-                padding: "4px 10px",
-                fontSize: "12px",
-                fontWeight: 500,
-                border: "none",
-                borderRadius: "6px",
-                background: audience === "doctor" ? "var(--ink)" : "transparent",
-                color: audience === "doctor" ? "var(--white)" : "var(--ink)",
-                cursor: "pointer",
-              }}
             >
-              {modalLang === "kz" ? "Дәрігерге" : "Врачу"}
+              {isKz ? "Дәрігерге" : "Врачу"}
             </button>
             <button
               type="button"
+              className="seg-btn"
               onClick={() => setAudience("parent")}
               aria-pressed={audience === "parent"}
-              style={{
-                padding: "4px 10px",
-                fontSize: "12px",
-                fontWeight: 500,
-                border: "none",
-                borderRadius: "6px",
-                background: audience === "parent" ? "var(--ink)" : "transparent",
-                color: audience === "parent" ? "var(--white)" : "var(--ink)",
-                cursor: "pointer",
-              }}
             >
-              {modalLang === "kz" ? "Ата-анаға" : "Родителям"}
+              {isKz ? "Ата-анаға" : "Родителям"}
             </button>
           </div>
 
-          <div style={{ display: "inline-flex", border: "1px solid var(--line-strong)", borderRadius: "8px", overflow: "hidden" }}>
+          <div
+            className="seg-group"
+            role="group"
+            aria-label={isKz ? "Хаттама тілі" : "Язык отчёта"}
+          >
             <button
               type="button"
+              className="seg-btn seg-btn-light"
               onClick={() => setModalLang("ru")}
               aria-pressed={modalLang === "ru"}
-              style={{
-                padding: "4px 10px",
-                fontSize: "12px",
-                fontWeight: modalLang === "ru" ? 600 : 500,
-                border: "none",
-                background: modalLang === "ru" ? "var(--sidebar)" : "var(--white)",
-                color: "var(--ink)",
-                cursor: "pointer",
-              }}
             >
               РУС
             </button>
             <button
               type="button"
+              className="seg-btn seg-btn-light"
               onClick={() => setModalLang("kz")}
               aria-pressed={modalLang === "kz"}
-              style={{
-                padding: "4px 10px",
-                fontSize: "12px",
-                fontWeight: modalLang === "kz" ? 600 : 500,
-                border: "none",
-                borderInlineStart: "1px solid var(--line)",
-                background: modalLang === "kz" ? "var(--sidebar)" : "var(--white)",
-                color: "var(--ink)",
-                cursor: "pointer",
-              }}
             >
               ҚАЗ
             </button>
           </div>
 
-          <button type="button" onClick={onClose} aria-label={modalLang === "kz" ? "Жабу" : "Закрыть"} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "4px" }}>
-            <X size={18} />
+          <button
+            type="button"
+            className="btn-icon"
+            onClick={onClose}
+            aria-label={isKz ? "Жабу" : "Закрыть"}
+          >
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
       </div>
 
-      {/* Body */}
-      <div style={{ padding: "20px 24px", overflowY: "auto", flex: 1 }}>
+      <div className="dialog-body">
         {loading ? (
-          <div style={{ padding: "40px", textAlign: "center", color: "var(--muted)" }}>
-            {modalLang === "kz" ? "Хаттама дайындалуда..." : "Формирование заключения..."}
+          <div style={{ padding: "var(--sp-8)", textAlign: "center", color: "var(--muted)" }}>
+            {isKz ? "Хаттама дайындалуда..." : "Формирование заключения..."}
           </div>
         ) : reportError ? (
-          <div role="alert" style={{ padding: "16px", background: "var(--red-bg)", border: "1px solid var(--red-border)", borderRadius: "8px", color: "var(--red)", fontSize: "13px" }}>
-            <strong>{modalLang === "kz" ? "Қате:" : "Ошибка формирования:"}</strong> {reportError}
+          <div className="callout callout-red" role="alert">
+            <div style={{ color: "var(--red)", fontSize: "13px" }}>
+              <strong>{isKz ? "Қате:" : "Ошибка формирования:"}</strong> {reportError}
+            </div>
           </div>
         ) : report ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "8px", fontSize: "12px", color: "var(--muted)" }}>
-              <span>{modalLang === "kz" ? "Libra СППР · Жүріс биомеханикасының есебі" : "Libra СППР · Протокол биомеханики походки"}</span>
+          <div className="stack-md">
+            <div className="row-between" style={{ fontSize: "12px", color: "var(--muted)" }}>
+              <span>
+                {isKz
+                  ? "Libra СППР · Жүріс биомеханикасының есебі"
+                  : "Libra СППР · Протокол биомеханики походки"}
+              </span>
               <span className="tabular-nums">{formattedDate}</span>
             </div>
 
             <div
+              className="panel-inset"
               style={{
-                background: "var(--paper)",
-                border: "1px solid var(--line)",
-                borderRadius: "8px",
-                padding: "16px",
-                fontFamily: "var(--sans)",
+                padding: "var(--sp-4)",
                 fontSize: "13px",
                 lineHeight: 1.65,
                 whiteSpace: "pre-line",
                 color: "var(--ink)",
               }}
             >
-              {report.narrative}
+              {cleanClinicalText(report.narrative)}
             </div>
 
-            <div style={{ fontSize: "12px", color: "var(--muted)", display: "flex", alignItems: "center", gap: "6px" }}>
-              <Shield size={14} color="var(--teal)" />
+            <div style={{ fontSize: "12px", color: "var(--muted)", display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+              <Shield size={14} color="var(--teal)" aria-hidden="true" />
               <span>
-                {modalLang === "kz"
+                {isKz
                   ? "Шұғыл жағдайларда 103 нөміріне қоңырау шалыңыз. Қорытынды емдеуші дәрігердің растауына жатады."
                   : "В экстренных ситуациях звоните 103. Окончательное решение принимает лечащий врач."}
               </span>
@@ -238,16 +193,15 @@ export function ReportModal({ open, patientCode, visitKey, lang: initialLang, on
         ) : null}
       </div>
 
-      {/* Footer actions */}
-      <div style={{ padding: "14px 24px", borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: "8px" }} className="no-print">
+      <div className="dialog-footer no-print">
         {pdfError && (
           <div role="alert" style={{ fontSize: "12px", color: "var(--red)", fontWeight: 500 }}>
             {pdfError}
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", flexWrap: "wrap" }}>
+        <div className="cluster" style={{ justifyContent: "flex-end" }}>
           <button type="button" onClick={onClose} className="btn">
-            {modalLang === "kz" ? "Жабу" : "Закрыть"}
+            {isKz ? "Жабу" : "Закрыть"}
           </button>
           <button
             type="button"
@@ -258,7 +212,7 @@ export function ReportModal({ open, patientCode, visitKey, lang: initialLang, on
                 await downloadReportPdf(patientCode, modalLang, audience, visitKey);
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
-                setPdfError(modalLang === "kz" ? `PDF жүктеу қатесі: ${msg}` : `Ошибка выгрузки PDF: ${msg}`);
+                setPdfError(isKz ? `PDF жүктеу қатесі: ${msg}` : `Ошибка выгрузки PDF: ${msg}`);
               } finally {
                 setPdfLoading(false);
               }
@@ -266,23 +220,23 @@ export function ReportModal({ open, patientCode, visitKey, lang: initialLang, on
             disabled={pdfLoading}
             className="btn btn-teal"
           >
-            <Download size={15} />
+            <Download size={15} aria-hidden="true" />
             <span>
               {pdfLoading
-                ? modalLang === "kz"
+                ? isKz
                   ? "PDF дайындалуда..."
                   : "Подготовка PDF..."
-                : modalLang === "kz"
-                ? "PDF есепті жүктеу"
-                : "Скачать отчёт PDF"}
+                : isKz
+                  ? "PDF есепті жүктеу"
+                  : "Скачать отчёт PDF"}
             </span>
           </button>
           <button type="button" onClick={() => window.print()} className="btn btn-primary">
-            <Printer size={15} />
-            <span>{modalLang === "kz" ? "Басып шығару" : "Печать"}</span>
+            <Printer size={15} aria-hidden="true" />
+            <span>{isKz ? "Басып шығару" : "Печать"}</span>
           </button>
         </div>
       </div>
-    </dialog>
+    </ModalDialog>
   );
 }

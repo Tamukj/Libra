@@ -1,669 +1,398 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
-import { useLanguage } from "@/lib/LanguageContext";
+import React, { useEffect, useState } from "react";
+import { ArrowRight, GitCompare } from "lucide-react";
 import { getPatientDiff } from "@/lib/api";
-import { GaitCondition, GaitDiffResponse, VisitSummary } from "@/lib/types";
-import {
-  ArrowRight,
-  CheckCircle2,
-  AlertTriangle,
-  ShieldAlert,
-  ArrowLeftRight,
-} from "lucide-react";
+import { cleanClinicalText, fmtFixed, fmtPcr, fmtSigned } from "@/lib/format";
+import { useLanguage } from "@/lib/LanguageContext";
+import type { GaitCondition, GaitDiffResponse, VisitSummary } from "@/lib/types";
 
-interface Props {
+interface GaitDiffViewerProps {
   patientCode: string;
   visits?: VisitSummary[];
   activeVisitKey?: string;
 }
 
-const ALL_CONDITIONS: GaitCondition[] = ["Baseline", "Verbal", "VR"];
-
-function pickBestCondition(
-  conditions: string[],
-  preferred?: GaitCondition
-): GaitCondition {
-  const norm = new Set(conditions.map((c) => c.toLowerCase()));
-  if (preferred && norm.has(preferred.toLowerCase())) return preferred;
-  if (norm.has("vr")) return "VR";
-  if (norm.has("verbal")) return "Verbal";
-  if (norm.has("baseline")) return "Baseline";
-  return preferred ?? "Baseline";
-}
-
-function getVisitConditions(visit?: VisitSummary): GaitCondition[] {
-  if (!visit || visit.conditions.length === 0) return ALL_CONDITIONS;
-  const matched = ALL_CONDITIONS.filter((cond) =>
-    visit.conditions.some((c) => c.toLowerCase() === cond.toLowerCase())
-  );
-  return matched.length > 0 ? matched : ALL_CONDITIONS;
-}
-
-function formatVisitOption(v: VisitSummary, lang: "ru" | "kz"): string {
-  const label = lang === "kz" && v.visit_label_kz ? v.visit_label_kz : v.visit_label;
-  return v.visit_date ? `${label} (${v.visit_date})` : label;
+function getConditionLabel(
+  condition: string,
+  lang: "ru" | "kz",
+  fallbackLabel?: string
+): string {
+  const norm = condition.toLowerCase();
+  if (norm === "baseline") return lang === "kz" ? "Қалыпты жүріс" : "Обычная ходьба";
+  if (norm === "verbal") return lang === "kz" ? "Ауызша нұсқау" : "Голосовые инструкции";
+  if (norm === "vr") return lang === "kz" ? "VR-кері байланыс" : "VR-обратная связь";
+  return fallbackLabel || condition;
 }
 
 export function GaitDiffViewer({
   patientCode,
   visits = [],
   activeVisitKey,
-}: Props) {
-  const fmtFixed = (v: number | null | undefined, d = 1, unit = "") =>
-    typeof v === "number" && Number.isFinite(v) ? `${v.toFixed(d)}${unit}` : "—";
-  const fmtDiffSigned = (v: number | null | undefined, d = 1, unit = "") =>
-    typeof v === "number" && Number.isFinite(v)
-      ? `${v > 0 ? `+${v.toFixed(d)}` : v.toFixed(d)}${unit}`
-      : "—";
-
+}: GaitDiffViewerProps) {
   const { lang } = useLanguage();
+  const isKz = lang === "kz";
+
   const hasMultipleVisits = visits.length >= 2;
-
-  const activeVisit = useMemo(
-    () =>
-      visits.find((v) => v.visit_key === activeVisitKey) ??
-      visits.find((v) => v.is_latest) ??
-      visits[0],
-    [visits, activeVisitKey]
-  );
-
   const [compareMode, setCompareMode] = useState<"within" | "cross">("within");
   const [withinSessionB, setWithinSessionB] = useState<"VR" | "Verbal">("VR");
-
   const [visitA, setVisitA] = useState<string>("");
   const [visitB, setVisitB] = useState<string>("");
-  const [crossSessionA, setCrossSessionA] = useState<GaitCondition>("VR");
-  const [crossSessionB, setCrossSessionB] = useState<GaitCondition>("VR");
-
+  const [crossSessionA, setCrossSessionA] = useState<GaitCondition>("Baseline");
+  const [crossSessionB, setCrossSessionB] = useState<GaitCondition>("Baseline");
   const [diff, setDiff] = useState<GaitDiffResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [diffError, setDiffError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!activeVisit) return;
-    const conds = activeVisit.conditions.map((c) => c.toLowerCase());
-    if (!conds.includes("vr") && conds.includes("verbal")) {
-      setWithinSessionB("Verbal");
-    } else if (conds.includes("vr")) {
-      setWithinSessionB("VR");
-    }
-  }, [activeVisit]);
-
-  useEffect(() => {
-    if (visits.length < 2) {
-      setCompareMode("within");
-      setVisitA("");
-      setVisitB("");
-      return;
-    }
-
-    const latestVisit =
-      visits.find((v) => v.visit_key === activeVisitKey) ??
-      visits.find((v) => v.is_latest) ??
-      visits[visits.length - 1];
-
-    const otherVisits = visits.filter((v) => v.visit_key !== latestVisit.visit_key);
-    const earlierVisit = otherVisits[0] ?? visits[0];
-
-    setVisitA((prev) =>
-      visits.some((v) => v.visit_key === prev) ? prev : earlierVisit.visit_key
-    );
-    setVisitB((prev) =>
-      visits.some((v) => v.visit_key === prev) ? prev : latestVisit.visit_key
-    );
-
-    const shared = ALL_CONDITIONS.slice()
-      .reverse()
-      .find(
-        (c) =>
-          earlierVisit.conditions.some((vc) => vc.toLowerCase() === c.toLowerCase()) &&
-          latestVisit.conditions.some((vc) => vc.toLowerCase() === c.toLowerCase())
+    if (visits.length >= 2) {
+      const oldest = visits[visits.length - 1]?.visit_key ?? visits[0].visit_key;
+      const latest = activeVisitKey || visits[0].visit_key;
+      setVisitA((prev) =>
+        prev && visits.some((v) => v.visit_key === prev) ? prev : oldest
       );
-    setCrossSessionA(pickBestCondition(earlierVisit.conditions, shared));
-    setCrossSessionB(pickBestCondition(latestVisit.conditions, shared));
+      setVisitB((prev) => {
+        if (prev && visits.some((v) => v.visit_key === prev)) return prev;
+        return latest !== oldest ? latest : visits[0].visit_key;
+      });
+    } else if (visits.length === 1) {
+      setVisitA(visits[0].visit_key);
+      setVisitB(visits[0].visit_key);
+      setCompareMode("within");
+    }
   }, [visits, activeVisitKey]);
-
-  const visitObjA = useMemo(
-    () => visits.find((v) => v.visit_key === visitA),
-    [visits, visitA]
-  );
-  const visitObjB = useMemo(
-    () => visits.find((v) => v.visit_key === visitB),
-    [visits, visitB]
-  );
-
-  const condOptionsA = useMemo(() => getVisitConditions(visitObjA), [visitObjA]);
-  const condOptionsB = useMemo(() => getVisitConditions(visitObjB), [visitObjB]);
 
   useEffect(() => {
     let active = true;
-    async function loadDiff() {
-      if (compareMode === "cross" && (!visitA || !visitB)) {
-        return;
-      }
-      setLoading(true);
-      setDiffError(null);
-      try {
-        const res =
-          compareMode === "cross"
-            ? await getPatientDiff(
-                patientCode,
-                crossSessionA,
-                crossSessionB,
-                lang,
-                visitA,
-                visitB
-              )
-            : await getPatientDiff(
-                patientCode,
-                "Baseline",
-                withinSessionB,
-                lang,
-                activeVisitKey,
-                activeVisitKey
-              );
+    const isCross = compareMode === "cross" && hasMultipleVisits && visitA && visitB;
+    const sessA = isCross ? crossSessionA : "Baseline";
+    const sessB = isCross ? crossSessionB : withinSessionB;
+    const vA = isCross ? visitA : activeVisitKey;
+    const vB = isCross ? visitB : activeVisitKey;
+
+    setLoading(true);
+    setDiffError(null);
+
+    getPatientDiff(patientCode, sessA, sessB, lang, vA, vB)
+      .then((res) => {
         if (active) setDiff(res);
-      } catch (err) {
+      })
+      .catch((err) => {
         if (active) {
           setDiff(null);
-          setDiffError(err instanceof Error ? err.message : String(err));
+          setDiffError(
+            err instanceof Error
+              ? err.message
+              : isKz
+                ? "Салыстыру деректері қолжетімсіз"
+                : "Данные сравнения недоступны"
+          );
         }
-      } finally {
+      })
+      .finally(() => {
         if (active) setLoading(false);
-      }
-    }
-    loadDiff();
+      });
+
     return () => {
       active = false;
     };
   }, [
     patientCode,
-    lang,
     compareMode,
     withinSessionB,
-    activeVisitKey,
     visitA,
     visitB,
     crossSessionA,
     crossSessionB,
+    activeVisitKey,
+    hasMultipleVisits,
+    lang,
+    isKz,
   ]);
 
-  const handleVisitAChange = (nextKey: string) => {
-    setVisitA(nextKey);
-    const nextVisit = visits.find((v) => v.visit_key === nextKey);
-    if (nextVisit) {
-      setCrossSessionA(pickBestCondition(nextVisit.conditions, crossSessionB));
-    }
+  const statusConfig = {
+    improved: {
+      callout: "callout-teal",
+      badge: "badge-green",
+      label: isKz ? "Оң серпін" : "Положительная динамика",
+    },
+    regressed: {
+      callout: "callout-amber",
+      badge: "badge-yellow",
+      label: isKz ? "Қауіп немесе компенсация" : "Перегрузка или компенсация",
+    },
+    stable: {
+      callout: "",
+      badge: "badge-neutral",
+      label: isKz ? "Өзгеріссіз" : "Стабильно",
+    },
   };
 
-  const handleVisitBChange = (nextKey: string) => {
-    setVisitB(nextKey);
-    const nextVisit = visits.find((v) => v.visit_key === nextKey);
-    if (nextVisit) {
-      setCrossSessionB(pickBestCondition(nextVisit.conditions, crossSessionA));
-    }
-  };
+  const activeStatus = diff
+    ? statusConfig[diff.status] || statusConfig.stable
+    : statusConfig.stable;
+
+  const visitSelectA = visits.find((v) => v.visit_key === visitA);
+  const visitSelectB = visits.find((v) => v.visit_key === visitB);
+  const visitNameA = visitSelectA
+    ? isKz
+      ? visitSelectA.visit_label_kz || visitSelectA.visit_label
+      : visitSelectA.visit_label
+    : null;
+  const visitNameB = visitSelectB
+    ? isKz
+      ? visitSelectB.visit_label_kz || visitSelectB.visit_label
+      : visitSelectB.visit_label
+    : null;
 
   return (
-    <section
-      className="surface"
-      aria-label={lang === "kz" ? "Режимдер арасындағы динамика" : "Динамика между пробами"}
-      style={{ display: "flex", flexDirection: "column", gap: "16px" }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: "12px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <ArrowLeftRight size={18} strokeWidth={1.6} color="var(--teal)" />
+    <section className="surface stack-md" aria-labelledby="gait-diff-heading">
+      <div className="row-between">
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
+          <GitCompare size={18} strokeWidth={1.6} color="var(--teal)" aria-hidden="true" />
           <div>
-            <h2 style={{ fontSize: "16px", fontWeight: 600 }}>
-              {compareMode === "cross"
-                ? lang === "kz"
-                  ? "Визиттер арасындағы клиникалық динамика"
-                  : "Сравнение показателей между визитами"
-                : lang === "kz"
-                ? "Зерттеу режимдері арасындағы клиникалық динамика"
-                : "Динамика показателей между пробами обследования"}
+            <h2 id="gait-diff-heading" className="section-title">
+              {isKz ? "Динамиканы және режимдерді салыстыру" : "Сравнение динамики и режимов"}
             </h2>
-            <p style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>
-              {compareMode === "cross"
-                ? lang === "kz"
-                  ? "Екі визиттегі GDI, GPS, TJE, PCR және МКФ мәндерін салыстыру"
-                  : "Сопоставление GDI, GPS, TJE, PCR и МКФ ВОЗ между двумя датами обследования"
-                : lang === "kz"
-                ? "Қалыпты жүріс пен кері байланыс сынамасы арасындағы GDI, GPS, TJE, PCR және МКФ өзгерістері"
-                : "Сопоставление исходного стереотипа с пробой обратной связи по индексам GDI, GPS, TJE, PCR и МКФ ВОЗ"}
+            <p className="section-subtitle">
+              {hasMultipleVisits
+                ? isKz
+                  ? "Бір визит ішіндегі сессиялар немесе уақыт бойынша сапарлар"
+                  : "Сессии внутри визита или динамика между посещениями"
+                : isKz
+                  ? "Қалыпты жүріс пен жаттығу режимдерінің айырмашылығы"
+                  : "Сопоставление обычной ходьбы с режимами обратной связи"}
             </p>
           </div>
         </div>
 
-        <div
-          role="group"
-          aria-label={lang === "kz" ? "Салыстыру режимі" : "Режим сравнения"}
-          style={{
-            display: "inline-flex",
-            flexWrap: "wrap",
-            gap: "2px",
-            background: "var(--sidebar)",
-            padding: "3px",
-            borderRadius: "8px",
-            border: "1px solid var(--line)",
-          }}
-        >
-          <button
-            type="button"
-            aria-pressed={compareMode === "within" && withinSessionB === "VR"}
-            onClick={() => {
-              setCompareMode("within");
-              setWithinSessionB("VR");
-            }}
-            style={{
-              padding: "5px 12px",
-              fontSize: "12px",
-              fontWeight: 500,
-              border: "none",
-              borderRadius: "6px",
-              background:
-                compareMode === "within" && withinSessionB === "VR"
-                  ? "var(--ink)"
-                  : "transparent",
-              color:
-                compareMode === "within" && withinSessionB === "VR"
-                  ? "var(--white)"
-                  : "var(--ink)",
-              cursor: "pointer",
-            }}
-          >
-            {lang === "kz" ? "Қалыпты → VR" : "Обычная → VR"}
-          </button>
-          <button
-            type="button"
-            aria-pressed={compareMode === "within" && withinSessionB === "Verbal"}
-            onClick={() => {
-              setCompareMode("within");
-              setWithinSessionB("Verbal");
-            }}
-            style={{
-              padding: "5px 12px",
-              fontSize: "12px",
-              fontWeight: 500,
-              border: "none",
-              borderRadius: "6px",
-              background:
-                compareMode === "within" && withinSessionB === "Verbal"
-                  ? "var(--ink)"
-                  : "transparent",
-              color:
-                compareMode === "within" && withinSessionB === "Verbal"
-                  ? "var(--white)"
-                  : "var(--ink)",
-              cursor: "pointer",
-            }}
-          >
-            {lang === "kz" ? "Қалыпты → Ауызша" : "Обычная → Голос"}
-          </button>
+        <div className="cluster">
           {hasMultipleVisits && (
-            <button
-              type="button"
-              aria-pressed={compareMode === "cross"}
-              onClick={() => setCompareMode("cross")}
-              style={{
-                padding: "5px 12px",
-                fontSize: "12px",
-                fontWeight: 500,
-                border: "none",
-                borderRadius: "6px",
-                background: compareMode === "cross" ? "var(--ink)" : "transparent",
-                color: compareMode === "cross" ? "var(--white)" : "var(--ink)",
-                cursor: "pointer",
-              }}
+            <div
+              className="seg-group"
+              role="group"
+              aria-label={isKz ? "Салыстыру ауқымы" : "Режим сравнения"}
             >
-              {lang === "kz" ? "Визиттерді салыстыру" : "Сравнение визитов"}
-            </button>
+              <button
+                type="button"
+                className="seg-btn"
+                aria-pressed={compareMode === "within"}
+                onClick={() => setCompareMode("within")}
+              >
+                {isKz ? "Визит ішінде" : "Внутри визита"}
+              </button>
+              <button
+                type="button"
+                className="seg-btn"
+                aria-pressed={compareMode === "cross"}
+                onClick={() => setCompareMode("cross")}
+              >
+                {isKz ? "Визиттер арасында" : "Между визитами"}
+              </button>
+            </div>
+          )}
+
+          {compareMode === "within" && (
+            <div
+              className="seg-group"
+              role="group"
+              aria-label={isKz ? "Сессиялар жұбы" : "Пара сессий"}
+            >
+              <button
+                type="button"
+                className="seg-btn"
+                aria-pressed={withinSessionB === "VR"}
+                onClick={() => setWithinSessionB("VR")}
+              >
+                {isKz ? "Қалыпты → VR" : "Обычная → VR"}
+              </button>
+              <button
+                type="button"
+                className="seg-btn"
+                aria-pressed={withinSessionB === "Verbal"}
+                onClick={() => setWithinSessionB("Verbal")}
+              >
+                {isKz ? "Қалыпты → Ауызша" : "Обычная → Голос"}
+              </button>
+            </div>
           )}
         </div>
       </div>
 
       {compareMode === "cross" && hasMultipleVisits && (
         <div
+          className="panel-inset"
           style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: "10px",
-            padding: "12px 14px",
-            borderRadius: "8px",
-            background: "var(--paper)",
-            border: "1px solid var(--line)",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: "var(--sp-3)",
+            alignItems: "end",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-            <label
-              htmlFor="diff-visit-a"
-              style={{ fontSize: "12px", fontWeight: 600, color: "var(--secondary)" }}
-            >
-              {lang === "kz" ? "Визит А:" : "Визит А:"}
+          <div className="stack-xs">
+            <label htmlFor="diff-visit-a" style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>
+              {isKz ? "Бастапқы визит (A)" : "Исходный визит (A)"}
             </label>
-            <select
-              id="diff-visit-a"
-              value={visitA}
-              onChange={(e) => handleVisitAChange(e.target.value)}
-              style={{ minBlockSize: "34px", padding: "4px 10px", fontSize: "12px" }}
-            >
-              {visits.map((v) => (
-                <option key={v.visit_key} value={v.visit_key}>
-                  {formatVisitOption(v, lang)}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label={lang === "kz" ? "А сынамасы" : "Проба А"}
-              value={crossSessionA}
-              onChange={(e) => setCrossSessionA(e.target.value as GaitCondition)}
-              style={{ minBlockSize: "34px", padding: "4px 10px", fontSize: "12px" }}
-            >
-              {condOptionsA.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+            <div style={{ display: "flex", gap: "var(--sp-2)" }}>
+              <select
+                id="diff-visit-a"
+                value={visitA}
+                onChange={(e) => setVisitA(e.target.value)}
+                style={{ flex: 1 }}
+              >
+                {visits.map((v) => (
+                  <option key={v.visit_key} value={v.visit_key}>
+                    {isKz ? v.visit_label_kz || v.visit_label : v.visit_label}
+                    {v.visit_date ? ` · ${v.visit_date}` : ""}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={isKz ? "A визитінің режимі" : "Режим визита A"}
+                value={crossSessionA}
+                onChange={(e) => setCrossSessionA(e.target.value as GaitCondition)}
+              >
+                <option value="Baseline">{isKz ? "Қалыпты" : "Обычная"}</option>
+                <option value="Verbal">{isKz ? "Ауызша" : "Голос"}</option>
+                <option value="VR">VR</option>
+              </select>
+            </div>
           </div>
 
-          <ArrowRight size={15} color="var(--muted)" aria-hidden="true" />
-
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-            <label
-              htmlFor="diff-visit-b"
-              style={{ fontSize: "12px", fontWeight: 600, color: "var(--secondary)" }}
-            >
-              {lang === "kz" ? "Визит Б:" : "Визит Б:"}
+          <div className="stack-xs">
+            <label htmlFor="diff-visit-b" style={{ fontSize: "12px", fontWeight: 500, color: "var(--muted)" }}>
+              {isKz ? "Бақылау визиті (B)" : "Контрольный визит (B)"}
             </label>
-            <select
-              id="diff-visit-b"
-              value={visitB}
-              onChange={(e) => handleVisitBChange(e.target.value)}
-              style={{ minBlockSize: "34px", padding: "4px 10px", fontSize: "12px" }}
-            >
-              {visits.map((v) => (
-                <option key={v.visit_key} value={v.visit_key}>
-                  {formatVisitOption(v, lang)}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label={lang === "kz" ? "Б сынамасы" : "Проба Б"}
-              value={crossSessionB}
-              onChange={(e) => setCrossSessionB(e.target.value as GaitCondition)}
-              style={{ minBlockSize: "34px", padding: "4px 10px", fontSize: "12px" }}
-            >
-              {condOptionsB.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+            <div style={{ display: "flex", gap: "var(--sp-2)" }}>
+              <select
+                id="diff-visit-b"
+                value={visitB}
+                onChange={(e) => setVisitB(e.target.value)}
+                style={{ flex: 1 }}
+              >
+                {visits.map((v) => (
+                  <option key={v.visit_key} value={v.visit_key}>
+                    {isKz ? v.visit_label_kz || v.visit_label : v.visit_label}
+                    {v.visit_date ? ` · ${v.visit_date}` : ""}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={isKz ? "B визитінің режимі" : "Режим визита B"}
+                value={crossSessionB}
+                onChange={(e) => setCrossSessionB(e.target.value as GaitCondition)}
+              >
+                <option value="Baseline">{isKz ? "Қалыпты" : "Обычная"}</option>
+                <option value="Verbal">{isKz ? "Ауызша" : "Голос"}</option>
+                <option value="VR">VR</option>
+              </select>
+            </div>
           </div>
         </div>
       )}
 
       {loading ? (
-        <div style={{ padding: "24px", textAlign: "center", color: "var(--muted)", fontSize: "13px" }}>
-          {lang === "kz" ? "Салыстырмалы көрсеткіштер есептелуде..." : "Расчёт динамики показателей..."}
-        </div>
-      ) : diff ? (
-        <>
-          <div
-            style={{
-              padding: "12px 14px",
-              borderRadius: "8px",
-              background:
-                diff.status === "improved"
-                  ? "var(--teal-bg)"
-                  : diff.status === "regressed"
-                  ? "var(--red-bg)"
-                  : "var(--amber-bg)",
-              border: `1px solid ${
-                diff.status === "improved"
-                  ? "var(--teal-border)"
-                  : diff.status === "regressed"
-                  ? "var(--red-border)"
-                  : "var(--amber-border)"
-              }`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: "12px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              {diff.status === "improved" ? (
-                <CheckCircle2 size={18} color="var(--teal)" />
-              ) : diff.status === "regressed" ? (
-                <ShieldAlert size={18} color="var(--red)" />
-              ) : (
-                <AlertTriangle size={18} color="var(--amber)" />
-              )}
-              <div>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--ink)" }}>
-                  {diff.status === "improved"
-                    ? lang === "kz"
-                      ? "Оң динамика"
-                      : "Положительная динамика"
-                    : diff.status === "regressed"
-                    ? lang === "kz"
-                      ? "Жамбас компенсациясының өсуі"
-                      : "Рост патологической компенсации"
-                    : lang === "kz"
-                    ? "Тұрақты қозғалыс статусы"
-                    : "Стабильный двигательный статус"}
-                  {compareMode === "cross" && (
-                    <span style={{ fontWeight: 400, color: "var(--secondary)", marginLeft: "6px" }}>
-                      ({diff.session_a_label} → {diff.session_b_label})
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: "12px", color: "var(--secondary)", marginTop: "2px" }}>
-                  {lang === "kz" ? diff.verdict_kz : diff.verdict_ru}
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="tabular-nums"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                fontSize: "12px",
-                fontFamily: "var(--mono)",
-                fontWeight: 500,
-              }}
-            >
-              <span style={{ color: "var(--muted)" }}>МКФ b770:</span>
-              <span>{diff.icf_a}</span>
-              <ArrowRight size={13} color="var(--muted)" />
-              <span style={{ color: diff.icf_improved ? "var(--teal)" : "var(--ink)", fontWeight: 600 }}>
-                {diff.icf_b}
-              </span>
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-              gap: "1px",
-              background: "var(--line)",
-              border: "1px solid var(--line)",
-              borderRadius: "8px",
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ padding: "14px", background: "var(--paper)" }}>
-              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                {lang === "kz" ? "Жүріс индексі (GDI)" : "Индекс походки (GDI)"}
-              </div>
-              <div className="tabular-nums" style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
-                <span style={{ fontSize: "20px", fontWeight: 600 }}>{fmtFixed(diff.gdi_b, 0)}</span>
-                <span style={{ fontSize: "12px", color: "var(--muted)" }}>/ 100</span>
-                <span
-                  style={{
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    marginLeft: "auto",
-                    color: (diff.delta_gdi ?? 0) >= 0 ? "var(--teal)" : "var(--red)",
-                  }}
-                >
-                  {fmtDiffSigned(diff.delta_gdi, 1)}
-                </span>
-              </div>
-              <div className="tabular-nums" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-                {compareMode === "cross"
-                  ? `А: ${fmtFixed(diff.gdi_a, 0)}`
-                  : lang === "kz"
-                  ? `Бастапқы: ${fmtFixed(diff.gdi_a, 0)}`
-                  : `Исходно: ${fmtFixed(diff.gdi_a, 0)}`}
-              </div>
-            </div>
-
-            <div style={{ padding: "14px", background: "var(--paper)" }}>
-              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                {lang === "kz" ? "Шынайы жазылу (TJE)" : "Истинное разгибание (TJE)"}
-              </div>
-              <div className="tabular-nums" style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
-                <span style={{ fontSize: "20px", fontWeight: 600 }}>{fmtDiffSigned(diff.tje_b, 1, "°")}</span>
-                <span
-                  style={{
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    marginLeft: "auto",
-                    color: (diff.tje_b ?? 0) < 0 ? "var(--teal)" : "var(--amber)",
-                  }}
-                >
-                  {fmtDiffSigned(diff.delta_tje, 1, "°")}
-                </span>
-              </div>
-              <div className="tabular-nums" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-                {compareMode === "cross"
-                  ? `А: ${fmtDiffSigned(diff.tje_a, 1, "°")}`
-                  : lang === "kz"
-                  ? "Жамбасты ескере отырып"
-                  : "С поправкой на таз"}
-              </div>
-            </div>
-
-            <div style={{ padding: "14px", background: "var(--paper)" }}>
-              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                {lang === "kz" ? "Компенсация (PCR)" : "Компенсация (PCR)"}
-              </div>
-              <div className="tabular-nums" style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
-                <span
-                  style={{
-                    fontSize: "20px",
-                    fontWeight: 600,
-                    color:
-                      (diff.pcr_b ?? 0) > 0.8
-                        ? "var(--red)"
-                        : (diff.pcr_b ?? 0) >= 0.4
-                        ? "var(--amber)"
-                        : "var(--teal)",
-                  }}
-                >
-                  {fmtFixed(diff.pcr_b, 2)}
-                </span>
-                <span
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    marginLeft: "auto",
-                    color:
-                      (diff.pcr_b ?? 0) > 0.8
-                        ? "var(--red)"
-                        : (diff.pcr_b ?? 0) >= 0.4
-                        ? "var(--amber)"
-                        : "var(--teal)",
-                  }}
-                >
-                  {typeof diff.pcr_b !== "number"
-                    ? "—"
-                    : diff.pcr_b > 0.8
-                    ? lang === "kz"
-                      ? "Қауіп"
-                      : "Риск"
-                    : diff.pcr_b >= 0.4
-                    ? lang === "kz"
-                      ? "Орташа"
-                      : "Умеренно"
-                    : lang === "kz"
-                    ? "Қалыпты"
-                    : "Норма"}
-                </span>
-              </div>
-              <div className="tabular-nums" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-                {compareMode === "cross"
-                  ? `А: ${fmtFixed(diff.pcr_a, 2)} · Δ ${fmtDiffSigned(diff.delta_pcr, 2)}`
-                  : lang === "kz"
-                  ? "Қауіп шегі: 0,80"
-                  : "Порог риска: 0,80"}
-              </div>
-            </div>
-
-            <div style={{ padding: "14px", background: "var(--paper)" }}>
-              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                {lang === "kz" ? "Жүріс девиациясы (GPS)" : "Индекс девиации (GPS)"}
-              </div>
-              <div className="tabular-nums" style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
-                <span style={{ fontSize: "20px", fontWeight: 600 }}>{fmtFixed(diff.gps_b, 1, "°")}</span>
-                <span
-                  style={{
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    marginLeft: "auto",
-                    color: (diff.delta_gps ?? 0) < 0 ? "var(--teal)" : "var(--red)",
-                  }}
-                >
-                  {fmtDiffSigned(diff.delta_gps, 1, "°")}
-                </span>
-              </div>
-              <div className="tabular-nums" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-                {compareMode === "cross"
-                  ? `А: ${fmtFixed(diff.gps_a, 1, "°")}`
-                  : lang === "kz"
-                  ? `Бастапқы: ${fmtFixed(diff.gps_a, 1, "°")}`
-                  : `Исходно: ${fmtFixed(diff.gps_a, 1, "°")}`}
-              </div>
-            </div>
-          </div>
-        </>
-      ) : diffError ? (
         <div
-          style={{
-            padding: "14px",
-            background: "var(--paper)",
-            border: "1px solid var(--line)",
-            borderRadius: "8px",
-            color: "var(--muted)",
-            fontSize: "13px",
-          }}
+          className="panel-inset"
+          style={{ padding: "var(--sp-5)", textAlign: "center", fontSize: "13px", color: "var(--muted)" }}
         >
-          {compareMode === "cross"
-            ? lang === "kz"
-              ? `Таңдалған визиттер (${crossSessionA} → ${crossSessionB}) үшін салыстырмалы деректер табылмады.`
-              : `Для выбранной пары визитов (${crossSessionA} → ${crossSessionB}) данные одной из проб отсутствуют.`
-            : lang === "kz"
-            ? `Салыстыру үшін ${withinSessionB === "VR" ? "VR" : "ауызша нұсқау"} сынамасы жүктелмеген.`
-            : `Проба (${withinSessionB === "VR" ? "VR" : "голосовые инструкции"}) для данного визита не записана.`}
+          {isKz ? "Салыстыру есептелуде..." : "Рассчитываем сравнение..."}
         </div>
-      ) : null}
+      ) : diffError || !diff ? (
+        <div className="callout callout-amber" role="status">
+          <div style={{ fontSize: "13px", color: "var(--ink)", lineHeight: 1.5 }}>
+            {diffError || (isKz ? "Бұл салыстыру үшін жеткілікті деректер жоқ." : "Недостаточно данных для выбранного сравнения.")}
+          </div>
+        </div>
+      ) : (
+        <div className="stack-md">
+          <div className={`callout ${activeStatus.callout}`}>
+            <div className="stack-xs" style={{ flex: 1 }}>
+              <div className="row-between">
+                <div className="cluster">
+                  <span className={`badge ${activeStatus.badge}`}>{activeStatus.label}</span>
+                  <span style={{ fontSize: "12px", color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: "var(--sp-1)" }}>
+                    {getConditionLabel(diff.session_a, lang, diff.session_a_label)}
+                    {compareMode === "cross" && visitNameA ? ` (${visitNameA})` : ""}
+                    <ArrowRight size={12} strokeWidth={1.6} aria-hidden="true" />
+                    {getConditionLabel(diff.session_b, lang, diff.session_b_label)}
+                    {compareMode === "cross" && visitNameB ? ` (${visitNameB})` : ""}
+                  </span>
+                </div>
+
+                <span className="mono" style={{ fontSize: "12px", color: "var(--muted)" }}>
+                  {isKz ? "ХҚЖ b770:" : "МКФ b770:"}{" "}
+                  <strong style={{ color: diff.icf_improved ? "var(--teal)" : "var(--ink)" }}>
+                    {diff.icf_transition}
+                  </strong>
+                </span>
+              </div>
+
+              <p style={{ fontSize: "13px", color: "var(--ink)", lineHeight: 1.55 }}>
+                {cleanClinicalText(isKz ? diff.verdict_kz : diff.verdict_ru)}
+              </p>
+            </div>
+          </div>
+
+          <div className="hairline-grid">
+            <div className="hairline-cell">
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {isKz ? "Жалпы жүріс индексі (GPS)" : "Индекс походки (GPS)"}
+              </div>
+              <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)", color: diff.delta_gps < 0 ? "var(--teal)" : "var(--ink)" }}>
+                {fmtSigned(diff.delta_gps, 2, "°")}
+              </div>
+              <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "var(--sp-1)" }}>
+                {fmtFixed(diff.gps_a, 1, "°")} → {fmtFixed(diff.gps_b, 1, "°")}
+              </div>
+            </div>
+
+            <div className="hairline-cell">
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {isKz ? "Ауытқу индексі (GDI)" : "Индекс отклонения (GDI)"}
+              </div>
+              <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)", color: diff.delta_gdi > 0 ? "var(--teal)" : "var(--ink)" }}>
+                {fmtSigned(diff.delta_gdi, 1, "")}
+              </div>
+              <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "var(--sp-1)" }}>
+                {fmtFixed(diff.gdi_a, 1, "")} → {fmtFixed(diff.gdi_b, 1, "")}
+              </div>
+            </div>
+
+            <div className="hairline-cell">
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {isKz ? "Шынайы буын жазылуы (TJE)" : "Истинное разгибание (TJE)"}
+              </div>
+              <div className="tabular-nums mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "var(--sp-1)", color: diff.tje_b < -0.5 ? "var(--teal)" : "var(--ink)" }}>
+                {fmtSigned(diff.tje_b, 1, "°")}
+              </div>
+              <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "var(--sp-1)" }}>
+                {isKz ? "Өзгеріс:" : "Сдвиг:"} {fmtSigned(diff.delta_tje, 1, "°")}
+              </div>
+            </div>
+
+            <div className="hairline-cell">
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                {isKz ? "Компенсация (PCR)" : "Компенсация (PCR)"}
+              </div>
+              <div
+                className="tabular-nums mono"
+                style={{
+                  fontSize: "20px",
+                  fontWeight: 600,
+                  marginTop: "var(--sp-1)",
+                  color: diff.pcr_b > 0.8 ? "var(--amber)" : "var(--teal)",
+                }}
+              >
+                {fmtPcr(diff.pcr_b)}
+              </div>
+              <div className="tabular-nums" style={{ fontSize: "12px", color: "var(--muted)", marginTop: "var(--sp-1)" }}>
+                {fmtPcr(diff.pcr_a)} → {fmtPcr(diff.pcr_b)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
